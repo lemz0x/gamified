@@ -54,6 +54,10 @@ interface ParsedChatBody {
   msg: string;
 }
 
+function stripHtmlTags(input: string): string {
+  return input.replace(/<[^>]*>/g, "");
+}
+
 /**
  * Parses one VDO.Ninja chat `msg` field. Two shapes show up in the wild:
  *
@@ -135,25 +139,69 @@ export function onChat(
     const data = event.data as Record<string, unknown> | null | undefined;
     if (!data || typeof data !== "object") return;
 
+    // Always log in DEV so we can see what VDO.Ninja actually sends.
+    if (import.meta.env.DEV) {
+      console.log("[vdoninjaChat] raw event.data:", JSON.stringify(data));
+    }
+
     // Shape A: { action: 'incoming-chat', value: { msg, label, ts? } }
     if (data["action"] === "incoming-chat") {
+      if (import.meta.env.DEV) {
+        console.log("[vdoninjaChat] matched Shape A (incoming-chat)");
+      }
       const value = data["value"] as Record<string, unknown> | undefined;
+      // Defensive: VDO.Ninja has used msg, message, or text in different builds.
       const rawMsg =
-        typeof value?.["msg"] === "string" ? (value["msg"] as string) : null;
+        typeof value?.["msg"] === "string"
+          ? (value["msg"] as string)
+          : typeof value?.["message"] === "string"
+            ? (value["message"] as string)
+            : typeof value?.["text"] === "string"
+              ? (value["text"] as string)
+              : null;
       const sidecarLabel =
         typeof value?.["label"] === "string" ? (value["label"] as string) : "";
-      if (rawMsg) emit(rawMsg, sidecarLabel, callback);
+      if (rawMsg) {
+        emit(rawMsg, sidecarLabel, callback);
+      } else if (import.meta.env.DEV) {
+        console.warn("[vdoninjaChat] incoming-chat with no msg:", value);
+      }
       return;
     }
 
     // Shape B: top-level `chat` field on the message itself
     const chat = data["chat"];
     if (chat && typeof chat === "object") {
+      if (import.meta.env.DEV) {
+        console.log("[vdoninjaChat] matched Shape B (top-level chat)");
+      }
       const c = chat as Record<string, unknown>;
-      const rawMsg = typeof c["msg"] === "string" ? (c["msg"] as string) : null;
+      const rawMsg =
+        typeof c["msg"] === "string"
+          ? (c["msg"] as string)
+          : typeof c["message"] === "string"
+            ? (c["message"] as string)
+            : typeof c["text"] === "string"
+              ? (c["text"] as string)
+              : null;
       const sidecarLabel =
         typeof c["label"] === "string" ? (c["label"] as string) : "";
-      if (rawMsg) emit(rawMsg, sidecarLabel, callback);
+      if (rawMsg) {
+        emit(rawMsg, sidecarLabel, callback);
+      } else if (import.meta.env.DEV) {
+        console.warn("[vdoninjaChat] top-level chat with no msg:", c);
+      }
+    }
+    // If neither shape matched and this looks like it could be chat-related,
+    // log it so we can discover new VDO.Ninja formats.
+    if (
+      import.meta.env.DEV &&
+      (typeof data["msg"] === "string" ||
+        typeof data["message"] === "string" ||
+        typeof data["text"] === "string" ||
+        data["action"] === "chat")
+    ) {
+      console.warn("[vdoninjaChat] unrecognized chat-like shape:", data);
     }
   };
   window.addEventListener("message", handler);
@@ -167,6 +215,9 @@ export function onChat(
  * `label` field (when present) wins as a fallback when no chat_name
  * span was embedded — and `Guest` is the last-resort label so we never
  * render an empty bubble.
+ *
+ * Falls back to a regex strip for any tags DOMParser might have missed
+ * (e.g. malformed HTML that survives as literal text).
  */
 function emit(
   rawMsg: string,
@@ -174,8 +225,18 @@ function emit(
   callback: (msg: Omit<ChatMessage, "id" | "source">) => void,
 ): void {
   const { label: parsedLabel, msg } = parseChatBody(rawMsg);
+  if (import.meta.env.DEV) {
+    console.log("[vdoninjaChat] emit — raw:", rawMsg.slice(0, 120), "parsed label:", parsedLabel, "parsed msg:", msg?.slice(0, 120));
+  }
   if (!msg) return;
-  const label = parsedLabel || sidecarLabel || "Guest";
+
+  // VDO.Ninja sends labels as HTML fragments (e.g. "<b><span class='chat_name'>Guest1</span>:</b>").
+  // parseChatBody knows how to extract .chat_name and strip the wrapper.
+  const { label: parsedSidecarLabel } = parseChatBody(sidecarLabel);
+  const label = parsedLabel || parsedSidecarLabel || stripHtmlTags(sidecarLabel) || "Guest";
+  if (import.meta.env.DEV) {
+    console.log("[vdoninjaChat] emit — final:", { label, msg: msg.slice(0, 120) });
+  }
   callback({ msg, label, ts: Date.now() });
 }
 

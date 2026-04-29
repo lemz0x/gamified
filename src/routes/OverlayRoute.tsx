@@ -314,15 +314,14 @@ function StfuCard({ tile }: { tile: Tile }) {
           animation: "stfuFlash 2500ms ease-out forwards",
         }}
       />
-      {/* Heavy dim wash — near-black overlay reads as "brightness 0.25
-          saturate 0.3" against the underlying video composited below in
-          OBS. CSS filters can't reach the video (it lives in another
-          OBS source) so we fake the look with opacity. */}
+      {/* Bright red dim wash — clearly reads as "bad / punishment".
+          The opacity stays at 0.55 so the underlying video is still
+          visible but the tile is unmistakably tinted red. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(8, 0, 4, 0.85)",
+          background: "rgba(220, 0, 40, 0.55)",
           opacity: 0,
           willChange: "opacity",
           animation: "stfuDim 2500ms ease-out forwards",
@@ -524,6 +523,7 @@ function tileBoxStyle(tile: Tile): CSSProperties {
     height: tile.h,
     overflow: "hidden",
     pointerEvents: "none",
+    borderRadius: 20,
   };
 }
 

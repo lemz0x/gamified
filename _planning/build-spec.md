@@ -264,3 +264,43 @@ Build order, each phase shippable on its own:
 - Whether codirector role overrides `roombitrate=0` in VDO.Ninja (worth asking VDO.Ninja Discord)
 - Whether to migrate to OBS WebSocket integration for round transitions (v2)
 - Whether to extract chat from iframe into wrapper panel (v2)
+
+---
+
+## Decisions Log
+
+Architectural decisions made during v1.1 → v1.2 implementation. New agents should respect these unless explicitly rethinking them.
+
+### Editor role (?role=editor)
+- Editor publishes audio only via `&videodevice=0` (no camera prompt)
+- Editor sees producer's virtual cam via `&broadcast` (same as guests)
+- Wrapper renders chat-only panel — no cards, no emojis (editor isn't a participant)
+- Editor is excluded from card target pickers (logic: `kind !== "guest"`)
+
+### Host single-URL pattern (PR #22)
+- Host's wrapper URL does everything in one link: publishes camera, joins as codirector, sees broadcast view, renders full panel
+- URL pattern: `/play?role=host&push=<pushID>&label=<label>`
+- Underlying VDO.Ninja URL: `dir=GamifiedShow&codirector=...&push=...&broadcast&pausepreview`
+- Host's existing OBS Browser Source (`vdo.ninja/?view=<pushID>&solo&...`) continues to pull host's cam — single URL doesn't break this
+
+### Data channel topology (PR #26)
+- Producer joins the overlay context as "dataonly codirector" for bidirectional data flow
+- This is what fixed the card reset bug after multiple failed attempts
+- Do NOT revert to single-direction topologies (e.g. dataonly without codirector) — they break the reset bug fix
+
+### Producer auth (PR #18)
+- Password lives in `src/lib/auth.ts` as a constant
+- `localStorage` key: `gamified.auth.v1`
+- ONLY `/producer` is gated — `/play` and `/overlay` are open
+- OBS Custom Browser Docks retain `localStorage`, so auth persists across OBS restarts
+
+### Animation primitives
+- All animations use CSS transforms, opacity, filter, box-shadow
+- NEVER animate layout properties (top, left, width, height) — performance disaster in OBS browser source
+- Existing keyframes in `src/index.css`: `slamIn`, `shake`, `stfuDim`, etc. — extend rather than replacing
+
+### Chat infrastructure
+- Chat uses VDO.Ninja's native chat (`postMessage` with `sendChat` / receive via `incoming-chat`)
+- DOES NOT use the P2P data channel for chat
+- VDO.Ninja's built-in chat UI inside the iframe is preserved as a fallback (do not hide it)
+

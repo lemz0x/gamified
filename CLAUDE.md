@@ -84,17 +84,82 @@ export const TILES = {
 
 Calibration mode (producer panel toggles `?calibrate=1` on overlay) lets these be visually adjusted without code changes; adjustments persist via `localStorage` on the overlay browser source's machine.
 
-## Current status
+## Current status (as of staging head)
 
-- [x] Phase 1: Repo cleanup — delete legacy Socket.IO server, delete unused routes
-- [x] Phase 2: Coordinate map + emoji/card config files
+Phases shipped:
+- [x] Phase 1: Repo cleanup — legacy Socket.IO server, modes/slots removed
+- [x] Phase 2: Coordinate map + emoji/card config files (`src/coords.ts`, `src/emojis.ts`, `src/cards.ts`)
 - [x] Phase 3: VDO.Ninja iframe wrapper library (`src/lib/vdoninja.ts`)
 - [x] Phase 4: `/play` wrapper route — iframe + emoji panel + card panel
-- [x] Phase 5: `/overlay` route — transparent, listens for events, animates
-- [x] Phase 6: `/producer` route — roster names, reset cards, calibration mode
-- [x] Phase 7: Cloudflare Pages deploy + custom domain config
+- [x] Phase 5: `/overlay` route — transparent OBS browser source, animations
+- [x] Phase 6: `/producer` route — roster, calibration, reset cards, activity feed
+- [x] Phase 7: Deployment polish — `_redirects`, `_headers`, show-day docs
 
-Update this checklist as phases complete. Keep it honest — if something's half-done, mark it half-done.
+v1.1 batch (PRs #11–15):
+- [x] Card reset bug attempted fix (epoch comparison) — DID NOT actually solve the bug, see iteration log
+- [x] Animation polish v1 (`slamIn` keyframes, mic fall)
+- [x] Header rework: GAMIFIED moved to top center between guest label and LIVE
+- [x] Producer panel section reorder: roster → calibration → reset → activity
+- [x] Chat extraction in wrapper (input + emoji picker + send button)
+
+v1.2 batch (PRs #16–22):
+- [x] Guest layout: added `&broadcast` to guest iframe URL — fixes layout breaking when multiple guests join
+- [x] Animation polish v2: MIC DROP green theme + falling mic, STFU intensity boost
+- [x] Producer auth: `localStorage` password gate on `/producer` (NOT `/play`, NOT `/overlay`)
+- [x] Editor role: `?role=editor` variant — audio-only publish, chat-only panel
+- [x] Card reset bug attempted fix (ref-pinned listener) — STILL DID NOT solve the bug
+- [x] Chat HTML parsing attempted fix (DOMParser-based) — STILL DID NOT solve the bug
+- [x] Host + editor single-URL pattern — director/codirector privileges baked into one URL
+
+Reset bug saga (PRs #20, #25, #26):
+- [x] PR #25: producer overlay context switched from `&dataonly` to `&novideo&noaudio&push`
+- [x] PR #26: switched producer to "dataonly codirector" pattern for bidirectional data flow
+- [x] Reset bug RESOLVED via PR #26 (verified — cards now propagate per-guest correctly across tabs)
+
+v1.2-staging additional fixes (PRs #30–32):
+- [x] STFU dim wash changed from near-black to bright red — multiple iterations, final approach uses inset shadow + red overlay layer
+- [x] Chat logging pipeline added to `vdoninjaChat.ts` to diagnose chat HTML parsing
+- [ ] Chat HTML bleed STILL UNRESOLVED — see iteration log
+
+## v1.2 → staging iteration log
+
+This section captures what was tried, what worked, and what didn't, so future agents don't re-attempt failed approaches.
+
+### Card reset propagation
+The reset event needed to flow producer → wrappers via the VDO.Ninja P2P data channel.
+
+Attempts that did NOT work:
+- v1.1: `localStorage` epoch comparison logic. Issue: events were never reaching the wrapper at all, so comparison was moot.
+- v1.2 first try: ref-pinned `onMessage` listener to prevent identity churn. Verified with synthetic events but synthetic verification masked the actual broadcast-side regression.
+- PR #25: switched producer to `&novideo&noaudio&push`. Partial — established a peer connection but data wasn't bidirectional.
+
+What WORKS (current state, PR #26):
+- Producer joins overlay context as `dataonly codirector`. This gives bidirectional data channel between producer and the overlay/wrapper iframes.
+- Wrappers receive `CardResetEvent` and clear their `localStorage` card counters with React state re-render.
+- Verified per-guest tracking: Guest 2's MIC DROP shows "used", Guest 3's shows "1 of 1 left" — different states confirm the channel is delivering correctly.
+
+### Chat HTML parsing
+VDO.Ninja sends inbound chat with HTML markup baked in: `<b><span class='chat_name'>NAME</span>:</b> MSG`. The wrapper needs to extract NAME as sender, MSG as message body, and never render raw HTML.
+
+Attempts that did NOT work:
+- v1.2 first try: `parseChatBody` using DOMParser. Verified with synthetic test cases but failed on real VDO.Ninja messages.
+- v1.2-staging logging round (PR #21, #30): added aggressive `console.log` to `src/lib/vdoninjaChat.ts` to capture VDO.Ninja's actual message shape. Logging is in place.
+
+Status: STILL UNRESOLVED at staging head. Real-world test (3+ guest tabs) shows raw HTML still bleeding into the chat panel. The current parser handles two known shapes (Shape A: `action === 'incoming-chat'`, Shape B: top-level `chat` field). Likely cause: VDO.Ninja sends a third shape neither path catches. The "unrecognized chat-like shape" warning at line ~204 of `vdoninjaChat.ts` will fire in the console when this happens.
+
+Next agent: open browser console on `/play`, send a chat from another tab, capture the actual `event.data` shape that's logged, and add a third parsing path.
+
+### STFU color
+v1.2 STFU animation used a near-black dim wash that read as "tile being turned off" rather than "tile being punished." Multiple iterations on staging:
+- Initial fix: red tinted overlay. Too subtle.
+- PR #30: bright red dim wash via `rgba(220, 0, 40, 0.55)`. Better but still feels sized off relative to rounded camera windows.
+
+Status: COLOR is bright red and reads correctly. SIZING still slightly off — the square overlay covers the full tile bounds, but actual cam windows have rounded corners with the neon ring extending beyond. Cosmetic, not functional. Deferred to v1.3 polish unless prioritized.
+
+### Animation sizing for rounded cams (KNOWN, NOT FIXED)
+Tile coordinates in `src/coords.ts` define square 280×280 tile bounds. The camera windows in the overlay scene have rounded corners + a neon ring that extends past the bounds. Animation overlays (STFU red wash, MIC DROP green ring) draw at tile bounds = look slightly oversized.
+
+Fix would: read inner cam dimensions vs tile bounds, render animations on the inner cam shape with rounded corners. Out of scope for v1.2.
 
 ## Communication style
 
