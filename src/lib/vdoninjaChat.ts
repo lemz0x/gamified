@@ -134,10 +134,21 @@ export function onChat(
   callback: (msg: Omit<ChatMessage, "id" | "source">) => void,
 ): () => void {
   const handler = (event: MessageEvent) => {
-    const expectedSource = iframeRef.current?.contentWindow;
-    if (expectedSource && event.source !== expectedSource) return;
     const data = event.data as Record<string, unknown> | null | undefined;
     if (!data || typeof data !== "object") return;
+
+    // Soft source check: if the iframe is present, verify the origin looks
+    // like VDO.Ninja. We skip strict event.source === contentWindow because
+    // VDO.Ninja navigates the iframe after load, invalidating the ref.
+    const win = iframeRef.current?.contentWindow;
+    if (
+      win &&
+      event.source !== win &&
+      event.origin !== "https://vdo.ninja" &&
+      event.origin !== "https://www.vdo.ninja"
+    ) {
+      return;
+    }
 
     // Always log in DEV so we can see what VDO.Ninja actually sends.
     if (import.meta.env.DEV) {
@@ -192,6 +203,7 @@ export function onChat(
         console.warn("[vdoninjaChat] top-level chat with no msg:", c);
       }
     }
+
     // If neither shape matched and this looks like it could be chat-related,
     // log it so we can discover new VDO.Ninja formats.
     if (

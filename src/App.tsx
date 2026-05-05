@@ -1,4 +1,5 @@
 import { Route, Routes, useLocation } from "react-router-dom";
+import { ChatRoute } from "./routes/ChatRoute";
 import { OverlayRoute } from "./routes/OverlayRoute";
 import { PlayRoute } from "./routes/PlayRoute";
 import { ProducerRoute } from "./routes/ProducerRoute";
@@ -17,10 +18,11 @@ export default function App() {
   return (
     <div className={isOverlay ? undefined : "min-h-screen w-full"}>
       <Routes>
-        <Route path="/" element={<div>Gamified — pick a route: /play, /overlay, /producer</div>} />
+        <Route path="/" element={<div>Gamified — pick a route: /play, /overlay, /producer, /chat</div>} />
         <Route path="/play" element={<PlayRoute />} />
         <Route path="/overlay" element={<OverlayRoute />} />
         <Route path="/producer" element={<ProducerRoute />} />
+        <Route path="/chat" element={<ChatRoute />} />
       </Routes>
     </div>
   );

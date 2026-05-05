@@ -161,6 +161,7 @@ const NEON = {
   purple: "#a855ff",
   cyan: "#22e2ff",
   red: "#ff2e6b",
+  green: "#00d96b",
   amber: "#ffb000",
 } as const;
 
@@ -168,9 +169,9 @@ const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
   {
     stfu: { glow: NEON.red, edge: "#ff5482", tint: "rgba(255, 46, 107, 0.12)" },
     micdrop: {
-      glow: NEON.amber,
-      edge: "#ffd454",
-      tint: "rgba(255, 176, 0, 0.12)",
+      glow: NEON.green,
+      edge: "#22ff7a",
+      tint: "rgba(0, 217, 107, 0.12)",
     },
   };
 
@@ -805,7 +806,7 @@ const styles: Record<string, CSSProperties> = {
     appearance: "none",
     border: "1px solid",
     borderRadius: 12,
-    padding: "14px 10px",
+    padding: "18px 14px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
@@ -816,7 +817,7 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
   },
   cardName: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 800,
     letterSpacing: 0.6,
     textAlign: "center",
@@ -884,7 +885,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexWrap: "wrap",
     gap: 6,
-    fontSize: 12,
+    fontSize: 15,
     lineHeight: 1.35,
   },
   chatLabel: {
