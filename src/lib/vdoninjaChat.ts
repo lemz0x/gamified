@@ -203,6 +203,7 @@ export function onChat(
         console.warn("[vdoninjaChat] top-level chat with no msg:", c);
       }
     }
+
     // If neither shape matched and this looks like it could be chat-related,
     // log it so we can discover new VDO.Ninja formats.
     if (

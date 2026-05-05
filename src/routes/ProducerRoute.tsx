@@ -259,6 +259,12 @@ function ProducerPanel() {
     resetEpochRef.current = epoch;
     saveResetEpoch(epoch);
     send({ type: "cardReset", resetEpoch: epoch, ts: epoch });
+    setFeed((prev) =>
+      [
+        { id: `f${feedIdRef.current++}`, ts: epoch, text: "Cards reset for all guests" },
+        ...prev,
+      ].slice(0, FEED_CAP),
+    );
   }, [send]);
 
   const updateTile = useCallback(

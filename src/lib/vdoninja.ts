@@ -45,6 +45,7 @@ export const PRODUCER_VIEW_ID = "TBSqrdw";
 const GUEST_ROOM_PARAMS: Array<readonly [string, string | null]> = [
   ["room", "GamifiedShow"],
   ["hash", "1f71"],
+  ["password", "gaming"],
   ["q", null],
   ["tips", null],
   ["roombitrate", "0"],
@@ -113,7 +114,7 @@ export interface GuestIframeParams {
  * Reference: https://docs.vdo.ninja/advanced-settings/video-parameters/broadcast
  */
 const GUEST_BROADCAST_PARAMS: Array<readonly [string, string | null]> = [
-  ["broadcast", null],
+  ["broadcast", PRODUCER_VIEW_ID],
   ["showlist", "0"],
   ["minipreview", null],
 ];
@@ -138,16 +139,16 @@ export function buildIframeUrl(params: GuestIframeParams): string {
 }
 
 /**
- * Builds the iframe `src` for the host's wrapper. Identical to
- * {@link buildIframeUrl} but adds `view=TBSqrdw` so the host sees the
- * producer's composited feed (matching the host's existing URL today).
+ * Builds the iframe `src` for the host's wrapper. Uses the same
+ * broadcast-mode flags as guests so the host sees only the producer's
+ * composited stream (pinned to TBSqrdw), with a mini self-preview.
  */
 export function buildHostIframeUrl(params: GuestIframeParams): string {
   const all = [
     ...GUEST_ROOM_PARAMS,
+    ...GUEST_BROADCAST_PARAMS,
     ["push", params.push] as const,
     ["label", params.label] as const,
-    ["view", PRODUCER_VIEW_ID] as const,
   ];
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
 }
@@ -163,13 +164,13 @@ export function buildHostIframeUrl(params: GuestIframeParams): string {
  *     guests don't shrink it. Audio between editor and guests stays
  *     live for off-air coordination.
  *
- * Resulting URL pattern matches buildIframeUrl (broadcast + showlist=0
- * + minipreview + roombitrate=0) plus `videodevice=0`.
+ * Resulting URL pattern matches buildIframeUrl (broadcast=TBSqrdw
+ * + showlist=0 + minipreview + roombitrate=0) plus `videodevice=0`.
  */
 export function buildEditorIframeUrl(params: GuestIframeParams): string {
   const all = [
     ...GUEST_ROOM_PARAMS,
-    ["broadcast", null] as const,
+    ["broadcast", PRODUCER_VIEW_ID] as const,
     ["showlist", "0"] as const,
     ["minipreview", null] as const,
     ["videodevice", "0"] as const,
@@ -196,7 +197,10 @@ export function buildOverlayDataOnlyUrl(): string {
 export function buildChatOnlyUrl(params: { push: string; label: string }): string {
   const all = [
     ...GUEST_ROOM_PARAMS,
-    ["push", params.push] as const,
+    ["videodevice", "0"] as const,
+    ["audiodevice", "0"] as const,
+    ["autostart", null] as const,
+    ["cleanoutput", null] as const,
     ["label", params.label] as const,
   ];
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
@@ -329,9 +333,19 @@ export function onData(
   callback: (payload: EventPayload) => void,
 ): () => void {
   const handler = (event: MessageEvent) => {
-    // Guard: only accept messages from our iframe (window.parent === us).
-    const expectedSource = iframeRef.current?.contentWindow;
-    if (expectedSource && event.source !== expectedSource) return;
+    // Soft source check: if the iframe is present, verify the origin looks
+    // like VDO.Ninja. We skip strict event.source === contentWindow because
+    // VDO.Ninja navigates the iframe after load, invalidating the ref.
+    // Matches the approach in vdoninjaChat.ts onChat().
+    const win = iframeRef.current?.contentWindow;
+    if (
+      win &&
+      event.source !== win &&
+      event.origin !== "https://vdo.ninja" &&
+      event.origin !== "https://www.vdo.ninja"
+    ) {
+      return;
+    }
 
     const data = event.data as
       | { dataReceived?: { [NAMESPACE]?: EventPayload } }

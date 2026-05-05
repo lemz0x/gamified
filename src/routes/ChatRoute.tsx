@@ -33,7 +33,7 @@ function isOwnLabel(localLabel: string, candidate: string): boolean {
 export function ChatRoute() {
   const [search] = useSearchParams();
   const push = search.get("push") ?? "";
-  const label = search.get("label") ?? "Producer";
+  const label = search.get("label") ?? "Lemz";
 
   const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
   const [draft, setDraft] = useState("");

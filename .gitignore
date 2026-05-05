@@ -28,3 +28,4 @@ dist-ssr
 # the _handoff directory holds the original artifact + spec for reference;
 # keep it out of deployed bundles but not out of git — remove this line if
 # you'd rather exclude it.
+.worktrees/
