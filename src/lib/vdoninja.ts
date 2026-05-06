@@ -238,6 +238,8 @@ export interface RosterUpdateEvent {
   type: "rosterUpdate";
   /** Full map keyed by seat — every seat must be present. */
   names: Record<SeatId, string>;
+  /** Host's display name (for card announcements). */
+  hostName?: string;
   ts: number;
 }
 
@@ -273,6 +275,22 @@ export interface CalibrationEvent {
   ts: number;
 }
 
+/** Host muted a specific guest or all guests (soft mute — guests can unmute). */
+export interface MuteGuestEvent {
+  type: "muteGuest";
+  /** Seat to mute, or "all" for mute-all. */
+  target: SeatId | "all";
+  ts: number;
+}
+
+/** Host unmuted a specific guest or all guests. Sent when host toggles mute off. */
+export interface UnmuteGuestEvent {
+  type: "unmuteGuest";
+  /** Seat to unmute, or "all". */
+  target: SeatId | "all";
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -280,7 +298,9 @@ export type EventPayload =
   | RosterUpdateEvent
   | CardResetEvent
   | GetResetEpochEvent
-  | CalibrationEvent;
+  | CalibrationEvent
+  | MuteGuestEvent
+  | UnmuteGuestEvent;
 
 // ── Iframe data channel ─────────────────────────────────────────────────
 

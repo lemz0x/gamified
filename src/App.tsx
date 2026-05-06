@@ -18,11 +18,12 @@ export default function App() {
   return (
     <div className={isOverlay ? undefined : "min-h-screen w-full"}>
       <Routes>
-        <Route path="/" element={<div>Gamified — pick a route: /play, /overlay, /producer, /chat</div>} />
+        <Route path="/" element={<div>Gamified — pick a route: /play, /overlay, /producer, /chat, /editorchat</div>} />
         <Route path="/play" element={<PlayRoute />} />
         <Route path="/overlay" element={<OverlayRoute />} />
         <Route path="/producer" element={<ProducerRoute />} />
         <Route path="/chat" element={<ChatRoute />} />
+        <Route path="/editorchat" element={<ChatRoute defaultLabel="Phil" />} />
       </Routes>
     </div>
   );
