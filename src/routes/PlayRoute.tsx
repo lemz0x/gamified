@@ -10,6 +10,7 @@ import { useSearchParams } from "react-router-dom";
 import { CARDS, type Card, type CardId } from "../cards";
 import { CHAT_EMOJIS, EMOJIS, type Emoji } from "../emojis";
 import type { SeatId } from "../coords";
+import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildEditorIframeUrl,
   buildHostIframeUrl,
@@ -227,6 +228,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [chatMessages, setChatMessages] = useState<readonly ChatMessage[]>([]);
   const chatIdRef = useRef(0);
   const nextChatId = () => `c${chatIdRef.current++}`;
+  const { buzzingSeats, buzz: buzzSeat } = useBuzzState();
 
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
@@ -322,11 +324,15 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           break;
         }
+        case "buzzIn": {
+          buzzSeat(msg.seat);
+          break;
+        }
         default:
           break;
       }
     },
-    [identity],
+    [identity, buzzSeat],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -509,6 +515,38 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
 
         {showMuteControls && (
           <HostMutePanel roster={roster} send={send} />
+        )}
+
+        {identity.kind === "host" && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: 1.5,
+              color: NEON.pink,
+              textShadow: `0 0 10px ${NEON.pink}88`,
+              marginBottom: 4,
+            }}>
+              BUZZERS
+            </div>
+            <BuzzPanel
+              roster={roster}
+              buzzingSeats={buzzingSeats}
+              variant="play"
+            />
+          </div>
+        )}
+
+        {identity.kind === "guest" && (
+          <BuzzPanel
+            roster={roster}
+            buzzingSeats={buzzingSeats}
+            onBuzz={() => {
+              buzzSeat(identity.seat);
+              send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+            }}
+            variant="play"
+          />
         )}
 
         <ChatPanel messages={chatMessages} onSend={sendChatMessage} />
@@ -881,7 +919,7 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
         </button>
       </div>
       <div style={styles.muteList}>
-        {SEAT_ORDER.map((seat, i) => {
+        {SEAT_ORDER.map((seat) => {
           const muted = mutedSeats.has(seat);
           return (
             <button
@@ -893,17 +931,14 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
                 ...(muted ? styles.muteRowMuted : {}),
               }}
             >
-              <span style={styles.muteSeatLabel}>
-                Guest {i + 1}
+              <span style={muted ? styles.muteIconMuted : styles.muteIcon}>
+                {muted ? "🔇" : "🎤"}
               </span>
               <span style={{
                 ...styles.muteName,
                 ...(muted ? styles.muteNameMuted : {}),
               }}>
                 {roster[seat] || seat}
-              </span>
-              <span style={muted ? styles.muteIconMuted : styles.muteIcon}>
-                {muted ? "🔇" : "🎤"}
               </span>
             </button>
           );
@@ -1288,39 +1323,39 @@ const styles: Record<string, CSSProperties> = {
     cursor: "pointer",
   },
   muteList: {
-    display: "flex",
-    flexDirection: "column",
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
     gap: 4,
   },
   muteRow: {
     appearance: "none",
     display: "flex",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "center",
+    gap: 4,
     background: "#14141e",
     border: `1px solid ${NEON.panelEdge}`,
     borderRadius: 8,
-    padding: "6px 10px",
+    padding: "5px 6px",
     cursor: "pointer",
-    textAlign: "left",
+    textAlign: "center",
     fontFamily: '"Inter", system-ui, sans-serif',
+    fontSize: 12,
+    fontWeight: 700,
+    color: NEON.text,
+    letterSpacing: 0.5,
     transition: "background 120ms ease-out, border-color 120ms ease-out",
+    textOverflow: "ellipsis",
+    overflow: "hidden",
+    whiteSpace: "nowrap",
   },
   muteRowMuted: {
     background: "#2a1018",
     borderColor: "#cc2244",
     boxShadow: "0 0 12px #cc224444, inset 0 0 12px #cc224422",
   },
-  muteSeatLabel: {
-    fontSize: 10,
-    fontWeight: 700,
-    color: NEON.textDim,
-    letterSpacing: 1,
-    minWidth: 48,
-  },
   muteName: {
-    flex: 1,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: 700,
     color: NEON.text,
     overflow: "hidden",
@@ -1331,11 +1366,11 @@ const styles: Record<string, CSSProperties> = {
     color: "#ff4466",
   },
   muteIcon: {
-    fontSize: 16,
+    fontSize: 14,
     opacity: 0.6,
   },
   muteIconMuted: {
-    fontSize: 16,
+    fontSize: 14,
     opacity: 1,
   },
 };
