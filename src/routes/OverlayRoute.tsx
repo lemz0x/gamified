@@ -1,4 +1,4 @@
-import {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -22,6 +22,7 @@ import {
   type EmojiEvent,
   type EventPayload,
 } from "../lib/vdoninja";
+import { CARDS, type CardId } from "../cards";
 
 // ── canvas + perf constants ─────────────────────────────────────────────
 
@@ -41,6 +42,9 @@ const EMOJI_FLOAT_MS = 1500;
 
 /** Card animation total length (matches the per-card keyframes in index.css). */
 const CARD_ANIM_MS = 2500;
+
+/** How long the center-screen card announcement text stays visible. */
+const CARD_ANNOUNCE_MS = 3000;
 
 /**
  * Calibration palette — stable per-seat colors so each rect is easy to
@@ -73,6 +77,17 @@ interface CardSprite {
   targetSeat: SeatId;
 }
 
+interface CardAnnounce {
+  /** Unique id for React key. */
+  id: string;
+  /** First line of text: "X played CARD". */
+  text: string;
+  /** Second line: "on Y". */
+  text2: string;
+  /** Card theme color for the glow. */
+  color: string;
+}
+
 // ── component ───────────────────────────────────────────────────────────
 
 export function OverlayRoute() {
@@ -83,9 +98,18 @@ export function OverlayRoute() {
   // localStorage on this overlay browser source's machine.
   const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
 
+  // Roster names synced from producer — used for card announcements.
+  const rosterRef = useRef<Record<SeatId, string>>({ L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" });
+  const hostNameRef = useRef<string>(
+    typeof window !== "undefined"
+      ? (window.localStorage.getItem("gamified.hostName.v1") ?? "HOST")
+      : "HOST",
+  );
+
   // Emoji + card animations currently on screen. Trimmed by timers below.
   const [emojiSprites, setEmojiSprites] = useState<readonly EmojiSprite[]>([]);
   const [cardSprites, setCardSprites] = useState<readonly CardSprite[]>([]);
+  const [cardAnnounce, setCardAnnounce] = useState<CardAnnounce | null>(null);
   const idCounter = useRef(0);
   const nextId = () => `${Date.now().toString(36)}-${(idCounter.current++).toString(36)}`;
 
@@ -136,12 +160,20 @@ export function OverlayRoute() {
           break;
         case "cardPlay":
           enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat });
+          fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce);
           break;
         case "calibration":
           setTiles(msg.tiles);
           saveCalibratedTiles(msg.tiles);
           break;
-        // rosterUpdate, cardReset → handled by /play, not the overlay.
+        case "rosterUpdate":
+          rosterRef.current = { ...msg.names };
+          if (msg.hostName !== undefined) {
+            hostNameRef.current = msg.hostName;
+            try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
+          }
+          break;
+        // cardReset, getResetEpoch → not needed by overlay.
         default:
           break;
       }
@@ -169,6 +201,8 @@ export function OverlayRoute() {
           ),
         )}
 
+        {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
+
         {calibrateMode && <CalibrationGrid tiles={tiles} />}
       </div>
 
@@ -192,6 +226,36 @@ export function OverlayRoute() {
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
+const CARD_COLORS: Record<CardId, string> = {
+  stfu: "#ff2e6b",
+  micdrop: "#00d96b",
+};
+
+function fireCardAnnounce(
+  msg: CardPlayEvent,
+  roster: Record<SeatId, string>,
+  hostName: string,
+  setAnnounce: React.Dispatch<React.SetStateAction<CardAnnounce | null>>,
+) {
+  const cardDef = CARDS.find((c) => c.id === msg.cardId);
+  const cardName = cardDef?.shortName ?? cardDef?.name ?? msg.cardId.toUpperCase();
+  const fromName =
+    msg.from.kind === "host"
+      ? hostName
+      : roster[msg.from.seat] || msg.from.label || "?";
+  const targetName = roster[msg.targetSeat] || msg.targetLabel || msg.targetSeat;
+  const id = `ca-${Date.now()}`;
+  setAnnounce({
+    id,
+    text: `${fromName} played ${cardName}`,
+    text2: `on ${targetName}`,
+    color: CARD_COLORS[msg.cardId] ?? "#ffffff",
+  });
+  window.setTimeout(() => {
+    setAnnounce((prev: CardAnnounce | null) => (prev?.id === id ? null : prev));
+  }, CARD_ANNOUNCE_MS);
+}
+
 function handleEmoji(
   msg: EmojiEvent,
   tiles: TileMap,
@@ -213,6 +277,51 @@ function handleEmoji(
 }
 
 // ── sprites ─────────────────────────────────────────────────────────────
+
+function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
+  // STFU-style stacked text-shadow treatment — much heavier and dramatic.
+  const textShadow = [
+    `3px 3px 0 ${announce.color}`,
+    `4px 4px 0 ${announce.color}`,
+    `5px 5px 0 ${announce.color}`,
+    "7px 7px 0 #000",
+    `0 0 28px ${announce.color}cc`,
+  ].join(", ");
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: CANVAS_W / 2,
+        top: CANVAS_H * 0.30,
+        transform: "translate(-50%, -50%)",
+        zIndex: 100,
+        pointerEvents: "none",
+        animation: `cardAnnounceIn ${CARD_ANNOUNCE_MS}ms cubic-bezier(0.2, 1.5, 0.4, 1) forwards`,
+      }}
+    >
+      <div
+        style={{
+          padding: "20px 48px",
+          borderRadius: 16,
+          background: "rgba(10, 6, 16, 0.90)",
+          border: `3px solid ${announce.color}`,
+          boxShadow: `0 0 50px ${announce.color}88, 0 0 100px ${announce.color}44`,
+          fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+          fontWeight: 900,
+          fontSize: 48,
+          letterSpacing: 1,
+          color: "#ffffff",
+          textAlign: "center",
+          textShadow,
+        }}
+      >
+        <div style={{ lineHeight: 1.15 }}>{announce.text}</div>
+        <div style={{ lineHeight: 1.15, marginTop: 2 }}>{announce.text2}</div>
+      </div>
+    </div>
+  );
+}
 
 interface EmojiFloatProps {
   sprite: EmojiSprite;
@@ -383,15 +492,11 @@ function StfuCard({ tile }: { tile: Tile }) {
  */
 function MicDropCard({ tile }: { tile: Tile }) {
   const fontSize = Math.max(20, Math.round(tile.w * 0.13));
-  // Spec: at least 100px font-size, possibly larger. Scale with tile
-  // height so smaller calibrated tiles still get a proportionate mic.
   const micSize = Math.max(100, Math.round(tile.h * 0.45));
-  // Starts right at the top edge of the target tile.
-  const startY = -10;
-  // End at tile bottom MINUS mic height so the emoji's bottom sits
-  // flush with the tile bottom. Without this offset the emoji's 126px
-  // (or more) body extends past the tile into the adjacent camera below.
-  const endY = tile.h + 10 - micSize;
+  // Start at the tile's top edge so it doesn't clip into the camera above.
+  const startY = 0;
+  // End at tile bottom so the mic exits cleanly.
+  const endY = tile.h + 10;
   return (
     <div style={cardBoxStyle(tile)}>
       {/* Brief green flash — t=0–200ms, then fades. */}
@@ -436,7 +541,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
           ["--mic-end-y" as string]: `${endY}px`,
           willChange: "transform, opacity",
           animation:
-            "micEmojiFall 1200ms cubic-bezier(0.4, 0, 0.6, 1) 200ms forwards",
+            "micEmojiFall 700ms cubic-bezier(0.55, 0, 1, 0.45) 100ms forwards",
           fontSize: micSize,
           lineHeight: 1,
           fontFamily:

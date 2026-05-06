@@ -12,16 +12,20 @@ export type Emoji = (typeof EMOJIS)[number];
 
 /** The MVP reaction set, in render order. */
 export const EMOJIS = [
-  "\u{1F525}", // 🔥
-  "\u{1F480}", // 💀
-  "\u{1F602}", // 😂
+  // row 1: 🤯 🔥 ❤️ 💯 👏 👍
   "\u{1F92F}", // 🤯
-  "\u{1F440}", // 👀
+  "\u{1F525}", // 🔥
+  "\u{2764}\u{FE0F}", // ❤️
   "\u{1F4AF}", // 💯
-  "\u{1F921}", // 🤡
+  "\u{1F44F}", // 👏
   "\u{1F44D}", // 👍
-  "\u{1F44E}", // 👎
+  // row 2: 😂 💀 👀 🤡 💩 👎
+  "\u{1F602}", // 😂
+  "\u{1F480}", // 💀
+  "\u{1F440}", // 👀
+  "\u{1F921}", // 🤡
   "\u{1F4A9}", // 💩
+  "\u{1F44E}", // 👎
 ] as const;
 
 /**

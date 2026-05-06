@@ -263,6 +263,65 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         }
         // Other event types (emoji, cardPlay, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
+        case "muteGuest": {
+          // Soft mute: mute self via iframe if we're the target (or all).
+          if (identity.kind === "editor") break;
+          const isTarget =
+            msg.target === "all" ||
+            (identity.kind === "guest" && identity.seat === msg.target);
+          if (isTarget) {
+            window.setTimeout(() => {
+              muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+            }, 0);
+            // Phase 1: circuit-breaker — re-apply mic:false for 3s.
+            stopForceMute();
+            muteIntervalRef.current = window.setInterval(() => {
+              muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+            }, 500);
+            // After 3s cooldown, stop re-muting and tell host to clear the UI highlight.
+            window.setTimeout(() => {
+              stopForceMute();
+              if (identity.kind === "guest") {
+                send({ type: "muteCooldownDone", target: identity.seat, ts: Date.now() });
+              }
+            }, 3000);
+          }
+          if (isTarget || identity.kind === "host") {
+            // Notify host that this seat was muted so UI stays in sync.
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: true } }),
+            );
+          }
+          break;
+        }
+        case "unmuteGuest": {
+          if (identity.kind === "editor") break;
+          const isTarget =
+            msg.target === "all" ||
+            (identity.kind === "guest" && identity.seat === msg.target);
+          if (isTarget) {
+            stopForceMute();
+            window.setTimeout(() => {
+              muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
+            }, 0);
+          }
+          if (isTarget || identity.kind === "host") {
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: false } }),
+            );
+          }
+          break;
+        }
+        case "muteCooldownDone": {
+          // Guest's 3s circuit-breaker expired — clear host's red highlight
+          // without touching anyone's mic.
+          if (identity.kind === "host") {
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: false } }),
+            );
+          }
+          break;
+        }
         default:
           break;
       }
@@ -271,6 +330,25 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
+
+  // Bridge ref so the onMessage handler (which closes over identity but
+  // not iframeRef) can still reach the iframe for mute commands.
+  const muteIframeRef = useRef<HTMLIFrameElement | null>(null);
+  useEffect(() => {
+    muteIframeRef.current = iframeRef.current;
+  });
+
+  // Circuit-breaker: when host force-mutes this guest, re-apply mic:false
+  // every 500ms for 3s so the mute actually sticks. After 3s, notify the
+  // host that the guest is now free to toggle — clear the host's red highlight.
+  const muteIntervalRef = useRef<number | null>(null);
+  const stopForceMute = useCallback(() => {
+    if (muteIntervalRef.current !== null) {
+      window.clearInterval(muteIntervalRef.current);
+      muteIntervalRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => stopForceMute(), [stopForceMute]);
 
   // On mount, ask the producer to (re)announce the latest reset epoch so
   // we can catch up on any reset broadcast that fired while we were closed.
@@ -332,7 +410,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // Editors are backstage crew — no cards, no emoji broadcasts. Their
   // panel is chat-only so they can coordinate with the room without
   // appearing in any guest-targetable surface.
-  const showCardsAndEmojis = identity.kind !== "editor";
+  // Host gets cards + mute controls (no emojis). Guests get cards + emojis.
+  const showCards = identity.kind !== "editor";
+  const showEmojis = identity.kind === "guest";
+  const showMuteControls = identity.kind === "host";
 
   const fireEmoji = useCallback(
     (emoji: Emoji) => {
@@ -400,30 +481,34 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           <LiveIndicator />
         </header>
 
-        {showCardsAndEmojis && (
-          <>
-            <section style={styles.cardRow}>
-              {CARDS.map((card) => (
-                <CardButton
-                  key={card.id}
-                  card={card}
-                  uses={cardUses[card.id]}
-                  onClick={() => setActiveCard(card)}
-                />
-              ))}
-            </section>
+        {showCards && (
+          <section style={styles.cardRow}>
+            {CARDS.map((card) => (
+              <CardButton
+                key={card.id}
+                card={card}
+                uses={cardUses[card.id]}
+                onClick={() => setActiveCard(card)}
+              />
+            ))}
+          </section>
+        )}
 
-            <section style={styles.emojiGrid}>
-              {EMOJIS.map((emoji) => (
-                <EmojiButton
-                  key={emoji}
-                  emoji={emoji}
-                  pulsing={emojiPulse === emoji}
-                  onClick={() => fireEmoji(emoji)}
-                />
-              ))}
-            </section>
-          </>
+        {showEmojis && (
+          <section style={styles.emojiGrid}>
+            {EMOJIS.map((emoji) => (
+              <EmojiButton
+                key={emoji}
+                emoji={emoji}
+                pulsing={emojiPulse === emoji}
+                onClick={() => fireEmoji(emoji)}
+              />
+            ))}
+          </section>
+        )}
+
+        {showMuteControls && (
+          <HostMutePanel roster={roster} send={send} />
         )}
 
         <ChatPanel messages={chatMessages} onSend={sendChatMessage} />
@@ -723,6 +808,111 @@ function MissingParamsHelp() {
   );
 }
 
+// ── host mute controls ──────────────────────────────────────────────────
+
+interface HostMutePanelProps {
+  roster: Record<SeatId, string>;
+  send: (payload: EventPayload) => void;
+}
+
+function HostMutePanel({ roster, send }: HostMutePanelProps) {
+  const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+
+  // Listen for mute state changes from the data channel handler so
+  // the host's UI stays in sync if a guest self-unmutes or if mute-all fires.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { seat, muted } = (e as CustomEvent<{ seat: SeatId | "all"; muted: boolean }>).detail;
+      setMutedSeats((prev) => {
+        const next = new Set(prev);
+        if (seat === "all") {
+          if (muted) SEAT_ORDER.forEach((s) => next.add(s));
+          else next.clear();
+        } else {
+          if (muted) next.add(seat);
+          else next.delete(seat);
+        }
+        return next;
+      });
+    };
+    window.addEventListener("gamified-mute-state", handler);
+    return () => window.removeEventListener("gamified-mute-state", handler);
+  }, []);
+
+  const muteSeat = useCallback(
+    (seat: SeatId) => {
+      const currently = mutedSeats.has(seat);
+      if (currently) {
+        send({ type: "unmuteGuest", target: seat, ts: Date.now() });
+        setMutedSeats((prev) => {
+          const next = new Set(prev);
+          next.delete(seat);
+          return next;
+        });
+      } else {
+        send({ type: "muteGuest", target: seat, ts: Date.now() });
+        setMutedSeats((prev) => {
+          const next = new Set(prev);
+          next.add(seat);
+          return next;
+        });
+      }
+    },
+    [mutedSeats, send],
+  );
+  const muteAll = useCallback(() => {
+    send({ type: "muteGuest", target: "all", ts: Date.now() });
+    setMutedSeats(new Set(SEAT_ORDER));
+  }, [send]);
+  const unmuteAll = useCallback(() => {
+    send({ type: "unmuteGuest", target: "all", ts: Date.now() });
+    setMutedSeats(new Set());
+  }, [send]);
+
+  return (
+    <section style={styles.mutePanel}>
+      <div style={styles.mutePanelHeader}>
+        <span style={styles.mutePanelTitle}>GUEST MUTE</span>
+        <button type="button" onClick={unmuteAll} style={styles.unmuteAllBtn}>
+          UNMUTE ALL
+        </button>
+        <button type="button" onClick={muteAll} style={styles.muteAllBtn}>
+          MUTE ALL
+        </button>
+      </div>
+      <div style={styles.muteList}>
+        {SEAT_ORDER.map((seat, i) => {
+          const muted = mutedSeats.has(seat);
+          return (
+            <button
+              key={seat}
+              type="button"
+              onClick={() => muteSeat(seat)}
+              style={{
+                ...styles.muteRow,
+                ...(muted ? styles.muteRowMuted : {}),
+              }}
+            >
+              <span style={styles.muteSeatLabel}>
+                Guest {i + 1}
+              </span>
+              <span style={{
+                ...styles.muteName,
+                ...(muted ? styles.muteNameMuted : {}),
+              }}>
+                {roster[seat] || seat}
+              </span>
+              <span style={muted ? styles.muteIconMuted : styles.muteIcon}>
+                {muted ? "🔇" : "🎤"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 // ── styles ───────────────────────────────────────────────────────────────
 
 const styles: Record<string, CSSProperties> = {
@@ -831,7 +1021,7 @@ const styles: Record<string, CSSProperties> = {
   },
   emojiGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 8,
   },
   emoji: {
@@ -1065,5 +1255,87 @@ const styles: Record<string, CSSProperties> = {
     padding: 32,
     textAlign: "center",
     gap: 10,
+  },
+  mutePanel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  mutePanelHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "6px 0",
+  },
+  mutePanelTitle: {
+    fontFamily: '"Inter", system-ui, sans-serif',
+    fontWeight: 800,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: NEON.textDim,
+  },
+  muteAllBtn: {
+    appearance: "none",
+    background: "#cc2244",
+    color: "#fff",
+    border: 0,
+    borderRadius: 6,
+    padding: "4px 12px",
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: 1,
+    fontFamily: '"Inter", system-ui, sans-serif',
+    cursor: "pointer",
+  },
+  muteList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  muteRow: {
+    appearance: "none",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "#14141e",
+    border: `1px solid ${NEON.panelEdge}`,
+    borderRadius: 8,
+    padding: "6px 10px",
+    cursor: "pointer",
+    textAlign: "left",
+    fontFamily: '"Inter", system-ui, sans-serif',
+    transition: "background 120ms ease-out, border-color 120ms ease-out",
+  },
+  muteRowMuted: {
+    background: "#2a1018",
+    borderColor: "#cc2244",
+    boxShadow: "0 0 12px #cc224444, inset 0 0 12px #cc224422",
+  },
+  muteSeatLabel: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: NEON.textDim,
+    letterSpacing: 1,
+    minWidth: 48,
+  },
+  muteName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: 700,
+    color: NEON.text,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  muteNameMuted: {
+    color: "#ff4466",
+  },
+  muteIcon: {
+    fontSize: 16,
+    opacity: 0.6,
+  },
+  muteIconMuted: {
+    fontSize: 16,
+    opacity: 1,
   },
 };

@@ -30,10 +30,14 @@ function isOwnLabel(localLabel: string, candidate: string): boolean {
 
 // ── component ───────────────────────────────────────────────────────────
 
-export function ChatRoute() {
+interface ChatRouteProps {
+  defaultLabel?: string;
+}
+
+export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
   const [search] = useSearchParams();
   const push = search.get("push") ?? "";
-  const label = search.get("label") ?? "Lemz";
+  const label = search.get("label") ?? defaultLabel;
 
   const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
   const [draft, setDraft] = useState("");

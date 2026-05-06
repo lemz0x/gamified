@@ -233,6 +233,16 @@ body.overlay-route #root {
   100% { transform: translate(-50%, var(--mic-end-y, 120%)); opacity: 0; }
 }
 
+/* Card announcement text — scales in from small, holds, then fades out.
+   Duration is set inline (CARD_ANNOUNCE_MS); keyframe is 0→1 normalized. */
+@keyframes cardAnnounceIn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  18%  { transform: translate(-50%, -50%) scale(1); }
+  80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+}
+
 @keyframes pulseDot {
   0%,
   100% {
