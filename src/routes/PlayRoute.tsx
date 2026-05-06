@@ -176,6 +176,22 @@ const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
     },
   };
 
+/** Per-emoji brand glow colours for hover effects. */
+const EMOJI_COLOURS: Record<string, string> = {
+  "\u{1F92F}": "#00e5ff", // 🤯
+  "\u{1F525}": "#ffb800", // 🔥
+  "\u{2764}\u{FE0F}": "#ff66b3", // ❤️
+  "\u{1F4AF}": "#a3e600", // 💯
+  "\u{1F44F}": "#5c8aff", // 👏
+  "\u{1F44D}": "#ff5c8a", // 👍
+  "\u{1F440}": "#ff4444", // 👀
+  "\u{1F480}": "#ff8c42", // 💀
+  "\u{1F602}": "#b866ff", // 😂
+  "\u{1F921}": "#ffd700", // 🤡
+  "\u{1F4A9}": "#66ffcc", // 💩
+  "\u{1F44E}": "#ff2a6d", // 👎
+};
+
 // ── component ────────────────────────────────────────────────────────────
 
 export function PlayRoute() {
@@ -585,22 +601,56 @@ function CardButton({ card, uses, onClick }: CardButtonProps) {
   const remaining = card.usesPerTopic - uses;
   const used = remaining <= 0;
   const theme = cardThemes[card.id];
+  const slug = card.shortName ?? card.name;
+  const [hovered, setHovered] = useState(false);
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={used}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         ...styles.card,
         background: used ? "#15151f" : theme.tint,
         borderColor: used ? "#222230" : theme.edge,
         color: used ? NEON.textDim : NEON.text,
-        boxShadow: used ? "none" : `0 0 18px ${theme.glow}66, inset 0 0 24px ${theme.glow}33`,
+        boxShadow: used
+          ? "none"
+          : hovered
+            ? `0 0 28px ${theme.glow}88, inset 0 0 30px ${theme.glow}44`
+            : `0 0 18px ${theme.glow}66, inset 0 0 24px ${theme.glow}33`,
         opacity: used ? 0.55 : 1,
+        textAlign: "center",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
-      <span style={{ ...styles.cardName, color: used ? NEON.textDim : theme.glow }}>
-        {card.name}
+      {/* Hover glow layer */}
+      {!used && (
+        <div
+          style={{
+            position: "absolute",
+            inset: -20,
+            borderRadius: "inherit",
+            opacity: hovered ? 0.55 : 0,
+            transition: "opacity 300ms ease",
+            pointerEvents: "none",
+            filter: "blur(28px)",
+            background: `radial-gradient(circle at center, ${theme.glow}66, transparent 70%)`,
+          }}
+        />
+      )}
+      <div style={styles.cardIconWrap}>{card.icon}</div>
+      <span style={{
+        ...styles.cardSlug,
+        color: used ? NEON.textDim : theme.glow,
+        textShadow: used ? "none" : `0 0 12px ${theme.glow}66, 0 0 28px ${theme.glow}44`,
+      }}>
+        {slug}
+      </span>
+      <span style={{ ...styles.cardSubtitle, color: used ? NEON.textDim : theme.glow }}>
+        {card.subtitle}
       </span>
       <span style={styles.cardCounter}>
         {used
@@ -618,20 +668,34 @@ interface EmojiButtonProps {
 }
 
 function EmojiButton({ emoji, pulsing, onClick }: EmojiButtonProps) {
+  const [hovered, setHovered] = useState(false);
+  const brand = EMOJI_COLOURS[emoji];
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         ...styles.emoji,
         transform: pulsing ? "scale(1.15)" : "scale(1)",
         boxShadow: pulsing
           ? `0 0 22px ${NEON.cyan}cc, 0 0 12px ${NEON.pink}99`
-          : "0 0 0 1px rgba(255,255,255,0.04)",
-        background: pulsing ? "rgba(34, 226, 255, 0.15)" : "#13131c",
+          : hovered && brand
+            ? `0 0 14px ${brand}66`
+            : "0 0 0 1px rgba(255,255,255,0.04)",
+        background: pulsing
+          ? "rgba(34, 226, 255, 0.15)"
+          : hovered && brand
+            ? `radial-gradient(circle at center, ${brand}25, #13131c 70%)`
+            : "#13131c",
+        border: hovered && brand ? `1px solid ${brand}44` : 0,
       }}
     >
-      <span style={styles.emojiGlyph}>{emoji}</span>
+      <span style={{
+        ...styles.emojiGlyph,
+        filter: hovered && brand ? `drop-shadow(0 0 6px ${brand}88)` : "none",
+      }}>{emoji}</span>
     </button>
   );
 }
@@ -1035,18 +1099,39 @@ const styles: Record<string, CSSProperties> = {
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: 4,
     alignItems: "center",
     transition:
       "transform 80ms ease-out, box-shadow 120ms ease-out, opacity 120ms ease-out",
     fontFamily: "inherit",
   },
-  cardName: {
-    fontSize: 15,
-    fontWeight: 800,
-    letterSpacing: 0.6,
-    textAlign: "center",
+  cardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+    margin: "0 auto 10px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+  },
+  cardSlug: {
+    fontFamily: '"Orbitron", system-ui, sans-serif',
+    fontWeight: 900,
+    fontSize: 22,
+    letterSpacing: "0.04em",
     lineHeight: 1.15,
+    textAlign: "center" as const,
+  },
+  cardSubtitle: {
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: "0.18em",
+    textTransform: "uppercase" as const,
+    marginTop: 2,
+    opacity: 0.75,
   },
   cardCounter: {
     fontSize: 10,
@@ -1074,7 +1159,7 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
   },
   emojiGlyph: {
-    fontSize: 22,
+    fontSize: 26,
     lineHeight: 1,
   },
   // ── chat panel ────────────────────────────────────────────────────────

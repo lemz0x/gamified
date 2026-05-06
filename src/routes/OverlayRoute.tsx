@@ -80,8 +80,12 @@ interface CardSprite {
 interface CardAnnounce {
   /** Unique id for React key. */
   id: string;
-  /** First line of text: "X played CARD". */
-  text: string;
+  /** Card id for icon/font rendering. */
+  cardId: CardId;
+  /** Who played it. */
+  fromName: string;
+  /** Card display slug (STFU / MIC DROP). */
+  cardSlug: string;
   /** Second line: "on Y". */
   text2: string;
   /** Card theme color for the glow. */
@@ -247,7 +251,9 @@ function fireCardAnnounce(
   const id = `ca-${Date.now()}`;
   setAnnounce({
     id,
-    text: `${fromName} played ${cardName}`,
+    cardId: msg.cardId,
+    fromName,
+    cardSlug: cardName,
     text2: `on ${targetName}`,
     color: CARD_COLORS[msg.cardId] ?? "#ffffff",
   });
@@ -279,15 +285,6 @@ function handleEmoji(
 // ── sprites ─────────────────────────────────────────────────────────────
 
 function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
-  // STFU-style stacked text-shadow treatment — much heavier and dramatic.
-  const textShadow = [
-    `3px 3px 0 ${announce.color}`,
-    `4px 4px 0 ${announce.color}`,
-    `5px 5px 0 ${announce.color}`,
-    "7px 7px 0 #000",
-    `0 0 28px ${announce.color}cc`,
-  ].join(", ");
-
   return (
     <div
       style={{
@@ -302,22 +299,79 @@ function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
     >
       <div
         style={{
-          padding: "20px 48px",
-          borderRadius: 16,
+          padding: "20px 56px",
+          borderRadius: 20,
           background: "rgba(10, 6, 16, 0.90)",
           border: `3px solid ${announce.color}`,
           boxShadow: `0 0 50px ${announce.color}88, 0 0 100px ${announce.color}44`,
-          fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
-          fontWeight: 900,
-          fontSize: 48,
-          letterSpacing: 1,
-          color: "#ffffff",
+          fontFamily: '"Inter", system-ui, sans-serif',
           textAlign: "center",
-          textShadow,
+          position: "relative",
+          minWidth: 520,
         }}
       >
-        <div style={{ lineHeight: 1.15 }}>{announce.text}</div>
-        <div style={{ lineHeight: 1.15, marginTop: 2 }}>{announce.text2}</div>
+        {/* Ambient glow behind the card */}
+        <div
+          style={{
+            position: "absolute",
+            inset: -30,
+            borderRadius: 30,
+            background: `radial-gradient(circle at center, ${announce.color}66, transparent 70%)`,
+            opacity: 0.35,
+            pointerEvents: "none",
+            filter: "blur(20px)",
+          }}
+        />
+
+        {/* Icon */}
+        <div style={{ fontSize: "2.2rem", marginBottom: 8, filter: `drop-shadow(0 0 10px ${announce.color}88)` }}>
+          {announce.cardId === "stfu" ? "\u{1F910}" : "\u{1F3A4}"}
+        </div>
+
+        {/* Line 1: who played */}
+        <div
+          style={{
+            lineHeight: 1.2,
+            fontFamily: '"Inter", sans-serif',
+            fontWeight: 600,
+            fontSize: "1.1rem",
+            color: "#8a8a9a",
+            letterSpacing: "0.02em",
+          }}
+        >
+          {announce.fromName} played
+        </div>
+
+        {/* Line 2: the card name — ORBITRON */}
+        <div
+          style={{
+            lineHeight: 1.1,
+            marginTop: 4,
+            fontFamily: '"Orbitron", sans-serif',
+            fontWeight: 900,
+            fontSize: "3.2rem",
+            color: "#ffffff",
+            letterSpacing: "0.04em",
+            textShadow:
+              `0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66, 0 0 80px ${announce.color}33`,
+          }}
+        >
+          {announce.cardSlug}
+        </div>
+
+        {/* Line 3: target */}
+        <div
+          style={{
+            lineHeight: 1.2,
+            marginTop: 8,
+            fontFamily: '"Inter", sans-serif',
+            fontWeight: 500,
+            fontSize: "0.95rem",
+            color: "#8a8a9a",
+          }}
+        >
+          {announce.text2}
+        </div>
       </div>
     </div>
   );
@@ -434,7 +488,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           animation: "stfuFlash 2500ms ease-out forwards",
         }}
       />
-      {/* The slam text — heavier drop-shadow stack for v1.2 intensity. */}
+      {/* The slam text — Orbitron with atmospheric glow. */}
       <div
         style={{
           position: "absolute",
@@ -446,7 +500,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           animation:
             "stfuSlamText 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) forwards",
           fontFamily:
-            '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+            '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize,
           lineHeight: 0.95,
@@ -455,14 +509,10 @@ function StfuCard({ tile }: { tile: Tile }) {
           textAlign: "center",
           whiteSpace: "pre",
           textShadow: [
-            // Tripled red offset — heavier brand stamp
-            "3px 3px 0 #ff2e6b",
-            "4px 4px 0 #ff2e6b",
-            "5px 5px 0 #ff2e6b",
-            // Black offset further out for depth
-            "7px 7px 0 #000",
-            // Stronger outer red glow
-            "0 0 24px rgba(255, 46, 107, 1)",
+            "0 0 8px rgba(0,0,0,0.55)",
+            "0 0 22px rgba(255,46,107,0.7)",
+            "0 0 55px rgba(255,46,107,0.44)",
+            "0 0 90px rgba(255,46,107,0.22)",
           ].join(", "),
         }}
       >
@@ -552,7 +602,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
       >
         {"\u{1F3A4}"}
       </div>
-      {/* Slam text — centered in the tile like STFU */}
+      {/* Slam text — Orbitron with atmospheric green glow */}
       <div
         style={{
           position: "absolute",
@@ -564,7 +614,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
           animation:
             "micSlamText 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) 300ms forwards",
           fontFamily:
-            '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+            '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize,
           letterSpacing: 1.5,
@@ -572,11 +622,10 @@ function MicDropCard({ tile }: { tile: Tile }) {
           textAlign: "center",
           whiteSpace: "nowrap",
           textShadow: [
-            "3px 3px 0 #00d96b",
-            "4px 4px 0 #00d96b",
-            "5px 5px 0 #00d96b",
-            "7px 7px 0 #000",
-            "0 0 24px rgba(0, 217, 107, 1)",
+            "0 0 8px rgba(0,0,0,0.55)",
+            "0 0 22px rgba(0,217,107,0.7)",
+            "0 0 55px rgba(0,217,107,0.44)",
+            "0 0 90px rgba(0,217,107,0.22)",
           ].join(", "),
         }}
       >

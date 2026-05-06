@@ -20,6 +20,10 @@ export interface Card {
   name: string;
   /** Shorter name used in center-screen card announce (falls back to name). */
   shortName?: string;
+  /** Emoji icon for the card. */
+  icon: string;
+  /** Subtitle below the slug on the card face. */
+  subtitle: string;
   /** Theme color the wrapper + overlay use to style this card. */
   color: CardColor;
   /** How many times each guest can play this card before the producer resets. */
@@ -34,6 +38,8 @@ export const CARDS: readonly Card[] = [
     id: "stfu",
     name: "SHUT THE !@#$ UP",
     shortName: "STFU",
+    icon: "\u{1F910}",
+    subtitle: "Shut the !@#$ Up",
     color: "red",
     usesPerTopic: 1,
     description: "Cut off the current speaker",
@@ -41,6 +47,9 @@ export const CARDS: readonly Card[] = [
   {
     id: "micdrop",
     name: "MIC DROP",
+    shortName: "MIC DROP",
+    icon: "\u{1F3A4}",
+    subtitle: "Crown the Speaker",
     color: "amber",
     usesPerTopic: 1,
     description: "Crown the current speaker",
