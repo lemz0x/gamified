@@ -18,6 +18,8 @@ export interface Card {
   id: CardId;
   /** Display name shown on the card face. */
   name: string;
+  /** Shorter name used in center-screen card announce (falls back to name). */
+  shortName?: string;
   /** Theme color the wrapper + overlay use to style this card. */
   color: CardColor;
   /** How many times each guest can play this card before the producer resets. */
@@ -31,6 +33,7 @@ export const CARDS: readonly Card[] = [
   {
     id: "stfu",
     name: "SHUT THE !@#$ UP",
+    shortName: "STFU",
     color: "red",
     usesPerTopic: 1,
     description: "Cut off the current speaker",

@@ -273,12 +273,19 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             window.setTimeout(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             }, 0);
-            // Start circuit-breaker: re-apply mic:false every 1s for 5 mins.
+            // Phase 1: circuit-breaker — re-apply mic:false for 3s.
             stopForceMute();
             muteIntervalRef.current = window.setInterval(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
-            }, 1000);
-            window.setTimeout(() => stopForceMute(), 300_000);
+            }, 500);
+            // After 3s cooldown, stop re-muting and tell host the guest is free.
+            const mySeat = identity.kind === "guest" ? identity.seat : msg.target;
+            window.setTimeout(() => {
+              stopForceMute();
+              window.dispatchEvent(
+                new CustomEvent("gamified-mute-state", { detail: { seat: mySeat, muted: false } }),
+              );
+            }, 3000);
           }
           if (isTarget || identity.kind === "host") {
             // Notify host that this seat was muted so UI stays in sync.
@@ -323,8 +330,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   });
 
   // Circuit-breaker: when host force-mutes this guest, re-apply mic:false
-  // every 1s for up to 5 mins, preventing self-unmute. Stopped by host
-  // unmute or timeout.
+  // every 500ms for 3s so the mute actually sticks. After 3s, notify the
+  // host that the guest is now free to toggle — clear the host's red highlight.
   const muteIntervalRef = useRef<number | null>(null);
   const stopForceMute = useCallback(() => {
     if (muteIntervalRef.current !== null) {
