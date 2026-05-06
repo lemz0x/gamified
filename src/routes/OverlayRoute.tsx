@@ -299,79 +299,24 @@ function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
     >
       <div
         style={{
-          padding: "20px 56px",
-          borderRadius: 20,
+          padding: "18px 48px",
+          borderRadius: 16,
           background: "rgba(10, 6, 16, 0.90)",
           border: `3px solid ${announce.color}`,
           boxShadow: `0 0 50px ${announce.color}88, 0 0 100px ${announce.color}44`,
-          fontFamily: '"Inter", system-ui, sans-serif',
+          fontFamily: '"Orbitron", sans-serif',
+          fontWeight: 900,
           textAlign: "center",
           position: "relative",
-          minWidth: 520,
+          minWidth: 480,
+          color: "#ffffff",
+          fontSize: "1.5rem",
+          letterSpacing: "0.04em",
+          textShadow:
+            `0 0 12px rgba(0,0,0,0.5), 0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66`,
         }}
       >
-        {/* Ambient glow behind the card */}
-        <div
-          style={{
-            position: "absolute",
-            inset: -30,
-            borderRadius: 30,
-            background: `radial-gradient(circle at center, ${announce.color}66, transparent 70%)`,
-            opacity: 0.35,
-            pointerEvents: "none",
-            filter: "blur(20px)",
-          }}
-        />
-
-        {/* Icon */}
-        <div style={{ fontSize: "2.2rem", marginBottom: 8, filter: `drop-shadow(0 0 10px ${announce.color}88)` }}>
-          {announce.cardId === "stfu" ? "\u{1F910}" : "\u{1F3A4}"}
-        </div>
-
-        {/* Line 1: who played */}
-        <div
-          style={{
-            lineHeight: 1.2,
-            fontFamily: '"Inter", sans-serif',
-            fontWeight: 600,
-            fontSize: "1.1rem",
-            color: "#8a8a9a",
-            letterSpacing: "0.02em",
-          }}
-        >
-          {announce.fromName} played
-        </div>
-
-        {/* Line 2: the card name — ORBITRON */}
-        <div
-          style={{
-            lineHeight: 1.1,
-            marginTop: 4,
-            fontFamily: '"Orbitron", sans-serif',
-            fontWeight: 900,
-            fontSize: "3.2rem",
-            color: "#ffffff",
-            letterSpacing: "0.04em",
-            textShadow:
-              `0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66, 0 0 80px ${announce.color}33`,
-          }}
-        >
-          {announce.cardSlug}
-        </div>
-
-        {/* Line 3: target */}
-        <div
-          style={{
-            lineHeight: 1.2,
-            marginTop: 8,
-            fontFamily: '"Inter", sans-serif',
-            fontWeight: 500,
-            fontSize: "0.95rem",
-            color: "#8a8a9a",
-          }}
-        >
-          {announce.text2}
-        </div>
+        {announce.fromName} played {announce.cardSlug} {announce.text2}
       </div>
     </div>
   );
