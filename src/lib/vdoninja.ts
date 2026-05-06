@@ -298,6 +298,13 @@ export interface MuteCooldownDoneEvent {
   ts: number;
 }
 
+/** Guest buzzed in to signal they want to speak. */
+export interface BuzzInEvent {
+  type: "buzzIn";
+  seat: SeatId;
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -308,7 +315,8 @@ export type EventPayload =
   | CalibrationEvent
   | MuteGuestEvent
   | UnmuteGuestEvent
-  | MuteCooldownDoneEvent;
+  | MuteCooldownDoneEvent
+  | BuzzInEvent;
 
 // ── Iframe data channel ─────────────────────────────────────────────────
 

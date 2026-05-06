@@ -15,6 +15,7 @@ import {
   type Tile,
   type TileMap,
 } from "../coords";
+import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildOverlayDataOnlyUrl,
   useVdoNinja,
@@ -209,6 +210,7 @@ function ProducerPanel() {
   // Latest reset epoch we've fired (persisted) — re-announced on demand so
   // wrappers that join after a reset still catch up.
   const resetEpochRef = useRef<number>(loadResetEpoch());
+  const { buzzingSeats, buzz: buzzSeat } = useBuzzState();
   const rosterDirty =
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
     draftHostName !== hostName;
@@ -241,6 +243,9 @@ function ProducerPanel() {
       if (msg.type === "calibration") {
         setTiles(msg.tiles);
       }
+      if (msg.type === "buzzIn") {
+        buzzSeat(msg.seat);
+      }
       // A wrapper just mounted; re-announce the latest reset epoch so it
       // can catch up on any reset that fired before it was open.
       if (msg.type === "getResetEpoch" && resetEpochRef.current > 0) {
@@ -257,7 +262,7 @@ function ProducerPanel() {
         });
       }
     },
-    [roster],
+    [roster, buzzSeat],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -449,6 +454,14 @@ function ProducerPanel() {
             Zeroes per-guest counters and re-enables both card buttons in every wrapper.
           </span>
         </div>
+      </Section>
+
+      <Section title="Buzz board">
+        <BuzzPanel
+          roster={roster}
+          buzzingSeats={buzzingSeats}
+          variant="producer"
+        />
       </Section>
 
       <Section title="Activity feed">

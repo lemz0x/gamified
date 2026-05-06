@@ -10,6 +10,7 @@ import { useSearchParams } from "react-router-dom";
 import { CARDS, type Card, type CardId } from "../cards";
 import { CHAT_EMOJIS, EMOJIS, type Emoji } from "../emojis";
 import type { SeatId } from "../coords";
+import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildEditorIframeUrl,
   buildHostIframeUrl,
@@ -227,6 +228,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [chatMessages, setChatMessages] = useState<readonly ChatMessage[]>([]);
   const chatIdRef = useRef(0);
   const nextChatId = () => `c${chatIdRef.current++}`;
+  const { buzzingSeats, buzz: buzzSeat } = useBuzzState();
 
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
@@ -322,11 +324,15 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           break;
         }
+        case "buzzIn": {
+          buzzSeat(msg.seat);
+          break;
+        }
         default:
           break;
       }
     },
-    [identity],
+    [identity, buzzSeat],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -505,6 +511,19 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               />
             ))}
           </section>
+        )}
+
+        {identity.kind !== "editor" && (
+          <BuzzPanel
+            roster={roster}
+            buzzingSeats={buzzingSeats}
+            onBuzz={
+              identity.kind === "guest"
+                ? () => send({ type: "buzzIn", seat: identity.seat, ts: Date.now() })
+                : undefined
+            }
+            variant="play"
+          />
         )}
 
         {showMuteControls && (
