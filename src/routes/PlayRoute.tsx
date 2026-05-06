@@ -278,13 +278,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             muteIntervalRef.current = window.setInterval(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             }, 500);
-            // After 3s cooldown, stop re-muting and tell host the guest is free.
-            const mySeat = identity.kind === "guest" ? identity.seat : msg.target;
+            // After 3s cooldown, stop re-muting and tell host to clear the UI highlight.
             window.setTimeout(() => {
               stopForceMute();
-              window.dispatchEvent(
-                new CustomEvent("gamified-mute-state", { detail: { seat: mySeat, muted: false } }),
-              );
+              if (identity.kind === "guest") {
+                send({ type: "muteCooldownDone", target: identity.seat, ts: Date.now() });
+              }
             }, 3000);
           }
           if (isTarget || identity.kind === "host") {
@@ -307,6 +306,16 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             }, 0);
           }
           if (isTarget || identity.kind === "host") {
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: false } }),
+            );
+          }
+          break;
+        }
+        case "muteCooldownDone": {
+          // Guest's 3s circuit-breaker expired — clear host's red highlight
+          // without touching anyone's mic.
+          if (identity.kind === "host") {
             window.dispatchEvent(
               new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: false } }),
             );
