@@ -459,7 +459,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           ].join(", "),
         }}
       >
-        {"SHUT THE\n!@#$ UP!!"}
+        {"STFU"}
       </div>
     </div>
   );
