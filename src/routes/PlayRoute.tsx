@@ -275,21 +275,17 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             }, 0);
             // Phase 1: circuit-breaker — re-apply mic:false for 3s.
             stopForceMute();
-            stopStatsMonitor();
             muteIntervalRef.current = window.setInterval(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             }, 500);
-            window.setTimeout(() => stopForceMute(), 3000);
-            // Phase 2: after circuit-breaker, poll getStats to detect self-unmute.
-            baselineBytesRef.current = 0;
-            const startPolling = () => {
-              statsMonitorRef.current = window.setInterval(() => {
-                muteIframeRef.current?.contentWindow?.postMessage({ getStats: true }, "*");
-              }, 2000);
-              // Timeout: stop polling after 60s if guest stays muted.
-              window.setTimeout(() => stopStatsMonitor(), 60_000);
-            };
-            window.setTimeout(startPolling, 3200);
+            // After 3s cooldown, stop re-muting and tell host the guest is free.
+            const mySeat = identity.kind === "guest" ? identity.seat : msg.target;
+            window.setTimeout(() => {
+              stopForceMute();
+              window.dispatchEvent(
+                new CustomEvent("gamified-mute-state", { detail: { seat: mySeat, muted: false } }),
+              );
+            }, 3000);
           }
           if (isTarget || identity.kind === "host") {
             // Notify host that this seat was muted so UI stays in sync.
@@ -306,7 +302,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             stopForceMute();
-            stopStatsMonitor();
             window.setTimeout(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
             }, 0);
@@ -334,53 +329,17 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
-  // Circuit-breaker and self-unmute detection.
-  // When host force-mutes this guest:
-  //   Phase 1 (3s): re-apply mic:false every 500ms to prevent immediate toggle-back.
-  //   Phase 2 (up to 60s): poll getStats every 2s, watching for outbound
-  //     audio bytes increase → guest unmuted themselves → notify host.
+  // Circuit-breaker: when host force-mutes this guest, re-apply mic:false
+  // every 500ms for 3s so the mute actually sticks. After 3s, notify the
+  // host that the guest is now free to toggle — clear the host's red highlight.
   const muteIntervalRef = useRef<number | null>(null);
-  const statsMonitorRef = useRef<number | null>(null);
-  const baselineBytesRef = useRef<number>(0);
   const stopForceMute = useCallback(() => {
     if (muteIntervalRef.current !== null) {
       window.clearInterval(muteIntervalRef.current);
       muteIntervalRef.current = null;
     }
   }, []);
-  const stopStatsMonitor = useCallback(() => {
-    if (statsMonitorRef.current !== null) {
-      window.clearInterval(statsMonitorRef.current);
-      statsMonitorRef.current = null;
-    }
-  }, []);
-  useEffect(() => () => { stopForceMute(); stopStatsMonitor(); }, [stopForceMute, stopStatsMonitor]);
-
-  // Stats listener: catches getStats responses from VDO.Ninja iframe.
-  // Used by the post-cooldown self-unmute monitor (guest only).
-  useEffect(() => {
-    if (identity.kind !== "guest") return;
-    const handler = (e: MessageEvent) => {
-      if (!e.data || typeof e.data !== "object") return;
-      if (!("stats" in e.data)) return;
-      // Only track outbound audio from this guest's own iframe.
-      const out = e.data.stats?.["audio-outbound"]?.bytes;
-      if (typeof out === "number" && out > 0) {
-        if (baselineBytesRef.current === 0) {
-          baselineBytesRef.current = out;
-        } else if (out > baselineBytesRef.current + 500) {
-          // Audio bytes grew — guest unmuted themselves.
-          stopStatsMonitor();
-          send({ type: "unmuteGuest", target: identity.seat, ts: Date.now() });
-          window.dispatchEvent(
-            new CustomEvent("gamified-mute-state", { detail: { seat: identity.seat, muted: false } }),
-          );
-        }
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [identity, send, stopStatsMonitor]);
+  useEffect(() => () => stopForceMute(), [stopForceMute]);
 
   // On mount, ask the producer to (re)announce the latest reset epoch so
   // we can catch up on any reset broadcast that fired while we were closed.

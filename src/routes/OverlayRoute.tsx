@@ -100,7 +100,11 @@ export function OverlayRoute() {
 
   // Roster names synced from producer — used for card announcements.
   const rosterRef = useRef<Record<SeatId, string>>({ L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" });
-  const hostNameRef = useRef<string>("HOST");
+  const hostNameRef = useRef<string>(
+    typeof window !== "undefined"
+      ? (window.localStorage.getItem("gamified.hostName.v1") ?? "HOST")
+      : "HOST",
+  );
 
   // Emoji + card animations currently on screen. Trimmed by timers below.
   const [emojiSprites, setEmojiSprites] = useState<readonly EmojiSprite[]>([]);
@@ -164,7 +168,10 @@ export function OverlayRoute() {
           break;
         case "rosterUpdate":
           rosterRef.current = { ...msg.names };
-          if (msg.hostName !== undefined) hostNameRef.current = msg.hostName;
+          if (msg.hostName !== undefined) {
+            hostNameRef.current = msg.hostName;
+            try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
+          }
           break;
         // cardReset, getResetEpoch → not needed by overlay.
         default:
@@ -459,7 +466,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           ].join(", "),
         }}
       >
-        {"SHUT THE\\n!@#$ UP!!"}
+        {"SHUT THE\n!@#$ UP!!"}
       </div>
     </div>
   );
