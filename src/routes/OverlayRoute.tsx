@@ -59,6 +59,22 @@ const CALIBRATION_COLORS: Record<SeatId, string> = {
   R3: "#ff5454",
 };
 
+/** Per-emoji brand glow colours for overlay sprite effects. */
+const EMOJI_COLOURS: Record<string, string> = {
+  "\u{1F92F}": "#00e5ff", // 🤯
+  "\u{1F525}": "#ffb800", // 🔥
+  "\u{2764}\u{FE0F}": "#ff66b3", // ❤️
+  "\u{1F4AF}": "#a3e600", // 💯
+  "\u{1F44F}": "#5c8aff", // 👏
+  "\u{1F44D}": "#ff5c8a", // 👍
+  "\u{1F440}": "#ff4444", // 👀
+  "\u{1F480}": "#ff8c42", // 💀
+  "\u{1F602}": "#b866ff", // 😂
+  "\u{1F921}": "#ffd700", // 🤡
+  "\u{1F4A9}": "#66ffcc", // 💩
+  "\u{1F44E}": "#ff2a6d", // 👎
+};
+
 // ── per-event render state ──────────────────────────────────────────────
 
 interface EmojiSprite {
@@ -310,7 +326,7 @@ function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
           position: "relative",
           minWidth: 480,
           color: "#ffffff",
-          fontSize: "1.5rem",
+          fontSize: "2rem",
           letterSpacing: "0.04em",
           textShadow:
             `0 0 12px rgba(0,0,0,0.5), 0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66`,
@@ -354,7 +370,9 @@ function EmojiFloat({ sprite, tile }: EmojiFloatProps) {
           transform: "translate(-50%, -50%)",
           fontSize: 56,
           lineHeight: 1,
-          filter: "drop-shadow(0 0 12px rgba(0, 0, 0, 0.55))",
+          filter: EMOJI_COLOURS[sprite.emoji]
+            ? `drop-shadow(0 0 12px ${EMOJI_COLOURS[sprite.emoji]}aa) drop-shadow(0 0 24px ${EMOJI_COLOURS[sprite.emoji]}66) drop-shadow(0 0 4px rgba(0, 0, 0, 0.7))`
+            : "drop-shadow(0 0 12px rgba(0, 0, 0, 0.55))",
           // Keep emoji glyphs from getting AA'd into mush.
           fontFamily:
             '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
