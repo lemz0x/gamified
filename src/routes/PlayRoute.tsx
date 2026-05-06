@@ -273,12 +273,14 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             window.setTimeout(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             }, 0);
-            // Start circuit-breaker: re-apply mic:false every 1s for 5 mins.
+            // Short circuit-breaker: re-apply mic:false every 500ms for 3s
+            // so the mute actually sticks before guest can immediately toggle back.
+            // After 3s the guest regains full mute toggle control.
             stopForceMute();
             muteIntervalRef.current = window.setInterval(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
-            }, 1000);
-            window.setTimeout(() => stopForceMute(), 300_000);
+            }, 500);
+            window.setTimeout(() => stopForceMute(), 3000);
           }
           if (isTarget || identity.kind === "host") {
             // Notify host that this seat was muted so UI stays in sync.
