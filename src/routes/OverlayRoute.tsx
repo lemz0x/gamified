@@ -231,7 +231,7 @@ function fireCardAnnounce(
   setAnnounce: React.Dispatch<React.SetStateAction<CardAnnounce | null>>,
 ) {
   const cardDef = CARDS.find((c) => c.id === msg.cardId);
-  const cardName = cardDef?.name ?? msg.cardId.toUpperCase();
+  const cardName = cardDef?.shortName ?? cardDef?.name ?? msg.cardId.toUpperCase();
   const fromName =
     msg.from.kind === "host"
       ? hostName
@@ -459,7 +459,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           ].join(", "),
         }}
       >
-        {"STFU"}
+        {"SHUT THE\\n!@#$ UP!!"}
       </div>
     </div>
   );
