@@ -32,6 +32,7 @@ const SEAT_ORDER: readonly SeatId[] = ["L1", "L2", "L3", "R1", "R2", "R3"];
 
 // Same key used by /play so both surfaces stay in sync via localStorage.
 const ROSTER_STORAGE_KEY = "gamified.roster.v1";
+const HOST_NAME_STORAGE_KEY = "gamified.hostName.v1";
 /**
  * Producer-side persistence of the latest reset epoch. We re-announce
  * this on every wrapper getResetEpoch request so a wrapper that joined
@@ -94,6 +95,24 @@ function persistRoster(roster: Record<SeatId, string>): void {
     window.localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify(roster));
   } catch {
     // ignore quota / disabled storage
+  }
+}
+
+function loadHostName(): string {
+  if (typeof window === "undefined") return "HOST";
+  try {
+    return window.localStorage.getItem(HOST_NAME_STORAGE_KEY) ?? "HOST";
+  } catch {
+    return "HOST";
+  }
+}
+
+function saveHostName(name: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HOST_NAME_STORAGE_KEY, name);
+  } catch {
+    // ignore
   }
 }
 
@@ -181,6 +200,8 @@ function ProducerPanel() {
   const [roster, setRoster] = useState<Record<SeatId, string>>(loadRoster);
   // Form state — separate from `roster` so the user can edit then Save.
   const [draftRoster, setDraftRoster] = useState<Record<SeatId, string>>(roster);
+  const [hostName, setHostName] = useState<string>(loadHostName);
+  const [draftHostName, setDraftHostName] = useState<string>(hostName);
   const [calibrate, setCalibrate] = useState(false);
   const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
   const [feed, setFeed] = useState<readonly FeedEntry[]>([]);
@@ -189,7 +210,8 @@ function ProducerPanel() {
   // wrappers that join after a reset still catch up.
   const resetEpochRef = useRef<number>(loadResetEpoch());
   const rosterDirty =
-    SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]);
+    SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
+    draftHostName !== hostName;
 
   // Forward-declared sender so the message handler can re-broadcast on
   // demand without depending on `send` (which would create a cycle).
@@ -211,6 +233,10 @@ function ProducerPanel() {
       if (msg.type === "rosterUpdate") {
         setRoster(msg.names);
         setDraftRoster(msg.names);
+        if (msg.hostName !== undefined) {
+          setHostName(msg.hostName);
+          setDraftHostName(msg.hostName);
+        }
       }
       if (msg.type === "calibration") {
         setTiles(msg.tiles);
@@ -244,13 +270,16 @@ function ProducerPanel() {
 
   const saveRoster = useCallback(() => {
     setRoster(draftRoster);
+    setHostName(draftHostName);
     persistRoster(draftRoster);
-    send({ type: "rosterUpdate", names: draftRoster, ts: Date.now() });
-  }, [draftRoster, send]);
+    saveHostName(draftHostName);
+    send({ type: "rosterUpdate", names: draftRoster, hostName: draftHostName, ts: Date.now() });
+  }, [draftRoster, draftHostName, send]);
 
   const resetRoster = useCallback(() => {
     const fresh = defaultRoster();
     setDraftRoster(fresh);
+    setDraftHostName("HOST");
   }, []);
 
   const fireResetCards = useCallback(() => {
@@ -332,6 +361,17 @@ function ProducerPanel() {
             </label>
           ))}
         </div>
+        <label style={styles.rosterField}>
+          <span style={styles.rosterFieldLabel}>Host name</span>
+          <input
+            type="text"
+            value={draftHostName}
+            onChange={(e) => setDraftHostName(e.target.value)}
+            style={styles.input}
+            spellCheck={false}
+            placeholder="HOST"
+          />
+        </label>
         <div style={styles.row}>
           <button
             type="button"

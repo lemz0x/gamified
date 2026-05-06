@@ -22,6 +22,8 @@ export const EMOJIS = [
   "\u{1F44D}", // 👍
   "\u{1F44E}", // 👎
   "\u{1F4A9}", // 💩
+  "\u{1F44F}", // 👏
+  "\u{2764}\u{FE0F}", // ❤️
 ] as const;
 
 /**

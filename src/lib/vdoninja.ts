@@ -238,6 +238,8 @@ export interface RosterUpdateEvent {
   type: "rosterUpdate";
   /** Full map keyed by seat — every seat must be present. */
   names: Record<SeatId, string>;
+  /** Host's display name (for card announcements). */
+  hostName?: string;
   ts: number;
 }
 

@@ -273,6 +273,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             window.setTimeout(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             }, 0);
+            // Start circuit-breaker: re-apply mic:false every 1s for 5 mins.
+            stopForceMute();
+            muteIntervalRef.current = window.setInterval(() => {
+              muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+            }, 1000);
+            window.setTimeout(() => stopForceMute(), 300_000);
           }
           if (isTarget || identity.kind === "host") {
             // Notify host that this seat was muted so UI stays in sync.
@@ -288,6 +294,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             msg.target === "all" ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
+            stopForceMute();
             window.setTimeout(() => {
               muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
             }, 0);
@@ -314,6 +321,18 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   useEffect(() => {
     muteIframeRef.current = iframeRef.current;
   });
+
+  // Circuit-breaker: when host force-mutes this guest, re-apply mic:false
+  // every 1s for up to 5 mins, preventing self-unmute. Stopped by host
+  // unmute or timeout.
+  const muteIntervalRef = useRef<number | null>(null);
+  const stopForceMute = useCallback(() => {
+    if (muteIntervalRef.current !== null) {
+      window.clearInterval(muteIntervalRef.current);
+      muteIntervalRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => stopForceMute(), [stopForceMute]);
 
   // On mount, ask the producer to (re)announce the latest reset epoch so
   // we can catch up on any reset broadcast that fired while we were closed.
@@ -829,11 +848,18 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
     send({ type: "muteGuest", target: "all", ts: Date.now() });
     setMutedSeats(new Set(SEAT_ORDER));
   }, [send]);
+  const unmuteAll = useCallback(() => {
+    send({ type: "unmuteGuest", target: "all", ts: Date.now() });
+    setMutedSeats(new Set());
+  }, [send]);
 
   return (
     <section style={styles.mutePanel}>
       <div style={styles.mutePanelHeader}>
         <span style={styles.mutePanelTitle}>GUEST MUTE</span>
+        <button type="button" onClick={unmuteAll} style={styles.unmuteAllBtn}>
+          UNMUTE ALL
+        </button>
         <button type="button" onClick={muteAll} style={styles.muteAllBtn}>
           MUTE ALL
         </button>
@@ -979,7 +1005,7 @@ const styles: Record<string, CSSProperties> = {
   },
   emojiGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 8,
   },
   emoji: {
