@@ -291,6 +291,13 @@ export interface UnmuteGuestEvent {
   ts: number;
 }
 
+/** Guest's 3s circuit-breaker expired. Host should clear the red highlight. */
+export interface MuteCooldownDoneEvent {
+  type: "muteCooldownDone";
+  target: SeatId;
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -300,7 +307,8 @@ export type EventPayload =
   | GetResetEpochEvent
   | CalibrationEvent
   | MuteGuestEvent
-  | UnmuteGuestEvent;
+  | UnmuteGuestEvent
+  | MuteCooldownDoneEvent;
 
 // ── Iframe data channel ─────────────────────────────────────────────────
 
