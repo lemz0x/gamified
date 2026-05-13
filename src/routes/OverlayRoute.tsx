@@ -59,6 +59,22 @@ const CALIBRATION_COLORS: Record<SeatId, string> = {
   R3: "#ff5454",
 };
 
+/** Per-emoji brand glow colours for overlay sprite effects. */
+const EMOJI_COLOURS: Record<string, string> = {
+  "\u{1F92F}": "#00e5ff", // 🤯
+  "\u{1F525}": "#ffb800", // 🔥
+  "\u{2764}\u{FE0F}": "#ff66b3", // ❤️
+  "\u{1F4AF}": "#a3e600", // 💯
+  "\u{1F44F}": "#5c8aff", // 👏
+  "\u{1F44D}": "#ff5c8a", // 👍
+  "\u{1F440}": "#ff4444", // 👀
+  "\u{1F480}": "#ff8c42", // 💀
+  "\u{1F602}": "#b866ff", // 😂
+  "\u{1F921}": "#ffd700", // 🤡
+  "\u{1F4A9}": "#66ffcc", // 💩
+  "\u{1F44E}": "#ff2a6d", // 👎
+};
+
 // ── per-event render state ──────────────────────────────────────────────
 
 interface EmojiSprite {
@@ -80,8 +96,12 @@ interface CardSprite {
 interface CardAnnounce {
   /** Unique id for React key. */
   id: string;
-  /** First line of text: "X played CARD". */
-  text: string;
+  /** Card id for icon/font rendering. */
+  cardId: CardId;
+  /** Who played it. */
+  fromName: string;
+  /** Card display slug (STFU / MIC DROP). */
+  cardSlug: string;
   /** Second line: "on Y". */
   text2: string;
   /** Card theme color for the glow. */
@@ -247,7 +267,9 @@ function fireCardAnnounce(
   const id = `ca-${Date.now()}`;
   setAnnounce({
     id,
-    text: `${fromName} played ${cardName}`,
+    cardId: msg.cardId,
+    fromName,
+    cardSlug: cardName,
     text2: `on ${targetName}`,
     color: CARD_COLORS[msg.cardId] ?? "#ffffff",
   });
@@ -279,15 +301,6 @@ function handleEmoji(
 // ── sprites ─────────────────────────────────────────────────────────────
 
 function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
-  // STFU-style stacked text-shadow treatment — much heavier and dramatic.
-  const textShadow = [
-    `3px 3px 0 ${announce.color}`,
-    `4px 4px 0 ${announce.color}`,
-    `5px 5px 0 ${announce.color}`,
-    "7px 7px 0 #000",
-    `0 0 28px ${announce.color}cc`,
-  ].join(", ");
-
   return (
     <div
       style={{
@@ -302,22 +315,24 @@ function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
     >
       <div
         style={{
-          padding: "20px 48px",
+          padding: "18px 48px",
           borderRadius: 16,
           background: "rgba(10, 6, 16, 0.90)",
           border: `3px solid ${announce.color}`,
           boxShadow: `0 0 50px ${announce.color}88, 0 0 100px ${announce.color}44`,
-          fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+          fontFamily: '"Orbitron", sans-serif',
           fontWeight: 900,
-          fontSize: 48,
-          letterSpacing: 1,
-          color: "#ffffff",
           textAlign: "center",
-          textShadow,
+          position: "relative",
+          minWidth: 480,
+          color: "#ffffff",
+          fontSize: "2rem",
+          letterSpacing: "0.04em",
+          textShadow:
+            `0 0 12px rgba(0,0,0,0.5), 0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66`,
         }}
       >
-        <div style={{ lineHeight: 1.15 }}>{announce.text}</div>
-        <div style={{ lineHeight: 1.15, marginTop: 2 }}>{announce.text2}</div>
+        {announce.fromName} played {announce.cardSlug} {announce.text2}
       </div>
     </div>
   );
@@ -355,7 +370,9 @@ function EmojiFloat({ sprite, tile }: EmojiFloatProps) {
           transform: "translate(-50%, -50%)",
           fontSize: 56,
           lineHeight: 1,
-          filter: "drop-shadow(0 0 12px rgba(0, 0, 0, 0.55))",
+          filter: EMOJI_COLOURS[sprite.emoji]
+            ? `drop-shadow(0 0 12px ${EMOJI_COLOURS[sprite.emoji]}aa) drop-shadow(0 0 24px ${EMOJI_COLOURS[sprite.emoji]}66) drop-shadow(0 0 4px rgba(0, 0, 0, 0.7))`
+            : "drop-shadow(0 0 12px rgba(0, 0, 0, 0.55))",
           // Keep emoji glyphs from getting AA'd into mush.
           fontFamily:
             '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
@@ -434,7 +451,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           animation: "stfuFlash 2500ms ease-out forwards",
         }}
       />
-      {/* The slam text — heavier drop-shadow stack for v1.2 intensity. */}
+      {/* The slam text — Orbitron with atmospheric glow. */}
       <div
         style={{
           position: "absolute",
@@ -446,7 +463,7 @@ function StfuCard({ tile }: { tile: Tile }) {
           animation:
             "stfuSlamText 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) forwards",
           fontFamily:
-            '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+            '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize,
           lineHeight: 0.95,
@@ -455,14 +472,10 @@ function StfuCard({ tile }: { tile: Tile }) {
           textAlign: "center",
           whiteSpace: "pre",
           textShadow: [
-            // Tripled red offset — heavier brand stamp
-            "3px 3px 0 #ff2e6b",
-            "4px 4px 0 #ff2e6b",
-            "5px 5px 0 #ff2e6b",
-            // Black offset further out for depth
-            "7px 7px 0 #000",
-            // Stronger outer red glow
-            "0 0 24px rgba(255, 46, 107, 1)",
+            "0 0 8px rgba(0,0,0,0.55)",
+            "0 0 22px rgba(255,46,107,0.7)",
+            "0 0 55px rgba(255,46,107,0.44)",
+            "0 0 90px rgba(255,46,107,0.22)",
           ].join(", "),
         }}
       >
@@ -552,7 +565,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
       >
         {"\u{1F3A4}"}
       </div>
-      {/* Slam text — centered in the tile like STFU */}
+      {/* Slam text — Orbitron with atmospheric green glow */}
       <div
         style={{
           position: "absolute",
@@ -564,7 +577,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
           animation:
             "micSlamText 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) 300ms forwards",
           fontFamily:
-            '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+            '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize,
           letterSpacing: 1.5,
@@ -572,11 +585,10 @@ function MicDropCard({ tile }: { tile: Tile }) {
           textAlign: "center",
           whiteSpace: "nowrap",
           textShadow: [
-            "3px 3px 0 #00d96b",
-            "4px 4px 0 #00d96b",
-            "5px 5px 0 #00d96b",
-            "7px 7px 0 #000",
-            "0 0 24px rgba(0, 217, 107, 1)",
+            "0 0 8px rgba(0,0,0,0.55)",
+            "0 0 22px rgba(0,217,107,0.7)",
+            "0 0 55px rgba(0,217,107,0.44)",
+            "0 0 90px rgba(0,217,107,0.22)",
           ].join(", "),
         }}
       >
