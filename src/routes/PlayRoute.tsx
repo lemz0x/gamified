@@ -244,7 +244,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [chatMessages, setChatMessages] = useState<readonly ChatMessage[]>([]);
   const chatIdRef = useRef(0);
   const nextChatId = () => `c${chatIdRef.current++}`;
-  const { buzzingSeats, buzz: buzzSeat } = useBuzzState();
+  const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
@@ -341,14 +341,18 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           break;
         }
         case "buzzIn": {
-          buzzSeat(msg.seat);
+          buzzOn(msg.seat);
+          break;
+        }
+        case "buzzOff": {
+          buzzOff(msg.seat);
           break;
         }
         default:
           break;
       }
     },
-    [identity, buzzSeat],
+    [identity, buzzOn, buzzOff],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -557,9 +561,16 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           <BuzzPanel
             roster={roster}
             buzzingSeats={buzzingSeats}
-            onBuzz={() => {
-              buzzSeat(identity.seat);
-              send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+            isBuzzing={buzzingSeats.has(identity.seat)}
+            onBuzzToggle={() => {
+              const nowOn = !buzzingSeats.has(identity.seat);
+              if (nowOn) {
+                buzzOn(identity.seat);
+                send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+              } else {
+                buzzOff(identity.seat);
+                send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+              }
             }}
             variant="play"
           />
