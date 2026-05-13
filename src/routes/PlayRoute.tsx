@@ -468,6 +468,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         targetLabel: target.label,
         ts: Date.now(),
       });
+      // Play SFX locally so the guest who played the card hears it immediately.
+      const sfx = card.id === "stfu" ? "/sfx/stfu.mp3" : "/sfx/micdrop.mp3";
+      new Audio(sfx).play().catch(() => {});
       setCardUses((prev) => {
         const next = { ...prev, [card.id]: prev[card.id] + 1 };
         saveCardUses(identity, next);
