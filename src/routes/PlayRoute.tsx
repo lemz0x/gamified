@@ -279,8 +279,22 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           break;
         }
-        // Other event types (emoji, cardPlay, calibration, getResetEpoch)
+        // Other event types (emoji, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
+        case "cardPlay": {
+          // Play SFX so everyone hears the card sound.
+          // Skip if this guest sent it — playCard() already played it locally.
+          const isSelf =
+            identity.kind === "guest" &&
+            msg.from.kind === "guest" &&
+            msg.from.seat === identity.seat;
+          if (!isSelf) {
+            new Audio(msg.cardId === "stfu" ? "/sfx/stfu.mp3" : "/sfx/micdrop.mp3")
+              .play()
+              .catch(() => {});
+          }
+          break;
+        }
         case "muteGuest": {
           // Soft mute: mute self via iframe if we're the target (or all).
           if (identity.kind === "editor") break;
