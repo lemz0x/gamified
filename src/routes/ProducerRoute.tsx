@@ -210,7 +210,7 @@ function ProducerPanel() {
   // Latest reset epoch we've fired (persisted) — re-announced on demand so
   // wrappers that join after a reset still catch up.
   const resetEpochRef = useRef<number>(loadResetEpoch());
-  const { buzzingSeats, buzz: buzzSeat } = useBuzzState();
+  const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const rosterDirty =
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
     draftHostName !== hostName;
@@ -244,7 +244,10 @@ function ProducerPanel() {
         setTiles(msg.tiles);
       }
       if (msg.type === "buzzIn") {
-        buzzSeat(msg.seat);
+        buzzOn(msg.seat);
+      }
+      if (msg.type === "buzzOff") {
+        buzzOff(msg.seat);
       }
       // A wrapper just mounted; re-announce the latest reset epoch so it
       // can catch up on any reset that fired before it was open.
@@ -262,7 +265,7 @@ function ProducerPanel() {
         });
       }
     },
-    [roster, buzzSeat],
+    [roster, buzzOn, buzzOff],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });

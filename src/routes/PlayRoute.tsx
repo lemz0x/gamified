@@ -177,19 +177,19 @@ const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
   };
 
 /** Per-emoji brand glow colours for hover effects. */
-const EMOJI_COLOURS: Record<string, string> = {
-  "\u{1F92F}": "#00e5ff", // 🤯
-  "\u{1F525}": "#ffb800", // 🔥
-  "\u{2764}\u{FE0F}": "#ff66b3", // ❤️
-  "\u{1F4AF}": "#a3e600", // 💯
-  "\u{1F44F}": "#5c8aff", // 👏
-  "\u{1F44D}": "#ff5c8a", // 👍
-  "\u{1F440}": "#ff4444", // 👀
-  "\u{1F480}": "#ff8c42", // 💀
-  "\u{1F602}": "#b866ff", // 😂
-  "\u{1F921}": "#ffd700", // 🤡
-  "\u{1F4A9}": "#66ffcc", // 💩
-  "\u{1F44E}": "#ff2a6d", // 👎
+const EMOJI_COLOURS: Record<string, { hex: string; core: number; spread: number }> = {
+  "\u{1F92F}": { hex: "#00e5ff", core: 0.50, spread: 20 },   // 🤯
+  "\u{1F525}": { hex: "#ffb800", core: 0.55, spread: 20 },   // 🔥
+  "\u{2764}\u{FE0F}": { hex: "#ff66b3", core: 0.50, spread: 20 },   // ❤️
+  "\u{1F4AF}": { hex: "#a3e600", core: 0.60, spread: 24 },   // 💯
+  "\u{1F44F}": { hex: "#5c8aff", core: 0.50, spread: 20 },   // 👏
+  "\u{1F44D}": { hex: "#ff5c8a", core: 0.50, spread: 20 },   // 👍
+  "\u{1F602}": { hex: "#b866ff", core: 0.50, spread: 20 },   // 😂
+  "\u{1F480}": { hex: "#ff8c42", core: 0.50, spread: 20 },   // 💀
+  "\u{1F440}": { hex: "#ff4444", core: 0.50, spread: 20 },   // 👀
+  "\u{1F921}": { hex: "#ffd700", core: 0.70, spread: 26 },   // 🤡
+  "\u{1F4A9}": { hex: "#66ffcc", core: 0.60, spread: 24 },   // 💩
+  "\u{1F44E}": { hex: "#ff2a6d", core: 0.55, spread: 22 },   // 👎
 };
 
 // ── component ────────────────────────────────────────────────────────────
@@ -244,7 +244,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [chatMessages, setChatMessages] = useState<readonly ChatMessage[]>([]);
   const chatIdRef = useRef(0);
   const nextChatId = () => `c${chatIdRef.current++}`;
-  const { buzzingSeats, buzz: buzzSeat } = useBuzzState();
+  const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
@@ -341,14 +341,18 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           break;
         }
         case "buzzIn": {
-          buzzSeat(msg.seat);
+          buzzOn(msg.seat);
+          break;
+        }
+        case "buzzOff": {
+          buzzOff(msg.seat);
           break;
         }
         default:
           break;
       }
     },
-    [identity, buzzSeat],
+    [identity, buzzOn, buzzOff],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -464,6 +468,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         targetLabel: target.label,
         ts: Date.now(),
       });
+      // Play SFX locally so the guest who played the card hears it immediately.
+      const sfx = card.id === "stfu" ? "/sfx/stfu.mp3" : "/sfx/micdrop.mp3";
+      new Audio(sfx).play().catch(() => {});
       setCardUses((prev) => {
         const next = { ...prev, [card.id]: prev[card.id] + 1 };
         saveCardUses(identity, next);
@@ -557,9 +564,16 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           <BuzzPanel
             roster={roster}
             buzzingSeats={buzzingSeats}
-            onBuzz={() => {
-              buzzSeat(identity.seat);
-              send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+            isBuzzing={buzzingSeats.has(identity.seat)}
+            onBuzzToggle={() => {
+              const nowOn = !buzzingSeats.has(identity.seat);
+              if (nowOn) {
+                buzzOn(identity.seat);
+                send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+              } else {
+                buzzOff(identity.seat);
+                send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+              }
             }}
             variant="play"
           />
@@ -670,6 +684,11 @@ interface EmojiButtonProps {
 function EmojiButton({ emoji, pulsing, onClick }: EmojiButtonProps) {
   const [hovered, setHovered] = useState(false);
   const brand = EMOJI_COLOURS[emoji];
+  // Build hover glow from per-emoji brand data for visibility on video backgrounds.
+  // core = radial gradient centre opacity, spread = outer glow radius in px.
+  const outerGlow = brand ? `0 0 ${brand.spread}px ${brand.hex}b3` : "";
+  const innerGlow = brand ? `inset 0 0 ${Math.round(brand.spread / 2)}px ${brand.hex}33` : "";
+  const coreAlpha = brand ? Math.round(brand.core * 255).toString(16).padStart(2, "0") : "00";
   return (
     <button
       type="button"
@@ -682,19 +701,22 @@ function EmojiButton({ emoji, pulsing, onClick }: EmojiButtonProps) {
         boxShadow: pulsing
           ? `0 0 22px ${NEON.cyan}cc, 0 0 12px ${NEON.pink}99`
           : hovered && brand
-            ? `0 0 14px ${brand}66`
+            ? `${outerGlow}, ${innerGlow}`
             : "0 0 0 1px rgba(255,255,255,0.04)",
         background: pulsing
           ? "rgba(34, 226, 255, 0.15)"
           : hovered && brand
-            ? `radial-gradient(circle at center, ${brand}25, #13131c 70%)`
+            ? `radial-gradient(circle at center, ${brand.hex}${coreAlpha}, #13131c 70%)`
             : "#13131c",
-        border: hovered && brand ? `1px solid ${brand}44` : 0,
+        border: hovered && brand ? `1px solid ${brand.hex}66` : 0,
+        transition:
+          "transform 120ms ease-out, box-shadow 180ms ease-out, background 180ms ease-out, border-color 180ms ease-out",
       }}
     >
       <span style={{
         ...styles.emojiGlyph,
-        filter: hovered && brand ? `drop-shadow(0 0 6px ${brand}88)` : "none",
+        filter: hovered && brand ? `drop-shadow(0 0 6px ${brand.hex}99)` : "none",
+        transition: "filter 180ms ease-out",
       }}>{emoji}</span>
     </button>
   );
@@ -1154,8 +1176,6 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    transition:
-      "transform 120ms ease-out, box-shadow 180ms ease-out, background 180ms ease-out",
     fontFamily: "inherit",
   },
   emojiGlyph: {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { SeatId } from "../coords";
 
 // ── seat layout ──────────────────────────────────────────────────────────
@@ -11,17 +11,19 @@ const RIGHT_SEATS: readonly SeatId[] = ["R1", "R2", "R3"];
 interface BuzzPanelProps {
   /** Roster names from producer. */
   roster: Record<SeatId, string>;
-  /** Which seats are currently glowing. */
+  /** Which seats are currently buzzing. */
   buzzingSeats: Set<SeatId>;
-  /** Called when the buzzer button is clicked. Only wired for guests. */
-  onBuzz?: () => void;
+  /** Whether this guest's own buzzer is active (for toggle styling). */
+  isBuzzing?: boolean;
+  /** Called when the buzzer button is toggled. Only wired for guests. */
+  onBuzzToggle?: () => void;
   /** "play" for the neon dark wrapper, "producer" for the producer panel. */
   variant: "play" | "producer";
 }
 
 // ── component ────────────────────────────────────────────────────────────
 
-export function BuzzPanel({ roster, buzzingSeats, onBuzz, variant }: BuzzPanelProps) {
+export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, variant }: BuzzPanelProps) {
   const isPlay = variant === "play";
 
   const nameBox = (seat: SeatId) => {
@@ -63,11 +65,13 @@ export function BuzzPanel({ roster, buzzingSeats, onBuzz, variant }: BuzzPanelPr
     );
   };
 
+  const active = !!isBuzzing;
+
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: onBuzz ? "1fr 1fr 1fr auto" : "1fr 1fr 1fr",
+        gridTemplateColumns: onBuzzToggle ? "1fr 1fr 1fr auto" : "1fr 1fr 1fr",
         gridTemplateRows: "1fr 1fr",
         gap: 6,
         ...(isPlay ? {} : { marginTop: 4 }),
@@ -77,42 +81,32 @@ export function BuzzPanel({ roster, buzzingSeats, onBuzz, variant }: BuzzPanelPr
       {LEFT_SEATS.map((seat) => nameBox(seat))}
       {/* Row 2: right seats */}
       {RIGHT_SEATS.map((seat) => nameBox(seat))}
-      {/* Buzzer button — spans both rows */}
-      {onBuzz && (
+      {/* Buzzer toggle button — spans both rows */}
+      {onBuzzToggle && (
         <button
           type="button"
-          onClick={onBuzz}
+          onClick={onBuzzToggle}
           style={{
             gridRow: "1 / 3",
             gridColumn: 4,
-            background: "linear-gradient(135deg, #ff2e6b 0%, #cc1a4a 100%)",
-            border: "2px solid #ff5482",
+            background: active
+              ? "linear-gradient(135deg, #00e676 0%, #00c853 100%)"
+              : "linear-gradient(135deg, #ff2e6b 0%, #cc1a4a 100%)",
+            border: active
+              ? "2px solid #69f0ae"
+              : "2px solid #ff5482",
             borderRadius: 10,
             color: "#fff",
             fontWeight: 900,
             fontSize: 14,
             letterSpacing: 1,
             cursor: "pointer",
-            textShadow: "0 0 10px rgba(255, 46, 107, 0.6)",
-            boxShadow:
-              "0 0 12px rgba(255, 46, 107, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
-            transition: "transform 60ms ease-out, box-shadow 60ms ease-out",
+            textShadow: "0 0 10px rgba(255, 255, 255, 0.3)",
+            boxShadow: active
+              ? "0 0 16px rgba(0, 230, 118, 0.5), 0 0 32px rgba(0, 230, 118, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)"
+              : "0 0 12px rgba(255, 46, 107, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
+            transition: "background 150ms, border-color 150ms, box-shadow 150ms, transform 60ms ease-out",
             userSelect: "none",
-          }}
-          onPointerDown={(e) => {
-            (e.currentTarget.style.transform = "scale(0.95)"),
-              (e.currentTarget.style.boxShadow =
-                "0 0 6px rgba(255, 46, 107, 0.2), inset 0 2px 4px rgba(0,0,0,0.3)");
-          }}
-          onPointerUp={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-            e.currentTarget.style.boxShadow =
-              "0 0 12px rgba(255, 46, 107, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)";
-          }}
-          onPointerLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-            e.currentTarget.style.boxShadow =
-              "0 0 12px rgba(255, 46, 107, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)";
           }}
         >
           BUZZ
@@ -122,44 +116,28 @@ export function BuzzPanel({ roster, buzzingSeats, onBuzz, variant }: BuzzPanelPr
   );
 }
 
-// ── hook: manages buzzing seat state with auto-expiry ─────────────────────
-
-const BUZZ_GLOW_MS = 1000;
+// ── hook: manages buzzing seat state (persistent toggle) ──────────────────
 
 export function useBuzzState() {
   const [buzzingSeats, setBuzzingSeats] = useState<Set<SeatId>>(new Set());
-  const timers = useRef<Map<SeatId, number>>(new Map());
 
-  const buzz = useCallback((seat: SeatId) => {
+  const buzzOn = useCallback((seat: SeatId) => {
     setBuzzingSeats((prev) => {
+      if (prev.has(seat)) return prev;
       const next = new Set(prev);
       next.add(seat);
       return next;
     });
-    // Clear any existing timer for this seat and start a fresh one.
-    const existing = timers.current.get(seat);
-    if (existing !== undefined) window.clearTimeout(existing);
-    timers.current.set(
-      seat,
-      window.setTimeout(() => {
-        setBuzzingSeats((prev) => {
-          const next = new Set(prev);
-          next.delete(seat);
-          return next;
-        });
-        timers.current.delete(seat);
-      }, BUZZ_GLOW_MS),
-    );
   }, []);
 
-  // Clean up all timers on unmount.
-  useEffect(() => {
-    const map = timers.current;
-    return () => {
-      for (const id of map.values()) window.clearTimeout(id);
-      map.clear();
-    };
+  const buzzOff = useCallback((seat: SeatId) => {
+    setBuzzingSeats((prev) => {
+      if (!prev.has(seat)) return prev;
+      const next = new Set(prev);
+      next.delete(seat);
+      return next;
+    });
   }, []);
 
-  return { buzzingSeats, buzz };
+  return { buzzingSeats, buzzOn, buzzOff };
 }

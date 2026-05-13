@@ -305,6 +305,13 @@ export interface BuzzInEvent {
   ts: number;
 }
 
+/** Guest turned their buzzer off. */
+export interface BuzzOffEvent {
+  type: "buzzOff";
+  seat: SeatId;
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -316,7 +323,8 @@ export type EventPayload =
   | MuteGuestEvent
   | UnmuteGuestEvent
   | MuteCooldownDoneEvent
-  | BuzzInEvent;
+  | BuzzInEvent
+  | BuzzOffEvent;
 
 // ── Iframe data channel ─────────────────────────────────────────────────
 
