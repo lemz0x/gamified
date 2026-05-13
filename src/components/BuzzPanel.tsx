@@ -90,28 +90,26 @@ export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, varia
             gridRow: "1 / 3",
             gridColumn: 4,
             background: active
-              ? "linear-gradient(135deg, #ffbe0b 0%, #e6a800 100%)"
+              ? "linear-gradient(135deg, #00e676 0%, #00c853 100%)"
               : "linear-gradient(135deg, #ff2e6b 0%, #cc1a4a 100%)",
             border: active
-              ? "2px solid #ffd24d"
+              ? "2px solid #69f0ae"
               : "2px solid #ff5482",
             borderRadius: 10,
-            color: active ? "#1a1a2e" : "#fff",
+            color: "#fff",
             fontWeight: 900,
             fontSize: 14,
             letterSpacing: 1,
             cursor: "pointer",
-            textShadow: active
-              ? "none"
-              : "0 0 10px rgba(255, 46, 107, 0.6)",
+            textShadow: "0 0 10px rgba(255, 255, 255, 0.3)",
             boxShadow: active
-              ? "0 0 16px rgba(255, 190, 11, 0.5), 0 0 32px rgba(255, 190, 11, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)"
+              ? "0 0 16px rgba(0, 230, 118, 0.5), 0 0 32px rgba(0, 230, 118, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)"
               : "0 0 12px rgba(255, 46, 107, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
-            transition: "background 150ms, border-color 150ms, color 150ms, box-shadow 150ms, transform 60ms ease-out",
+            transition: "background 150ms, border-color 150ms, box-shadow 150ms, transform 60ms ease-out",
             userSelect: "none",
           }}
         >
-          {active ? "ON" : "BUZZ"}
+          BUZZ
         </button>
       )}
     </div>
