@@ -68,7 +68,7 @@ const EMOJI_COLOURS: Record<string, string> = {
   "\u{2764}\u{FE0F}": "#ff66b3", // ❤️
   "\u{1F4AF}": "#a3e600", // 💯
   "\u{1F44F}": "#5c8aff", // 👏
-  "\u{1F44D}": "#ff5c8a", // 👍
+  "\u{1F44D}": "#00e676", // 👍
   "\u{1F440}": "#ff4444", // 👀
   "\u{1F480}": "#ff8c42", // 💀
   "\u{1F602}": "#b866ff", // 😂
