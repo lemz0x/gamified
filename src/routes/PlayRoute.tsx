@@ -247,6 +247,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const nextChatId = () => `c${chatIdRef.current++}`;
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
+  // Auto-off timer: buzzers auto-clear after 30s so nobody forgets to turn off.
+  const buzzTimerRef = useRef<number | null>(null);
+
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
     (msg: EventPayload) => {
@@ -391,6 +394,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     }
   }, []);
   useEffect(() => () => stopForceMute(), [stopForceMute]);
+  // Clean up buzz auto-off timer on unmount.
+  useEffect(() => () => { if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current); }, []);
 
   // On mount, ask the producer to (re)announce the latest reset epoch so
   // we can catch up on any reset broadcast that fired while we were closed.
@@ -585,9 +590,21 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               if (nowOn) {
                 buzzOn(identity.seat);
                 send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+                // Auto-off after 30s so nobody stays buzzing forever.
+                if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
+                buzzTimerRef.current = window.setTimeout(() => {
+                  buzzOff(identity.seat);
+                  send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+                  buzzTimerRef.current = null;
+                }, 30_000);
               } else {
                 buzzOff(identity.seat);
                 send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+                // Manual off cancels the auto-off timer.
+                if (buzzTimerRef.current !== null) {
+                  window.clearTimeout(buzzTimerRef.current);
+                  buzzTimerRef.current = null;
+                }
               }
             }}
             variant="play"
