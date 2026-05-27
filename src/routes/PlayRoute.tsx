@@ -20,6 +20,7 @@ import {
   type EventSender,
 } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
+import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -289,9 +290,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             msg.from.kind === "guest" &&
             msg.from.seat === identity.seat;
           if (!isSelf) {
-            new Audio(msg.cardId === "stfu" ? "/sfx/stfu.mp3" : "/sfx/micdrop.mp3")
-              .play()
-              .catch(() => {});
+            playCardSfx(msg.cardId);
           }
           break;
         }
@@ -370,6 +369,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
+
+  // Preload card SFX so first play is instant (no network delay).
+  useEffect(() => { preloadCardSfx(); }, []);
 
   // Bridge ref so the onMessage handler (which closes over identity but
   // not iframeRef) can still reach the iframe for mute commands.
@@ -483,8 +485,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         ts: Date.now(),
       });
       // Play SFX locally so the guest who played the card hears it immediately.
-      const sfx = card.id === "stfu" ? "/sfx/stfu.mp3" : "/sfx/micdrop.mp3";
-      new Audio(sfx).play().catch(() => {});
+      playCardSfx(card.id);
       setCardUses((prev) => {
         const next = { ...prev, [card.id]: prev[card.id] + 1 };
         saveCardUses(identity, next);

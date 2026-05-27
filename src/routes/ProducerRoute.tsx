@@ -26,6 +26,7 @@ import {
   isProducerAuthenticated,
   persistProducerAuth,
 } from "../lib/auth";
+import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
 // ── shared seat plumbing ────────────────────────────────────────────────
 
@@ -249,6 +250,9 @@ function ProducerPanel() {
       if (msg.type === "buzzOff") {
         buzzOff(msg.seat);
       }
+      if (msg.type === "cardPlay") {
+        playCardSfx(msg.cardId);
+      }
       // A wrapper just mounted; re-announce the latest reset epoch so it
       // can catch up on any reset that fired before it was open.
       if (msg.type === "getResetEpoch" && resetEpochRef.current > 0) {
@@ -269,6 +273,9 @@ function ProducerPanel() {
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
+  // Preload card SFX so first play is instant (no network delay).
+  useEffect(() => { preloadCardSfx(); }, []);
+
   // Keep the ref in sync so the listener (which captures `send` via the ref
   // to avoid a re-subscribe loop) always calls the live sender.
   useEffect(() => {

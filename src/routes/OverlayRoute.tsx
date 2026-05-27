@@ -24,26 +24,7 @@ import {
 } from "../lib/vdoninja";
 import { CARDS, type CardId } from "../cards";
 
-// ── SFX ──────────────────────────────────────────────────────────────────
-
-/** Play a short sound effect. Audio objects are cached so repeated plays
- *  don't re-download. Volume boosted to punch through stream audio. */
-const sfxCache = new Map<string, HTMLAudioElement>();
-function playSfx(src: string) {
-  let audio = sfxCache.get(src);
-  if (!audio) {
-    audio = new Audio(src);
-    audio.volume = 1.0;
-    sfxCache.set(src, audio);
-  }
-  // Clone for overlapping plays (e.g. rapid back-to-back cards).
-  const clone = audio.cloneNode() as HTMLAudioElement;
-  clone.volume = 1.0;
-  clone.play().catch(() => {/* autoplay policy — silent fail */});
-}
-
-const SFX_STFU = "/sfx/stfu.mp3";
-const SFX_MICDROP = "/sfx/micdrop.mp3";
+import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
 // ── canvas + perf constants ─────────────────────────────────────────────
 
@@ -157,6 +138,9 @@ export function OverlayRoute() {
   // Make the body fully transparent so OBS only composites our sprites.
   // Cross-tab calibration: also pick up direct localStorage writes (e.g.
   // calibration done in a sibling tab) on top of the broadcast events.
+  // Preload card SFX so first play is instant (no network delay).
+  useEffect(() => { preloadCardSfx(); }, []);
+
   useEffect(() => {
     document.body.classList.add("overlay-route");
     const onStorage = (e: StorageEvent) => {
@@ -202,7 +186,7 @@ export function OverlayRoute() {
         case "cardPlay":
           enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat });
           fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce);
-          playSfx(msg.cardId === "stfu" ? SFX_STFU : SFX_MICDROP);
+          playCardSfx(msg.cardId);
           break;
         case "calibration":
           setTiles(msg.tiles);
