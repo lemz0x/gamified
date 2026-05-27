@@ -20,6 +20,7 @@ import {
   type EventSender,
 } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
+import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -183,7 +184,7 @@ const EMOJI_COLOURS: Record<string, { hex: string; core: number; spread: number 
   "\u{2764}\u{FE0F}": { hex: "#ff66b3", core: 0.50, spread: 20 },   // ❤️
   "\u{1F4AF}": { hex: "#a3e600", core: 0.60, spread: 24 },   // 💯
   "\u{1F44F}": { hex: "#5c8aff", core: 0.50, spread: 20 },   // 👏
-  "\u{1F44D}": { hex: "#ff5c8a", core: 0.50, spread: 20 },   // 👍
+  "\u{1F44D}": { hex: "#00e676", core: 0.50, spread: 20 },   // 👍
   "\u{1F602}": { hex: "#b866ff", core: 0.50, spread: 20 },   // 😂
   "\u{1F480}": { hex: "#ff8c42", core: 0.50, spread: 20 },   // 💀
   "\u{1F440}": { hex: "#ff4444", core: 0.50, spread: 20 },   // 👀
@@ -246,6 +247,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const nextChatId = () => `c${chatIdRef.current++}`;
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
+  // Auto-off timer: buzzers auto-clear after 30s so nobody forgets to turn off.
+  const buzzTimerRef = useRef<number | null>(null);
+
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
     (msg: EventPayload) => {
@@ -279,8 +283,20 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           break;
         }
-        // Other event types (emoji, cardPlay, calibration, getResetEpoch)
+        // Other event types (emoji, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
+        case "cardPlay": {
+          // Play SFX so everyone hears the card sound.
+          // Skip if this guest sent it — playCard() already played it locally.
+          const isSelf =
+            identity.kind === "guest" &&
+            msg.from.kind === "guest" &&
+            msg.from.seat === identity.seat;
+          if (!isSelf) {
+            playCardSfx(msg.cardId);
+          }
+          break;
+        }
         case "muteGuest": {
           // Soft mute: mute self via iframe if we're the target (or all).
           if (identity.kind === "editor") break;
@@ -357,6 +373,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
 
+  // Preload card SFX so first play is instant (no network delay).
+  useEffect(() => { preloadCardSfx(); }, []);
+
   // Bridge ref so the onMessage handler (which closes over identity but
   // not iframeRef) can still reach the iframe for mute commands.
   const muteIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -375,6 +394,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     }
   }, []);
   useEffect(() => () => stopForceMute(), [stopForceMute]);
+  // Clean up buzz auto-off timer on unmount.
+  useEffect(() => () => { if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current); }, []);
 
   // On mount, ask the producer to (re)announce the latest reset epoch so
   // we can catch up on any reset broadcast that fired while we were closed.
@@ -469,8 +490,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         ts: Date.now(),
       });
       // Play SFX locally so the guest who played the card hears it immediately.
-      const sfx = card.id === "stfu" ? "/sfx/stfu.mp3" : "/sfx/micdrop.mp3";
-      new Audio(sfx).play().catch(() => {});
+      playCardSfx(card.id);
       setCardUses((prev) => {
         const next = { ...prev, [card.id]: prev[card.id] + 1 };
         saveCardUses(identity, next);
@@ -570,9 +590,21 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               if (nowOn) {
                 buzzOn(identity.seat);
                 send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+                // Auto-off after 30s so nobody stays buzzing forever.
+                if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
+                buzzTimerRef.current = window.setTimeout(() => {
+                  buzzOff(identity.seat);
+                  send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+                  buzzTimerRef.current = null;
+                }, 30_000);
               } else {
                 buzzOff(identity.seat);
                 send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+                // Manual off cancels the auto-off timer.
+                if (buzzTimerRef.current !== null) {
+                  window.clearTimeout(buzzTimerRef.current);
+                  buzzTimerRef.current = null;
+                }
               }
             }}
             variant="play"

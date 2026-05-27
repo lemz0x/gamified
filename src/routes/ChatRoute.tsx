@@ -1,4 +1,4 @@
-import {
+import React, {
   useCallback,
   useEffect,
   useRef,
@@ -8,6 +8,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { buildChatOnlyUrl, useVdoNinja } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
+import { CHAT_EMOJIS } from "../emojis";
 
 // ── neon palette (sync with PlayRoute) ──────────────────────────────────
 
@@ -98,7 +99,7 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
       {/* ── chat feed ─── */}
       <ChatFeed messages={messages} />
 
-      {/* ── composer ─── */}
+      {/* ── composer with emoji picker ─── */}
       <ChatComposer draft={draft} setDraft={setDraft} onSend={onSend} />
 
       {/* Hidden VDO.Ninja iframe — keeps the data channel alive */}
@@ -163,44 +164,96 @@ function ChatFeed({ messages }: ChatFeedProps) {
 
 interface ChatComposerProps {
   draft: string;
-  setDraft: (v: string) => void;
+  setDraft: React.Dispatch<React.SetStateAction<string>>;
   onSend: (text: string) => boolean;
 }
 
 function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
   const submit = () => {
     if (!draft.trim()) return;
     if (onSend(draft)) setDraft("");
   };
 
+  const insertEmoji = (e: string) => {
+    const input = inputRef.current;
+    if (!input) {
+      setDraft((d: string) => d + e);
+      setPickerOpen(false);
+      return;
+    }
+    const start = input.selectionStart ?? draft.length;
+    const end = input.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + e + draft.slice(end);
+    setDraft(next);
+    setPickerOpen(false);
+    requestAnimationFrame(() => {
+      input.focus();
+      const caret = start + e.length;
+      input.setSelectionRange(caret, caret);
+    });
+  };
+
   return (
-    <div style={styles.composer}>
-      <input
-        type="text"
-        value={draft}
-        placeholder="Type a message…"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        style={styles.input}
-        spellCheck
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!draft.trim()}
-        style={{
-          ...styles.sendBtn,
-          opacity: draft.trim() ? 1 : 0.45,
-          cursor: draft.trim() ? "pointer" : "default",
-        }}
-      >
-        Send
-      </button>
+    <div style={styles.composerWrap}>
+      <div style={styles.composer}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          placeholder="Type a message…"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            } else if (e.key === "Escape" && pickerOpen) {
+              setPickerOpen(false);
+            }
+          }}
+          style={styles.input}
+          spellCheck
+        />
+        <button
+          type="button"
+          onClick={() => setPickerOpen((v) => !v)}
+          aria-label="Emoji picker"
+          style={{
+            ...styles.chatIconBtn,
+            color: pickerOpen ? NEON.cyan : NEON.textDim,
+          }}
+        >
+          {"\u{1F642}"}
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!draft.trim()}
+          style={{
+            ...styles.sendBtn,
+            opacity: draft.trim() ? 1 : 0.45,
+            cursor: draft.trim() ? "pointer" : "default",
+          }}
+        >
+          Send
+        </button>
+      </div>
+      {pickerOpen && (
+        <div style={styles.chatPicker} role="menu">
+          {CHAT_EMOJIS.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => insertEmoji(e)}
+              style={styles.chatPickerBtn}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -302,8 +355,11 @@ const styles: Record<string, CSSProperties> = {
     marginTop: 20,
     opacity: 0.7,
   },
-  composer: {
+  composerWrap: {
     flex: "0 0 auto",
+    position: "relative",
+  },
+  composer: {
     display: "flex",
     alignItems: "stretch",
     gap: 6,
@@ -324,6 +380,17 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
     outline: "none",
   },
+  chatIconBtn: {
+    appearance: "none",
+    background: "transparent",
+    border: 0,
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 18,
+    width: 32,
+    fontFamily: "inherit",
+    transition: "color 120ms ease-out",
+  },
   sendBtn: {
     appearance: "none",
     background: NEON.cyan,
@@ -337,6 +404,31 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
     textTransform: "uppercase",
     transition: "opacity 120ms ease-out",
+  },
+  chatPicker: {
+    position: "absolute",
+    bottom: "calc(100% + 6px)",
+    right: 14,
+    background: NEON.panelBg,
+    border: `1px solid ${NEON.panelEdge}`,
+    borderRadius: 10,
+    padding: 6,
+    boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 18px ${NEON.purple}33`,
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: 4,
+    zIndex: 20,
+  },
+  chatPickerBtn: {
+    appearance: "none",
+    background: "transparent",
+    border: 0,
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 18,
+    width: 32,
+    height: 32,
+    fontFamily: "inherit",
   },
   hiddenIframe: {
     position: "absolute",
