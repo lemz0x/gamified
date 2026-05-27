@@ -1,4 +1,4 @@
-import {
+import React, {
   useCallback,
   useEffect,
   useRef,
@@ -164,7 +164,7 @@ function ChatFeed({ messages }: ChatFeedProps) {
 
 interface ChatComposerProps {
   draft: string;
-  setDraft: (v: string) => void;
+  setDraft: React.Dispatch<React.SetStateAction<string>>;
   onSend: (text: string) => boolean;
 }
 
