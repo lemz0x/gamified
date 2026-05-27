@@ -1,19 +1,20 @@
 /**
  * Shared SFX system for card sounds.
  *
- * All three surfaces (overlay, guest wrapper, producer panel) need to play
- * the same sounds on cardPlay events. The overlay needs them for OBS
- * recording; the wrapper needs them for guests/host/editor; the producer
- * needs them so Lemz hears what aired.
+ * All three surfaces (overlay, guest wrapper, producer panel) play the
+ * same sounds on cardPlay events. The overlay's browser source captures
+ * SFX for OBS recording; the wrapper plays for guests/host/editor;
+ * the producer panel so Lemz hears what aired.
  *
  * Audio objects are preloaded on first call and cached so repeated plays
  * don't re-download. Each playback clones the cached object so overlapping
  * sounds (e.g. rapid back-to-back cards) don't cut each other off.
  *
- * IMPORTANT for OBS: the overlay browser source must have "Audio Output"
- * set to "Render audio to desktop" in OBS source properties for the SFX
- * to reach the recording/stream mix.
+ * Volume is set to 0.5 (50%) — loud enough to punch through stream audio
+ * but not overwhelming.
  */
+
+const SFX_VOLUME = 0.5;
 
 const SFX_STFU = "/sfx/stfu.mp3";
 const SFX_MICDROP = "/sfx/micdrop.mp3";
@@ -29,7 +30,7 @@ export function preloadCardSfx(): void {
   for (const src of [SFX_STFU, SFX_MICDROP]) {
     if (!sfxCache.has(src)) {
       const audio = new Audio(src);
-      audio.volume = 1.0;
+      audio.volume = SFX_VOLUME;
       audio.preload = "auto";
       sfxCache.set(src, audio);
     }
@@ -47,12 +48,12 @@ export function playCardSfx(cardId: string): Promise<void> {
   let audio = sfxCache.get(src);
   if (!audio) {
     audio = new Audio(src);
-    audio.volume = 1.0;
+    audio.volume = SFX_VOLUME;
     audio.preload = "auto";
     sfxCache.set(src, audio);
   }
   const clone = audio.cloneNode() as HTMLAudioElement;
-  clone.volume = 1.0;
+  clone.volume = SFX_VOLUME;
   return clone.play().catch(() => {/* autoplay policy — silent fail */});
 }
 
