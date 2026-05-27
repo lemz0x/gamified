@@ -180,7 +180,7 @@ function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
   const insertEmoji = (e: string) => {
     const input = inputRef.current;
     if (!input) {
-      setDraft((d) => d + e);
+      setDraft((d: string) => d + e);
       setPickerOpen(false);
       return;
     }
