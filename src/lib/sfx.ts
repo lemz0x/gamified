@@ -11,25 +11,35 @@
  * sounds (e.g. rapid back-to-back cards) don't cut each other off.
  *
  * Volume is per-card: STFU is quieter (0.4) because the alarm sound is
- * piercing; MIC DROP is at 0.5. Both loud enough to punch through stream
- * audio but not overwhelming.
+ * piercing; MIC DROP is at 0.5; WRAP IT UP at 0.5.
+ *
+ * Files are normalized mono mp3s (loudnorm -16 LUFS, 44.1kHz, 128kbps).
+ *
+ * Cache-busting: SFX_SRC includes a version param so stale browser/CDN
+ * caches never serve old files after an audio update. Bump SFX_VERSION
+ * whenever any MP3 file is replaced.
  */
 
+/** Bump this whenever any SFX file is replaced on disk. */
+const SFX_VERSION = "v2";
+
 const SFX_VOLUME: Record<string, number> = {
-  stfu: 0.4,    // 20% quieter than micdrop — alarm is piercing at higher volumes
+  stfu: 0.4,       // alarm sound is piercing — quieter than the others
   micdrop: 0.5,
+  wrapitup: 0.5,
 };
 
-const SFX_STFU = "/sfx/stfu.mp3";
-const SFX_MICDROP = "/sfx/micdrop.mp3";
-
-/** Map from cardId to its source file. */
-const SFX_SRC: Record<string, string> = { stfu: SFX_STFU, micdrop: SFX_MICDROP };
+/** Map from cardId to its source file. Query param busts browser cache. */
+const SFX_SRC: Record<string, string> = {
+  stfu: `/sfx/stfu.mp3?${SFX_VERSION}`,
+  micdrop: `/sfx/micdrop.mp3?${SFX_VERSION}`,
+  wrapitup: `/sfx/wrapitup.mp3?${SFX_VERSION}`,
+};
 
 const sfxCache = new Map<string, HTMLAudioElement>();
 
 /**
- * Preload both card SFX into the browser cache so the first play
+ * Preload all card SFX into the browser cache so the first play
  * has zero network delay. Call on mount from every surface that
  * will play card sounds.
  */
@@ -47,11 +57,12 @@ export function preloadCardSfx(): void {
 /**
  * Play a card sound effect. Uses a cached Audio object for zero-download
  * playback; clones so overlapping plays don't interrupt each other.
+ * The clone is auto-cleaned from the DOM after playback ends.
  * Returns a Promise that resolves when playback starts (or rejects silently
  * if blocked by autoplay policy).
  */
 export function playCardSfx(cardId: string): Promise<void> {
-  const src = SFX_SRC[cardId] ?? SFX_MICDROP;
+  const src = SFX_SRC[cardId] ?? SFX_SRC["micdrop"];
   const vol = SFX_VOLUME[cardId] ?? 0.5;
   let audio = sfxCache.get(src);
   if (!audio) {
@@ -62,8 +73,11 @@ export function playCardSfx(cardId: string): Promise<void> {
   }
   const clone = audio.cloneNode() as HTMLAudioElement;
   clone.volume = vol;
+  // Clean up the clone after playback so orphaned Audio nodes don't pile up.
+  clone.addEventListener("ended", () => {
+    clone.pause();
+    clone.removeAttribute("src");
+    clone.load();
+  });
   return clone.play().catch(() => {/* autoplay policy — silent fail */});
 }
-
-/** SFX file paths (for direct reference if needed). */
-export const CARD_SFX = { stfu: SFX_STFU, micdrop: SFX_MICDROP } as const;

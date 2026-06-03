@@ -233,6 +233,61 @@ body.overlay-route #root {
   100% { transform: translate(-50%, var(--mic-end-y, 120%)); opacity: 0; }
 }
 
+/* ── WRAP IT UP tile animation ────────────────────────────────────────── */
+
+/* Yellow flash — quick burst, decays. No dim wash (it's a nudge, not an attack). */
+@keyframes wrapFlash {
+  0% { opacity: 0; }
+  4% { opacity: 1; }
+  8% { opacity: 0.85; }
+  18% { opacity: 0.4; }
+  85% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* Yellow inset glow ring — pulses 0 → 0.8 → 0 across the full 2500ms. */
+@keyframes wrapGlowRing {
+  0% { opacity: 0; }
+  18% { opacity: 0.8; }
+  45% { opacity: 0.6; }
+  65% { opacity: 0.8; }
+  85% { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+/* Tile shake — subtle wiggle, matching the existing card pattern. */
+@keyframes wrapTileShake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-4px, 1px); }
+  30% { transform: translate(4px, -1px); }
+  50% { transform: translate(-3px, 1px); }
+  70% { transform: translate(2px, -1px); }
+  85% { transform: translate(-1px, 0); }
+}
+
+/* ⏰ emoji wobble — back-and-forth rotation like a ticking clock.
+   Scale-in at the start, then oscillate, then fade out. */
+@keyframes wrapEmojiPulse {
+  0%, 4% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+  18% { transform: translate(-50%, -50%) scale(0.85); opacity: 1; }
+  25% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+  32% { transform: translate(-50%, -50%) scale(1) rotate(-3deg); opacity: 1; }
+  40% { transform: translate(-50%, -50%) scale(1.05) rotate(3deg); opacity: 1; }
+  48% { transform: translate(-50%, -50%) scale(1) rotate(-2deg); opacity: 1; }
+  82% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.1) rotate(0deg); opacity: 0; }
+}
+
+/* WRAP IT UP slam text — Orbitron 900, yellow atmospheric glow. */
+@keyframes wrapSlamText {
+  0%, 4% { transform: translate(-50%, -50%) scale(3) rotate(-2deg); opacity: 0; }
+  18% { transform: translate(-50%, -50%) scale(0.92) rotate(-2deg); opacity: 1; }
+  25% { transform: translate(-50%, -50%) scale(1.04) rotate(-2deg); opacity: 1; }
+  32% { transform: translate(-50%, -50%) scale(1) rotate(-2deg); opacity: 1; }
+  82% { transform: translate(-50%, -50%) scale(1) rotate(-2deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.04) rotate(-2deg); opacity: 0; }
+}
+
 /* Card announcement text — scales in from small, holds, then fades out.
    Duration is set inline (CARD_ANNOUNCE_MS); keyframe is 0→1 normalized. */
 @keyframes cardAnnounceIn {
