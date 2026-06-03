@@ -219,13 +219,16 @@ export function OverlayRoute() {
           <EmojiFloat key={sprite.id} sprite={sprite} tile={tiles[sprite.seat]} />
         ))}
 
-        {cardSprites.map((sprite) =>
-          sprite.cardId === "stfu" ? (
-            <StfuCard key={sprite.id} tile={tiles[sprite.targetSeat]} />
-          ) : (
-            <MicDropCard key={sprite.id} tile={tiles[sprite.targetSeat]} />
-          ),
-        )}
+        {cardSprites.map((sprite) => {
+          const CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
+            stfu: StfuCard,
+            micdrop: MicDropCard,
+            wrapitup: WrapItUpCard,
+          };
+          const Comp = CARD_SPRITES[sprite.cardId];
+          if (!Comp) return null;
+          return <Comp key={sprite.id} tile={tiles[sprite.targetSeat]} />;
+        })}
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
@@ -255,6 +258,7 @@ export function OverlayRoute() {
 const CARD_COLORS: Record<CardId, string> = {
   stfu: "#ff2e6b",
   micdrop: "#00d96b",
+  wrapitup: "#ffcc00",
 };
 
 function fireCardAnnounce(
@@ -599,6 +603,108 @@ function MicDropCard({ tile }: { tile: Tile }) {
         }}
       >
         MIC DROP
+      </div>
+    </div>
+  );
+}
+
+/**
+ * WRAP IT UP card animation (target tile only, ~2.5s).
+ *
+ * Yellow theme — a nudge, not an attack. No dim wash. Two visual systems:
+ *   1. Tile-targeted: shake, yellow flash, glow ring, ⏰ wobble, slam text
+ *   2. Center-screen announcement (via CardAnnounceText, fires simultaneously)
+ *
+ * Layers:
+ *   1. Tile-shake wrapper — subtle wiggle for 360ms.
+ *   2. Yellow radial flash — screen blend, fast in, decays.
+ *   3. Yellow inset glow ring — pulses across the full duration.
+ *   4. ⏰ emoji wobble — ticking-clock back-and-forth rotation.
+ *   5. "WRAP IT UP!" Orbitron slam text with yellow atmospheric glow.
+ */
+function WrapItUpCard({ tile }: { tile: Tile }) {
+  const fontSize = Math.max(18, Math.round(tile.w * 0.10));
+  return (
+    <div
+      style={{
+        ...cardBoxStyle(tile),
+        willChange: "transform",
+        animation: "wrapTileShake 360ms ease-in-out",
+      }}
+    >
+      {/* Yellow flash — no dim wash, keeping it bright (a nudge, not an attack). */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 50% 45%, rgba(255, 204, 0, 0.85), rgba(255, 180, 0, 0.45))",
+          mixBlendMode: "screen",
+          opacity: 0,
+          willChange: "opacity",
+          animation: "wrapFlash 2500ms ease-out forwards",
+        }}
+      />
+      {/* Yellow inset glow ring */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          boxShadow:
+            "inset 0 0 30px #ffcc00, inset 0 0 60px rgba(255, 204, 0, 0.55)",
+          opacity: 0,
+          willChange: "opacity",
+          animation: "wrapGlowRing 2500ms ease-in-out forwards",
+        }}
+      />
+      {/* ⏰ emoji wobble — ticking clock */}
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "40%",
+          transform: "translate(-50%, -50%)",
+          fontSize: 80,
+          lineHeight: 1,
+          fontFamily:
+            '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
+          filter:
+            "drop-shadow(0 0 16px rgba(255, 204, 0, 0.85)) drop-shadow(0 4px 14px rgba(0, 0, 0, 0.7))",
+          opacity: 0,
+          willChange: "transform, opacity",
+          animation: "wrapEmojiPulse 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) 100ms forwards",
+        }}
+      >
+        {"\u{23F0}"}
+      </div>
+      {/* Slam text — Orbitron, yellow atmospheric glow */}
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "65%",
+          transform: "translate(-50%, -50%) scale(3) rotate(-2deg)",
+          opacity: 0,
+          willChange: "transform, opacity",
+          animation:
+            "wrapSlamText 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) 200ms forwards",
+          fontFamily:
+            '"Orbitron", system-ui, sans-serif',
+          fontWeight: 900,
+          fontSize: Math.min(fontSize, 28),
+          letterSpacing: 1.5,
+          color: "#ffffff",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          textShadow: [
+            "0 0 8px rgba(0,0,0,0.55)",
+            "0 0 22px rgba(255,204,0,0.7)",
+            "0 0 55px rgba(255,204,0,0.44)",
+            "0 0 90px rgba(255,204,0,0.22)",
+          ].join(", "),
+        }}
+      >
+        WRAP IT UP!
       </div>
     </div>
   );

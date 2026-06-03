@@ -115,17 +115,18 @@ function cardUsesKey(identity: Identity): string {
 }
 
 function loadCardUses(identity: Identity): Record<CardId, number> {
-  if (typeof window === "undefined") return { stfu: 0, micdrop: 0 };
+  if (typeof window === "undefined") return { stfu: 0, micdrop: 0, wrapitup: 0 };
   try {
     const raw = window.localStorage.getItem(cardUsesKey(identity));
-    if (!raw) return { stfu: 0, micdrop: 0 };
+    if (!raw) return { stfu: 0, micdrop: 0, wrapitup: 0 };
     const parsed = JSON.parse(raw) as Partial<Record<CardId, number>> | null;
     return {
       stfu: typeof parsed?.stfu === "number" ? parsed.stfu : 0,
       micdrop: typeof parsed?.micdrop === "number" ? parsed.micdrop : 0,
+      wrapitup: typeof parsed?.wrapitup === "number" ? parsed.wrapitup : 0,
     };
   } catch {
-    return { stfu: 0, micdrop: 0 };
+    return { stfu: 0, micdrop: 0, wrapitup: 0 };
   }
 }
 
@@ -170,6 +171,11 @@ const NEON = {
 const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
   {
     stfu: { glow: NEON.red, edge: "#ff5482", tint: "rgba(255, 46, 107, 0.12)" },
+    wrapitup: {
+      glow: "#ffcc00",
+      edge: "#ffdd33",
+      tint: "rgba(255, 204, 0, 0.12)",
+    },
     micdrop: {
       glow: NEON.green,
       edge: "#22ff7a",
@@ -250,6 +256,40 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // Auto-off timer: buzzers auto-clear after 30s so nobody forgets to turn off.
   const buzzTimerRef = useRef<number | null>(null);
 
+  // ── mute infrastructure (dual-flag reconcile, STFU area mute) ─────────
+
+  const [isMuted, setIsMuted] = useState(false);
+
+  const hostMutedRef = useRef(false);
+  const stfuMutedRef = useRef(false);
+  const stfuMuteTimeoutRef = useRef<number | null>(null);
+  const hostMuteIntervalRef = useRef<number | null>(null);
+
+  function startCircuitBreaker() {
+    // Only start if not already running
+    if (hostMuteIntervalRef.current !== null) return;
+    hostMuteIntervalRef.current = window.setInterval(() => {
+      if (hostMutedRef.current || stfuMutedRef.current) {
+        // Re-assert the mute — guest might have clicked their mic icon
+        muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+      } else {
+        // Both flags cleared — stop the breaker
+        if (hostMuteIntervalRef.current !== null) {
+          window.clearInterval(hostMuteIntervalRef.current);
+          hostMuteIntervalRef.current = null;
+        }
+      }
+    }, 500);
+  }
+
+  // Ref-based so onMessage can call it without deps
+  const reconcileMicRef = useRef<() => void>(() => {});
+  reconcileMicRef.current = () => {
+    const muted = hostMutedRef.current || stfuMutedRef.current;
+    muteIframeRef.current?.contentWindow?.postMessage({ mic: !muted }, "*");
+    setIsMuted(muted);
+  };
+
   // Memoize callback so the effect inside useVdoNinja doesn't resubscribe.
   const onMessage = useCallback(
     (msg: EventPayload) => {
@@ -275,7 +315,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           lastResetSeenRef.current = msg.resetEpoch;
           saveLastResetSeen(msg.resetEpoch);
-          const zero = { stfu: 0, micdrop: 0 };
+          const zero = { stfu: 0, micdrop: 0, wrapitup: 0 };
           setCardUses(zero);
           saveCardUses(identity, zero);
           if (import.meta.env.DEV) {
@@ -295,33 +335,36 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           if (!isSelf) {
             playCardSfx(msg.cardId);
           }
+
+          // STFU area mute: all guests except player and host
+          if (msg.cardId === "stfu" && identity.kind === "guest" && !isSelf) {
+            stfuMutedRef.current = true;
+            reconcileMicRef.current();
+            startCircuitBreaker();
+            // Reset timer on stacking: second STFU extends the window
+            if (stfuMuteTimeoutRef.current !== null) {
+              window.clearTimeout(stfuMuteTimeoutRef.current);
+            }
+            stfuMuteTimeoutRef.current = window.setTimeout(() => {
+              stfuMutedRef.current = false;
+              stfuMuteTimeoutRef.current = null;
+              reconcileMicRef.current();
+              // Circuit-breaker will stop on next tick if hostMutedRef is also false
+            }, 5000);
+          }
           break;
         }
         case "muteGuest": {
-          // Soft mute: mute self via iframe if we're the target (or all).
           if (identity.kind === "editor") break;
           const isTarget =
             msg.target === "all" ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
-            window.setTimeout(() => {
-              muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
-            }, 0);
-            // Phase 1: circuit-breaker — re-apply mic:false for 3s.
-            stopForceMute();
-            muteIntervalRef.current = window.setInterval(() => {
-              muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
-            }, 500);
-            // After 3s cooldown, stop re-muting and tell host to clear the UI highlight.
-            window.setTimeout(() => {
-              stopForceMute();
-              if (identity.kind === "guest") {
-                send({ type: "muteCooldownDone", target: identity.seat, ts: Date.now() });
-              }
-            }, 3000);
+            hostMutedRef.current = true;
+            reconcileMicRef.current();
+            startCircuitBreaker();
           }
           if (isTarget || identity.kind === "host") {
-            // Notify host that this seat was muted so UI stays in sync.
             window.dispatchEvent(
               new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: true } }),
             );
@@ -334,10 +377,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             msg.target === "all" ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
-            stopForceMute();
-            window.setTimeout(() => {
-              muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
-            }, 0);
+            hostMutedRef.current = false;
+            reconcileMicRef.current();
+            // Circuit-breaker will stop on next tick when it sees both flags are false
           }
           if (isTarget || identity.kind === "host") {
             window.dispatchEvent(
@@ -347,13 +389,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           break;
         }
         case "muteCooldownDone": {
-          // Guest's 3s circuit-breaker expired — clear host's red highlight
-          // without touching anyone's mic.
-          if (identity.kind === "host") {
-            window.dispatchEvent(
-              new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: false } }),
-            );
-          }
+          // No-op: circuit-breaker now runs until unmuteGuest, not a fixed window.
+          // Kept for one release cycle to absorb stale events.
           break;
         }
         case "buzzIn": {
@@ -383,19 +420,20 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
-  // Circuit-breaker: when host force-mutes this guest, re-apply mic:false
-  // every 500ms for 3s so the mute actually sticks. After 3s, notify the
-  // host that the guest is now free to toggle — clear the host's red highlight.
-  const muteIntervalRef = useRef<number | null>(null);
-  const stopForceMute = useCallback(() => {
-    if (muteIntervalRef.current !== null) {
-      window.clearInterval(muteIntervalRef.current);
-      muteIntervalRef.current = null;
-    }
+  // Unified cleanup: circuit-breaker interval, STFU timeout, buzz auto-off.
+  useEffect(() => {
+    return () => {
+      if (hostMuteIntervalRef.current !== null) {
+        window.clearInterval(hostMuteIntervalRef.current);
+      }
+      if (stfuMuteTimeoutRef.current !== null) {
+        window.clearTimeout(stfuMuteTimeoutRef.current);
+      }
+      if (buzzTimerRef.current !== null) {
+        window.clearTimeout(buzzTimerRef.current);
+      }
+    };
   }, []);
-  useEffect(() => () => stopForceMute(), [stopForceMute]);
-  // Clean up buzz auto-off timer on unmount.
-  useEffect(() => () => { if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current); }, []);
 
   // On mount, ask the producer to (re)announce the latest reset epoch so
   // we can catch up on any reset broadcast that fired while we were closed.
@@ -612,6 +650,26 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         )}
 
         <ChatPanel messages={chatMessages} onSend={sendChatMessage} />
+
+        {isMuted && (
+          <div
+            style={{
+              background: "rgba(255, 46, 107, 0.15)",
+              border: "1px solid #ff2e6b",
+              borderRadius: 8,
+              padding: "8px 12px",
+              color: "#ff2e6b",
+              fontWeight: 800,
+              fontSize: 12,
+              letterSpacing: 2,
+              textAlign: "center",
+              textTransform: "uppercase",
+              marginTop: 8,
+            }}
+          >
+            {"\u{1F507}"} SILENCED
+          </div>
+        )}
       </aside>
 
       {activeCard && (
@@ -1142,14 +1200,14 @@ const styles: Record<string, CSSProperties> = {
   },
   cardRow: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "1fr 1fr 1fr",
     gap: 10,
   },
   card: {
     appearance: "none",
     border: "1px solid",
     borderRadius: 12,
-    padding: "18px 14px",
+    padding: "14px 8px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
@@ -1166,7 +1224,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 22,
+    fontSize: 13,
     margin: "0 auto 10px",
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
@@ -1174,7 +1232,7 @@ const styles: Record<string, CSSProperties> = {
   cardSlug: {
     fontFamily: '"Orbitron", system-ui, sans-serif',
     fontWeight: 900,
-    fontSize: 22,
+    fontSize: 13,
     letterSpacing: "0.04em",
     lineHeight: 1.15,
     textAlign: "center" as const,

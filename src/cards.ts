@@ -1,17 +1,17 @@
 /**
  * The set of cards a guest can play against another guest in a topic.
  *
- * MVP ships with two cards (STFU and MIC DROP); the system is configured
- * generically so adding GOAT / FACTS / etc. later is just a new entry
- * here plus its visual treatment in the overlay.
+ * MVP ships with three cards (STFU, WRAP IT UP, MIC DROP); the system is
+ * configured generically so adding more later is just a new entry here
+ * plus its visual treatment in the overlay.
  *
  * `usesPerTopic` is the per-guest budget that resets when the producer
  * fires a "Reset cards" event between topics.
  */
 
-export type CardId = "stfu" | "micdrop";
+export type CardId = "stfu" | "micdrop" | "wrapitup";
 
-export type CardColor = "red" | "amber";
+export type CardColor = "red" | "amber" | "yellow";
 
 export interface Card {
   /** Stable identifier used in event payloads — never re-use across cards. */
@@ -43,6 +43,16 @@ export const CARDS: readonly Card[] = [
     color: "red",
     usesPerTopic: 1,
     description: "Cut off the current speaker",
+  },
+  {
+    id: "wrapitup",
+    name: "WRAP IT UP!",
+    shortName: "WRAP IT UP",
+    icon: "\u{23F0}",
+    subtitle: "Time's Up",
+    color: "yellow",
+    usesPerTopic: 1,
+    description: "Nudge the speaker to finish",
   },
   {
     id: "micdrop",
