@@ -220,11 +220,6 @@ export function OverlayRoute() {
         ))}
 
         {cardSprites.map((sprite) => {
-          const CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
-            stfu: StfuCard,
-            micdrop: MicDropCard,
-            wrapitup: WrapItUpCard,
-          };
           const Comp = CARD_SPRITES[sprite.cardId];
           if (!Comp) return null;
           return <Comp key={sprite.id} tile={tiles[sprite.targetSeat]} />;
@@ -259,6 +254,13 @@ const CARD_COLORS: Record<CardId, string> = {
   stfu: "#ff2e6b",
   micdrop: "#00d96b",
   wrapitup: "#ffcc00",
+};
+
+/** Card id → overlay sprite component. Module-level to avoid per-render allocation. */
+const CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
+  stfu: StfuCard,
+  micdrop: MicDropCard,
+  wrapitup: WrapItUpCard,
 };
 
 function fireCardAnnounce(

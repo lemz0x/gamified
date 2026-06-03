@@ -14,7 +14,14 @@
  * piercing; MIC DROP is at 0.5; WRAP IT UP at 0.5.
  *
  * Files are normalized mono mp3s (loudnorm -16 LUFS, 44.1kHz, 128kbps).
+ *
+ * Cache-busting: SFX_SRC includes a version param so stale browser/CDN
+ * caches never serve old files after an audio update. Bump SFX_VERSION
+ * whenever any MP3 file is replaced.
  */
+
+/** Bump this whenever any SFX file is replaced on disk. */
+const SFX_VERSION = "v2";
 
 const SFX_VOLUME: Record<string, number> = {
   stfu: 0.4,       // alarm sound is piercing — quieter than the others
@@ -22,11 +29,11 @@ const SFX_VOLUME: Record<string, number> = {
   wrapitup: 0.5,
 };
 
-/** Map from cardId to its source file. */
+/** Map from cardId to its source file. Query param busts browser cache. */
 const SFX_SRC: Record<string, string> = {
-  stfu: "/sfx/stfu.mp3",
-  micdrop: "/sfx/micdrop.mp3",
-  wrapitup: "/sfx/wrapitup.mp3",
+  stfu: `/sfx/stfu.mp3?${SFX_VERSION}`,
+  micdrop: `/sfx/micdrop.mp3?${SFX_VERSION}`,
+  wrapitup: `/sfx/wrapitup.mp3?${SFX_VERSION}`,
 };
 
 const sfxCache = new Map<string, HTMLAudioElement>();
@@ -50,20 +57,27 @@ export function preloadCardSfx(): void {
 /**
  * Play a card sound effect. Uses a cached Audio object for zero-download
  * playback; clones so overlapping plays don't interrupt each other.
+ * The clone is auto-cleaned from the DOM after playback ends.
  * Returns a Promise that resolves when playback starts (or rejects silently
  * if blocked by autoplay policy).
  */
 export function playCardSfx(cardId: string): Promise<void> {
   const src = SFX_SRC[cardId] ?? SFX_SRC["micdrop"];
   const vol = SFX_VOLUME[cardId] ?? 0.5;
-  let audio = sfxCache.get(src!);
+  let audio = sfxCache.get(src);
   if (!audio) {
-    audio = new Audio(src!);
+    audio = new Audio(src);
     audio.volume = vol;
     audio.preload = "auto";
-    sfxCache.set(src!, audio);
+    sfxCache.set(src, audio);
   }
   const clone = audio.cloneNode() as HTMLAudioElement;
   clone.volume = vol;
+  // Clean up the clone after playback so orphaned Audio nodes don't pile up.
+  clone.addEventListener("ended", () => {
+    clone.pause();
+    clone.removeAttribute("src");
+    clone.load();
+  });
   return clone.play().catch(() => {/* autoplay policy — silent fail */});
 }
