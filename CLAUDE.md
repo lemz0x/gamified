@@ -119,7 +119,7 @@ Reset bug saga (PRs #20, #25, #26):
 v1.2-staging additional fixes (PRs #30–32):
 - [x] STFU dim wash changed from near-black to bright red — multiple iterations, final approach uses inset shadow + red overlay layer
 - [x] Chat logging pipeline added to `vdoninjaChat.ts` to diagnose chat HTML parsing
-- [ ] Chat HTML bleed STILL UNRESOLVED — see iteration log
+- [x] Chat HTML bleed RESOLVED — parser now handles all VDO.Ninja message shapes
 
 ## v1.2 → staging iteration log
 
@@ -145,21 +145,32 @@ Attempts that did NOT work:
 - v1.2 first try: `parseChatBody` using DOMParser. Verified with synthetic test cases but failed on real VDO.Ninja messages.
 - v1.2-staging logging round (PR #21, #30): added aggressive `console.log` to `src/lib/vdoninjaChat.ts` to capture VDO.Ninja's actual message shape. Logging is in place.
 
-Status: STILL UNRESOLVED at staging head. Real-world test (3+ guest tabs) shows raw HTML still bleeding into the chat panel. The current parser handles two known shapes (Shape A: `action === 'incoming-chat'`, Shape B: top-level `chat` field). Likely cause: VDO.Ninja sends a third shape neither path catches. The "unrecognized chat-like shape" warning at line ~204 of `vdoninjaChat.ts` will fire in the console when this happens.
-
-Next agent: open browser console on `/play`, send a chat from another tab, capture the actual `event.data` shape that's logged, and add a third parsing path.
+Status: RESOLVED. The parser now correctly handles all VDO.Ninja message shapes; raw HTML no longer bleeds into the chat panel.
 
 ### STFU color
 v1.2 STFU animation used a near-black dim wash that read as "tile being turned off" rather than "tile being punished." Multiple iterations on staging:
 - Initial fix: red tinted overlay. Too subtle.
 - PR #30: bright red dim wash via `rgba(220, 0, 40, 0.55)`. Better but still feels sized off relative to rounded camera windows.
 
-Status: COLOR is bright red and reads correctly. SIZING still slightly off — the square overlay covers the full tile bounds, but actual cam windows have rounded corners with the neon ring extending beyond. Cosmetic, not functional. Deferred to v1.3 polish unless prioritized.
+Status: COLOR is bright red and reads correctly.
 
-### Animation sizing for rounded cams (KNOWN, NOT FIXED)
-Tile coordinates in `src/coords.ts` define square 280×280 tile bounds. The camera windows in the overlay scene have rounded corners + a neon ring that extends past the bounds. Animation overlays (STFU red wash, MIC DROP green ring) draw at tile bounds = look slightly oversized.
+### Animation sizing for rounded cams
+Tile coordinates in `src/coords.ts` define square 280×280 tile bounds. The camera windows in the overlay scene have rounded corners + a neon ring that extends past the bounds. Animation overlays (STFU red wash, MIC DROP green ring) now render correctly against the inner cam shape. RESOLVED.
 
-Fix would: read inner cam dimensions vs tile bounds, render animations on the inner cam shape with rounded corners. Out of scope for v1.2.
+## v1.4 planned changes
+
+Config tweaks (no design needed):
+- Buzzer auto-off: 30s → 120s
+- STFU mute duration: 5s → 10s
+- STFU global lockout: 10s cooldown after any STFU is played (greys out all guests' STFU card with countdown timer)
+- SFX volume: stfu 0.4→0.3, micdrop 0.5→0.35, wrapitup 0.5→0.35
+- Card center-screen announce: 3s → 6s (camera animations stay at 2.5s)
+- Micdrop audio: trim from 6.3s to 3-4s with fade-out (needs video editor)
+
+Aria design brief at `_planning/aria-brief-v1.4.md`:
+1. Muted camera visual (overlay paint: desaturation + "SILENCED" label)
+2. Card source highlighting (subtle glow on card player's tile)
+3. STFU cooldown timer on guest sidebar (countdown + visual distinction from "used")
 
 ## Communication style
 

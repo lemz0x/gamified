@@ -21,12 +21,12 @@
  */
 
 /** Bump this whenever any SFX file is replaced on disk. */
-const SFX_VERSION = "v2";
+const SFX_VERSION = "v3";
 
 const SFX_VOLUME: Record<string, number> = {
-  stfu: 0.4,       // alarm sound is piercing — quieter than the others
-  micdrop: 0.5,
-  wrapitup: 0.5,
+  stfu: 0.3,       // alarm sound is piercing — quieter than the others
+  micdrop: 0.35,
+  wrapitup: 0.35,
 };
 
 /** Map from cardId to its source file. Query param busts browser cache. */

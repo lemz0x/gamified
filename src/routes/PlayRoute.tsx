@@ -350,7 +350,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               stfuMuteTimeoutRef.current = null;
               reconcileMicRef.current();
               // Circuit-breaker will stop on next tick if hostMutedRef is also false
-            }, 5000);
+            }, 10_000);
           }
           break;
         }
@@ -634,7 +634,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                   buzzOff(identity.seat);
                   send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
                   buzzTimerRef.current = null;
-                }, 30_000);
+                }, 120_000);
               } else {
                 buzzOff(identity.seat);
                 send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });

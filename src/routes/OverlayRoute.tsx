@@ -46,7 +46,7 @@ const EMOJI_FLOAT_MS = 1500;
 const CARD_ANIM_MS = 2500;
 
 /** How long the center-screen card announcement text stays visible. */
-const CARD_ANNOUNCE_MS = 3000;
+const CARD_ANNOUNCE_MS = 6000;
 
 /**
  * Calibration palette — stable per-seat colors so each rect is easy to
