@@ -21,7 +21,7 @@
  */
 
 /** Bump this whenever any SFX file is replaced on disk. */
-const SFX_VERSION = "v5";
+const SFX_VERSION = "v6";
 
 const SFX_VOLUME: Record<string, number> = {
   stfu: 0.3,       // alarm sound is piercing — quieter than the others
