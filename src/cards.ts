@@ -11,7 +11,7 @@
 
 export type CardId = "stfu" | "micdrop" | "wrapitup";
 
-export type CardColor = "red" | "amber" | "yellow";
+export type CardColor = "red" | "amber" | "orange";
 
 export interface Card {
   /** Stable identifier used in event payloads — never re-use across cards. */
@@ -50,7 +50,7 @@ export const CARDS: readonly Card[] = [
     shortName: "WRAP IT UP",
     icon: "\u{23F0}",
     subtitle: "Time's Up",
-    color: "yellow",
+    color: "orange",
     usesPerTopic: 1,
     description: "Nudge the speaker to finish",
   },
