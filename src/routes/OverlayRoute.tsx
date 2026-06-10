@@ -210,6 +210,32 @@ export function OverlayRoute() {
           if (msg.from.kind === "guest") {
             enqueueSourceAura({ id: nextId(), sourceSeat: msg.from.seat });
           }
+          // STFU area mute visual: when STFU is played, all guest tiles except
+          // the source show the desat + SILENCED overlay for 10s. The actual
+          // mic muting happens locally in each guest's PlayRoute, but that
+          // doesn't broadcast muteGuest events — so the overlay must handle
+          // the visual treatment itself from the cardPlay event.
+          if (msg.cardId === "stfu") {
+            const sourceSeat = msg.from.kind === "guest" ? msg.from.seat : null;
+            const allSeats = Object.keys(tiles) as SeatId[];
+            const mutedSeatsArr = sourceSeat
+              ? allSeats.filter((s) => s !== sourceSeat)
+              : allSeats;
+            setMutedSeats((prev) => {
+              const next = new Set(prev);
+              mutedSeatsArr.forEach((s) => next.add(s));
+              return next;
+            });
+            // Auto-clear after 10s (matches the STFU mute window in PlayRoute)
+            const STFU_MUTE_MS = 10_000;
+            window.setTimeout(() => {
+              setMutedSeats((prev) => {
+                const next = new Set(prev);
+                mutedSeatsArr.forEach((s) => next.delete(s));
+                return next;
+              });
+            }, STFU_MUTE_MS);
+          }
           fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce);
           playCardSfx(msg.cardId);
           break;
