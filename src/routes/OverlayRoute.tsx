@@ -859,19 +859,29 @@ function SourceAura({ tile }: { tile: Tile }) {
  *
  * Because the overlay is a separate OBS layer on top of the video feeds,
  * we can't apply CSS filter:grayscale() to the underlying camera. Instead
- * we paint a semi-transparent desaturated overlay that washes out the
+ * we paint a semi-opaque desaturated overlay that washes out the
  * colour of whatever is beneath it in OBS compositing.
  *
  * Two layers:
- *   1. Desaturation wash — heavily desaturated semi-opaque layer that
- *      removes colour from the camera beneath while keeping the person
- *      visible (not a dark dim — that's STFU's territory).
+ *   1. Desaturation wash — medium-gray semi-opaque layer that
+ *      pushes colours toward neutral, covering the full camera including
+ *      corners. Uses a small bleed past tile bounds so rounded corners
+ *      don't leave camera edges uncovered.
  *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
  */
 function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
+  // Bleed past tile bounds so the wash covers rounded camera corners
+  const bleed = 8;
   return (
-    <div style={tileBoxStyle(tile)}>
+    <div style={{
+      position: "absolute",
+      left: tile.x - bleed,
+      top: tile.y - bleed,
+      width: tile.w + bleed * 2,
+      height: tile.h + bleed * 2,
+      pointerEvents: "none",
+    }}>
       {/* Desaturation wash — semi-opaque medium-gray that visually
           desaturates the camera feed beneath. CSS mixBlendMode: "saturation"
           can't desaturate across OBS source layers (the video is in a
@@ -884,6 +894,8 @@ function MutedTileOverlay({ tile }: { tile: Tile }) {
           background: "rgba(50, 45, 60, 0.6)",
           opacity: 1,
           transition: "opacity 250ms ease-out",
+          // Match VDO.Ninja's tile rounding so the wash hugs the camera
+          borderRadius: Math.round(Math.min(tile.w, tile.h) * 0.18),
         }}
       />
       {/* SILENCED label */}
