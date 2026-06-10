@@ -244,7 +244,6 @@ body.overlay-route #root {
   85% { opacity: 0; }
   100% { opacity: 0; }
 }
-
 /* Yellow inset glow ring — pulses 0 → 0.8 → 0 across the full 2500ms. */
 @keyframes wrapGlowRing {
   0% { opacity: 0; }
@@ -569,6 +568,30 @@ body.overlay-route #root {
     transform: translate(-50%, -50%) scale(1.08);
     filter: brightness(1.35);
   }
+}
+
+/* ── v1.4: Source aura + cooldown + orange WRAP IT UP ─────────────────── */
+
+/* Gold source aura glow ring on the card-player's tile.
+   300ms fade in → 2.4s hold → 300ms fade out. Same opacity-curve
+   approach as stfuGlowRing / micGlowRing / wrapGlowRing to keep
+   the visual language consistent. Total 3000ms. */
+@keyframes sourceAuraGlow {
+  0% { opacity: 0; }
+  10% { opacity: 0.7; }
+  15% { opacity: 0.9; }
+  50% { opacity: 0.75; }
+  85% { opacity: 0.65; }
+  90% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+
+/* STFU card cooldown pulse — faint red border glow that breathes on
+   the STFU card button during the 10s lockout window. Same rhythm as
+   the play-page pulse but scoped to the card button element. */
+@keyframes cooldownPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255,46,107,0.2); border-color: rgba(255,84,130,0.33); }
+  50% { box-shadow: 0 0 14px rgba(255,46,107,0.35); border-color: rgba(255,84,130,0.53); }
 }
 
 /* ── MVP winner flourishes ─────────────────────────────────────────────

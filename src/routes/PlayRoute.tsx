@@ -172,9 +172,9 @@ const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
   {
     stfu: { glow: NEON.red, edge: "#ff5482", tint: "rgba(255, 46, 107, 0.12)" },
     wrapitup: {
-      glow: "#ffcc00",
-      edge: "#ffdd33",
-      tint: "rgba(255, 204, 0, 0.12)",
+      glow: "#ff7700",
+      edge: "#ff9933",
+      tint: "rgba(255, 119, 0, 0.12)",
     },
     micdrop: {
       glow: NEON.green,
@@ -259,6 +259,11 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // ── mute infrastructure (dual-flag reconcile, STFU area mute) ─────────
 
   const [isMuted, setIsMuted] = useState(false);
+
+  // STFU cooldown: 10s lockout after any STFU is played, preventing
+  // immediate retaliation. Tracked as seconds remaining; null = not on cooldown.
+  const [stfuCooldown, setStfuCooldown] = useState<number | null>(null);
+  const stfuCooldownIntervalRef = useRef<number | null>(null);
 
   const hostMutedRef = useRef(false);
   const stfuMutedRef = useRef(false);
@@ -352,6 +357,28 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               // Circuit-breaker will stop on next tick if hostMutedRef is also false
             }, 10_000);
           }
+
+          // STFU cooldown: when ANY STFU is played (including by this guest),
+          // lock the STFU card for 10s to prevent retaliation stacking.
+          if (msg.cardId === "stfu" && identity.kind === "guest") {
+            // Clear any existing cooldown interval
+            if (stfuCooldownIntervalRef.current !== null) {
+              window.clearInterval(stfuCooldownIntervalRef.current);
+            }
+            setStfuCooldown(10);
+            stfuCooldownIntervalRef.current = window.setInterval(() => {
+              setStfuCooldown((prev) => {
+                if (prev === null || prev <= 1) {
+                  if (stfuCooldownIntervalRef.current !== null) {
+                    window.clearInterval(stfuCooldownIntervalRef.current);
+                    stfuCooldownIntervalRef.current = null;
+                  }
+                  return null;
+                }
+                return prev - 1;
+              });
+            }, 1000);
+          }
           break;
         }
         case "muteGuest": {
@@ -420,7 +447,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
-  // Unified cleanup: circuit-breaker interval, STFU timeout, buzz auto-off.
+  // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off.
   useEffect(() => {
     return () => {
       if (hostMuteIntervalRef.current !== null) {
@@ -428,6 +455,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       }
       if (stfuMuteTimeoutRef.current !== null) {
         window.clearTimeout(stfuMuteTimeoutRef.current);
+      }
+      if (stfuCooldownIntervalRef.current !== null) {
+        window.clearInterval(stfuCooldownIntervalRef.current);
       }
       if (buzzTimerRef.current !== null) {
         window.clearTimeout(buzzTimerRef.current);
@@ -575,6 +605,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                 key={card.id}
                 card={card}
                 uses={cardUses[card.id]}
+                cooldown={card.id === "stfu" ? stfuCooldown : null}
                 onClick={() => setActiveCard(card)}
               />
             ))}
@@ -698,40 +729,50 @@ function LiveIndicator() {
 interface CardButtonProps {
   card: Card;
   uses: number;
+  /** Seconds remaining on cooldown (STFU only). null = not on cooldown. */
+  cooldown: number | null;
   onClick: () => void;
 }
 
-function CardButton({ card, uses, onClick }: CardButtonProps) {
+function CardButton({ card, uses, cooldown, onClick }: CardButtonProps) {
   const remaining = card.usesPerTopic - uses;
   const used = remaining <= 0;
+  const onCooldown = cooldown !== null && cooldown > 0 && !used;
   const theme = cardThemes[card.id];
   const slug = card.shortName ?? card.name;
   const [hovered, setHovered] = useState(false);
+  // Cooldown visual: card stays coloured but icon/slug dimmer, counter replaced
+  // by Orbitron countdown in red, faint red border pulse animation.
+  const dimmed = onCooldown ? 0.7 : 1;
+  const iconDimmed = onCooldown ? 0.6 : 1;
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={used}
+      disabled={used || onCooldown}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         ...styles.card,
         background: used ? "#15151f" : theme.tint,
-        borderColor: used ? "#222230" : theme.edge,
+        borderColor: used ? "#222230" : onCooldown ? "rgba(255,84,130,0.53)" : theme.edge,
         color: used ? NEON.textDim : NEON.text,
         boxShadow: used
           ? "none"
-          : hovered
-            ? `0 0 28px ${theme.glow}88, inset 0 0 30px ${theme.glow}44`
-            : `0 0 18px ${theme.glow}66, inset 0 0 24px ${theme.glow}33`,
+          : onCooldown
+            ? `0 0 8px rgba(255,46,107,0.2)`
+            : hovered
+              ? `0 0 28px ${theme.glow}88, inset 0 0 30px ${theme.glow}44`
+              : `0 0 18px ${theme.glow}66, inset 0 0 24px ${theme.glow}33`,
         opacity: used ? 0.55 : 1,
         textAlign: "center",
         position: "relative",
         overflow: "hidden",
+        ...(onCooldown ? { animation: "cooldownPulse 1.2s ease-in-out infinite" } : {}),
       }}
     >
       {/* Hover glow layer */}
-      {!used && (
+      {!used && !onCooldown && (
         <div
           style={{
             position: "absolute",
@@ -745,22 +786,44 @@ function CardButton({ card, uses, onClick }: CardButtonProps) {
           }}
         />
       )}
-      <div style={styles.cardIconWrap}>{card.icon}</div>
+      <div style={{ ...styles.cardIconWrap, opacity: iconDimmed }}>{card.icon}</div>
       <span style={{
         ...styles.cardSlug,
         color: used ? NEON.textDim : theme.glow,
         textShadow: used ? "none" : `0 0 12px ${theme.glow}66, 0 0 28px ${theme.glow}44`,
+        opacity: dimmed,
+        transition: "opacity 250ms ease-out",
       }}>
         {slug}
       </span>
-      <span style={{ ...styles.cardSubtitle, color: used ? NEON.textDim : theme.glow }}>
+      <span style={{
+        ...styles.cardSubtitle,
+        color: used ? NEON.textDim : theme.glow,
+        opacity: onCooldown ? 0.5 : 0.75,
+        transition: "opacity 250ms ease-out",
+      }}>
         {card.subtitle}
       </span>
-      <span style={styles.cardCounter}>
-        {used
-          ? "used"
-          : `${remaining} of ${card.usesPerTopic} left · this topic`}
-      </span>
+      {/* Counter area: shows cooldown, "used", or remaining count */}
+      {onCooldown ? (
+        <span style={{
+          fontFamily: '"Orbitron", system-ui, sans-serif',
+          fontWeight: 900,
+          fontSize: 14,
+          color: "#ff2e6b",
+          textShadow: "0 0 8px rgba(255,46,107,0.4)",
+          textAlign: "center",
+          marginTop: 2,
+        }}>
+          {cooldown}s
+        </span>
+      ) : (
+        <span style={styles.cardCounter}>
+          {used
+            ? "used"
+            : `${remaining} of ${card.usesPerTopic} left · this topic`}
+        </span>
+      )}
     </button>
   );
 }

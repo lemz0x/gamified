@@ -95,6 +95,12 @@ interface CardSprite {
   targetSeat: SeatId;
 }
 
+/** Source aura sprite — gold glow on the tile of whoever played the card. */
+interface SourceAuraSprite {
+  id: string;
+  sourceSeat: SeatId;
+}
+
 interface CardAnnounce {
   /** Unique id for React key. */
   id: string;
@@ -128,10 +134,15 @@ export function OverlayRoute() {
       : "HOST",
   );
 
-  // Emoji + card animations currently on screen. Trimmed by timers below.
+  // Emoji + card animations + source auras currently on screen. Trimmed by timers.
   const [emojiSprites, setEmojiSprites] = useState<readonly EmojiSprite[]>([]);
   const [cardSprites, setCardSprites] = useState<readonly CardSprite[]>([]);
+  const [sourceAuraSprites, setSourceAuraSprites] = useState<readonly SourceAuraSprite[]>([]);
   const [cardAnnounce, setCardAnnounce] = useState<CardAnnounce | null>(null);
+
+  // Muted-seats state: tracks which guest tiles should show the desat overlay.
+  const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+
   const idCounter = useRef(0);
   const nextId = () => `${Date.now().toString(36)}-${(idCounter.current++).toString(36)}`;
 
@@ -177,6 +188,16 @@ export function OverlayRoute() {
     }, CARD_ANIM_MS + 80);
   }, []);
 
+  /** Source aura duration: 300ms fade in + 2.4s hold + 300ms fade out. */
+  const SOURCE_AURA_MS = 3000;
+
+  const enqueueSourceAura = useCallback((sprite: SourceAuraSprite) => {
+    setSourceAuraSprites((prev) => [...prev, sprite]);
+    window.setTimeout(() => {
+      setSourceAuraSprites((prev) => prev.filter((s) => s.id !== sprite.id));
+    }, SOURCE_AURA_MS + 80);
+  }, []);
+
   const onMessage = useCallback(
     (msg: EventPayload) => {
       switch (msg.type) {
@@ -185,6 +206,10 @@ export function OverlayRoute() {
           break;
         case "cardPlay":
           enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat });
+          // Source aura: show gold glow on the card-player's tile (guests only; host has no tile)
+          if (msg.from.kind === "guest") {
+            enqueueSourceAura({ id: nextId(), sourceSeat: msg.from.seat });
+          }
           fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce);
           playCardSfx(msg.cardId);
           break;
@@ -199,6 +224,29 @@ export function OverlayRoute() {
             try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
           }
           break;
+        case "muteGuest": {
+          // Add target seats to muted set for overlay desat treatment
+          const targets: SeatId[] = msg.target === "all"
+            ? (Object.keys(tiles) as SeatId[])
+            : [msg.target as SeatId];
+          setMutedSeats((prev) => {
+            const next = new Set(prev);
+            targets.forEach((s) => next.add(s));
+            return next;
+          });
+          break;
+        }
+        case "unmuteGuest": {
+          const targets: SeatId[] = msg.target === "all"
+            ? (Object.keys(tiles) as SeatId[])
+            : [msg.target as SeatId];
+          setMutedSeats((prev) => {
+            const next = new Set(prev);
+            targets.forEach((s) => next.delete(s));
+            return next;
+          });
+          break;
+        }
         // cardReset, getResetEpoch → not needed by overlay.
         default:
           break;
@@ -206,7 +254,7 @@ export function OverlayRoute() {
     },
     // tiles is intentionally read fresh inside handleEmoji via closure;
     // re-binding the listener every tile change is fine and rare.
-    [tiles, enqueueEmoji, enqueueCard],
+    [tiles, enqueueEmoji, enqueueCard, enqueueSourceAura],
   );
 
   const { iframeRef } = useVdoNinja({ onMessage });
@@ -224,6 +272,14 @@ export function OverlayRoute() {
           if (!Comp) return null;
           return <Comp key={sprite.id} tile={tiles[sprite.targetSeat]} />;
         })}
+
+        {sourceAuraSprites.map((sprite) => (
+          <SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
+        ))}
+
+        {mutedSeats.size > 0 && (Object.keys(tiles) as SeatId[])
+          .filter((seat) => mutedSeats.has(seat))
+          .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
@@ -253,7 +309,7 @@ export function OverlayRoute() {
 const CARD_COLORS: Record<CardId, string> = {
   stfu: "#ff2e6b",
   micdrop: "#00d96b",
-  wrapitup: "#ffcc00",
+  wrapitup: "#ff7700",
 };
 
 /** Card id → overlay sprite component. Module-level to avoid per-render allocation. */
@@ -613,16 +669,20 @@ function MicDropCard({ tile }: { tile: Tile }) {
 /**
  * WRAP IT UP card animation (target tile only, ~2.5s).
  *
- * Yellow theme — a nudge, not an attack. No dim wash. Two visual systems:
- *   1. Tile-targeted: shake, yellow flash, glow ring, ⏰ wobble, slam text
+ * Orange theme — a nudge, not an attack. No dim wash. Two visual systems:
+ *   1. Tile-targeted: shake, orange flash, glow ring, ⏰ wobble, slam text
  *   2. Center-screen announcement (via CardAnnounceText, fires simultaneously)
+ *
+ * v1.4: colour changed from yellow (#ffcc00) to orange (#ff7700) to avoid
+ * clashing with the gold source aura (#ffd700) — they sat ~15° apart on
+ * the hue wheel and read as the same colour family under OBS compositing.
  *
  * Layers:
  *   1. Tile-shake wrapper — subtle wiggle for 360ms.
- *   2. Yellow radial flash — screen blend, fast in, decays.
- *   3. Yellow inset glow ring — pulses across the full duration.
+ *   2. Orange radial flash — screen blend, fast in, decays.
+ *   3. Orange inset glow ring — pulses across the full duration.
  *   4. ⏰ emoji wobble — ticking-clock back-and-forth rotation.
- *   5. "WRAP IT UP!" Orbitron slam text with yellow atmospheric glow.
+ *   5. "WRAP IT UP!" Orbitron slam text with orange atmospheric glow.
  */
 function WrapItUpCard({ tile }: { tile: Tile }) {
   const fontSize = Math.max(18, Math.round(tile.w * 0.10));
@@ -634,26 +694,26 @@ function WrapItUpCard({ tile }: { tile: Tile }) {
         animation: "wrapTileShake 360ms ease-in-out",
       }}
     >
-      {/* Yellow flash — no dim wash, keeping it bright (a nudge, not an attack). */}
+      {/* Orange flash — no dim wash, keeping it bright (a nudge, not an attack). */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           background:
-            "radial-gradient(circle at 50% 45%, rgba(255, 204, 0, 0.85), rgba(255, 180, 0, 0.45))",
+            "radial-gradient(circle at 50% 45%, rgba(255, 119, 0, 0.85), rgba(255, 100, 0, 0.45))",
           mixBlendMode: "screen",
           opacity: 0,
           willChange: "opacity",
           animation: "wrapFlash 2500ms ease-out forwards",
         }}
       />
-      {/* Yellow inset glow ring */}
+      {/* Orange inset glow ring */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           boxShadow:
-            "inset 0 0 30px #ffcc00, inset 0 0 60px rgba(255, 204, 0, 0.55)",
+            "inset 0 0 30px #ff7700, inset 0 0 60px rgba(255, 119, 0, 0.55)",
           opacity: 0,
           willChange: "opacity",
           animation: "wrapGlowRing 2500ms ease-in-out forwards",
@@ -671,7 +731,7 @@ function WrapItUpCard({ tile }: { tile: Tile }) {
           fontFamily:
             '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
           filter:
-            "drop-shadow(0 0 16px rgba(255, 204, 0, 0.85)) drop-shadow(0 4px 14px rgba(0, 0, 0, 0.7))",
+            "drop-shadow(0 0 16px rgba(255, 119, 0, 0.85)) drop-shadow(0 4px 14px rgba(0, 0, 0, 0.7))",
           opacity: 0,
           willChange: "transform, opacity",
           animation: "wrapEmojiPulse 2500ms cubic-bezier(0.2, 1.5, 0.4, 1) 100ms forwards",
@@ -679,7 +739,7 @@ function WrapItUpCard({ tile }: { tile: Tile }) {
       >
         {"\u{23F0}"}
       </div>
-      {/* Slam text — Orbitron, yellow atmospheric glow */}
+      {/* Slam text — Orbitron, orange atmospheric glow */}
       <div
         style={{
           position: "absolute",
@@ -700,13 +760,109 @@ function WrapItUpCard({ tile }: { tile: Tile }) {
           whiteSpace: "nowrap",
           textShadow: [
             "0 0 8px rgba(0,0,0,0.55)",
-            "0 0 22px rgba(255,204,0,0.7)",
-            "0 0 55px rgba(255,204,0,0.44)",
-            "0 0 90px rgba(255,204,0,0.22)",
+            "0 0 22px rgba(255,119,0,0.7)",
+            "0 0 55px rgba(255,119,0,0.44)",
+            "0 0 90px rgba(255,119,0,0.22)",
           ].join(", "),
         }}
       >
         WRAP IT UP!
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Source aura — gold inset glow ring on the card-player's tile.
+ *
+ * Renders as a sibling div (matching cardBoxStyle pattern) with a gold
+ * inset box-shadow glow ring animated over ~3s (300ms fade in → 2.4s hold
+ * → 300ms fade out). Uses the same opacity-keyframe approach as the card
+ * animations (StfuCard's glow ring, MicDropCard's glow ring) to keep
+ * the visual language consistent — this is a "warm glow" variant, not a
+ * separate design system.
+ *
+ * The gold is universal regardless of which card was played: "gold = this
+ * person is active" and the center announcement says "what they played."
+ * This avoids colour confusion with the target's per-card animation.
+ */
+function SourceAura({ tile }: { tile: Tile }) {
+  return (
+    <div style={cardBoxStyle(tile)}>
+      {/* Gold inset glow ring — same opacity curve as stfuGlowRing but longer */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          boxShadow: [
+            "inset 0 0 35px rgba(255,215,0,0.6)",
+            "inset 0 0 70px rgba(255,215,0,0.35)",
+            "0 0 20px rgba(255,215,0,0.3)",
+            "0 0 45px rgba(255,215,0,0.15)",
+          ].join(", "),
+          border: "2px solid rgba(255,215,0,0.45)",
+          opacity: 0,
+          willChange: "opacity",
+          animation: "sourceAuraGlow 3000ms ease-in-out forwards",
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Muted tile overlay — desaturation wash + "SILENCED" label.
+ *
+ * Because the overlay is a separate OBS layer on top of the video feeds,
+ * we can't apply CSS filter:grayscale() to the underlying camera. Instead
+ * we paint a semi-transparent desaturated overlay that washes out the
+ * colour of whatever is beneath it in OBS compositing.
+ *
+ * Two layers:
+ *   1. Desaturation wash — heavily desaturated semi-opaque layer that
+ *      removes colour from the camera beneath while keeping the person
+ *      visible (not a dark dim — that's STFU's territory).
+ *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
+ */
+function MutedTileOverlay({ tile }: { tile: Tile }) {
+  const labelSize = Math.max(12, Math.round(tile.w * 0.05));
+  return (
+    <div style={tileBoxStyle(tile)}>
+      {/* Desaturation wash — semi-transparent gray that kills colour underneath */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "rgba(8, 6, 14, 0.55)",
+          // Screen blend makes it desaturate rather than darken too aggressively
+          mixBlendMode: "saturation",
+          opacity: 1,
+          transition: "opacity 250ms ease-out",
+        }}
+      />
+      {/* SILENCED label */}
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          bottom: "18%",
+          transform: "translateX(-50%)",
+          fontFamily: '"Orbitron", system-ui, sans-serif',
+          fontWeight: 900,
+          fontSize: labelSize,
+          letterSpacing: 2,
+          color: "#ff2e6b",
+          textShadow: "0 0 8px rgba(0,0,0,0.8), 0 0 16px rgba(255,46,107,0.53)",
+          padding: "3px 12px",
+          borderRadius: 5,
+          background: "rgba(10,6,16,0.85)",
+          border: "1px solid rgba(255,46,107,0.33)",
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+          transition: "opacity 250ms ease-out",
+        }}
+      >
+        SILENCED
       </div>
     </div>
   );
