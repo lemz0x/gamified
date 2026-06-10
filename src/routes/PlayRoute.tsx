@@ -605,7 +605,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                 key={card.id}
                 card={card}
                 uses={cardUses[card.id]}
-                cooldown={card.id === "stfu" ? stfuCooldown : null}
+                cooldown={card.id === "stfu" || card.id === "wrapitup" ? stfuCooldown : null}
                 onClick={() => setActiveCard(card)}
               />
             ))}
