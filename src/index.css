@@ -235,7 +235,7 @@ body.overlay-route #root {
 
 /* ── WRAP IT UP tile animation ────────────────────────────────────────── */
 
-/* Yellow flash — quick burst, decays. No dim wash (it's a nudge, not an attack). */
+/* Orange flash — quick burst, decays. No dim wash (it's a nudge, not an attack). */
 @keyframes wrapFlash {
   0% { opacity: 0; }
   4% { opacity: 1; }
@@ -244,8 +244,7 @@ body.overlay-route #root {
   85% { opacity: 0; }
   100% { opacity: 0; }
 }
-
-/* Yellow inset glow ring — pulses 0 → 0.8 → 0 across the full 2500ms. */
+/* Orange inset glow ring — pulses 0 → 0.8 → 0 across the full 2500ms. */
 @keyframes wrapGlowRing {
   0% { opacity: 0; }
   18% { opacity: 0.8; }
@@ -278,7 +277,7 @@ body.overlay-route #root {
   100% { transform: translate(-50%, -50%) scale(1.1) rotate(0deg); opacity: 0; }
 }
 
-/* WRAP IT UP slam text — Orbitron 900, yellow atmospheric glow. */
+/* WRAP IT UP slam text — Orbitron 900, orange atmospheric glow. */
 @keyframes wrapSlamText {
   0%, 4% { transform: translate(-50%, -50%) scale(3) rotate(-2deg); opacity: 0; }
   18% { transform: translate(-50%, -50%) scale(0.92) rotate(-2deg); opacity: 1; }
@@ -569,6 +568,31 @@ body.overlay-route #root {
     transform: translate(-50%, -50%) scale(1.08);
     filter: brightness(1.35);
   }
+}
+
+/* ── v1.4: Source aura + cooldown + orange WRAP IT UP ─────────────────── */
+
+/* Gold source aura glow ring on the card-player's tile.
+   300ms fade in → 2.4s hold → 300ms fade out. Same opacity-curve
+   approach as stfuGlowRing / micGlowRing / wrapGlowRing to keep
+   the visual language consistent. Total 3000ms. */
+@keyframes sourceAuraGlow {
+  0% { opacity: 0; }
+  10% { opacity: 0.7; }
+  15% { opacity: 0.9; }
+  50% { opacity: 0.75; }
+  85% { opacity: 0.65; }
+  90% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+
+/* STFU card cooldown pulse — faint border glow that breathes on
+   the card button during the 10s lockout window. Colour is neutral
+   so it works with any card theme (border/glow colours come from
+   inline styles on the button element). */
+@keyframes cooldownPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
 }
 
 /* ── MVP winner flourishes ─────────────────────────────────────────────
