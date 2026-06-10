@@ -235,7 +235,7 @@ body.overlay-route #root {
 
 /* ── WRAP IT UP tile animation ────────────────────────────────────────── */
 
-/* Yellow flash — quick burst, decays. No dim wash (it's a nudge, not an attack). */
+/* Orange flash — quick burst, decays. No dim wash (it's a nudge, not an attack). */
 @keyframes wrapFlash {
   0% { opacity: 0; }
   4% { opacity: 1; }
@@ -244,7 +244,7 @@ body.overlay-route #root {
   85% { opacity: 0; }
   100% { opacity: 0; }
 }
-/* Yellow inset glow ring — pulses 0 → 0.8 → 0 across the full 2500ms. */
+/* Orange inset glow ring — pulses 0 → 0.8 → 0 across the full 2500ms. */
 @keyframes wrapGlowRing {
   0% { opacity: 0; }
   18% { opacity: 0.8; }
@@ -277,7 +277,7 @@ body.overlay-route #root {
   100% { transform: translate(-50%, -50%) scale(1.1) rotate(0deg); opacity: 0; }
 }
 
-/* WRAP IT UP slam text — Orbitron 900, yellow atmospheric glow. */
+/* WRAP IT UP slam text — Orbitron 900, orange atmospheric glow. */
 @keyframes wrapSlamText {
   0%, 4% { transform: translate(-50%, -50%) scale(3) rotate(-2deg); opacity: 0; }
   18% { transform: translate(-50%, -50%) scale(0.92) rotate(-2deg); opacity: 1; }

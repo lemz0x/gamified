@@ -142,6 +142,9 @@ export function OverlayRoute() {
 
   // Muted-seats state: tracks which guest tiles should show the desat overlay.
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+  // Ref for the STFU area-mute visual timeout so we can clear it on
+  // stacking (rapid back-to-back STFU plays) and on component unmount.
+  const stfuVisualTimeoutRef = useRef<number | null>(null);
 
   const idCounter = useRef(0);
   const nextId = () => `${Date.now().toString(36)}-${(idCounter.current++).toString(36)}`;
@@ -151,6 +154,15 @@ export function OverlayRoute() {
   // calibration done in a sibling tab) on top of the broadcast events.
   // Preload card SFX so first play is instant (no network delay).
   useEffect(() => { preloadCardSfx(); }, []);
+
+  // Cleanup: clear any pending STFU visual mute timeout on unmount.
+  useEffect(() => {
+    return () => {
+      if (stfuVisualTimeoutRef.current !== null) {
+        window.clearTimeout(stfuVisualTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     document.body.classList.add("overlay-route");
@@ -226,15 +238,21 @@ export function OverlayRoute() {
               mutedSeatsArr.forEach((s) => next.add(s));
               return next;
             });
+            // Clear any pending STFU visual timeout (handles stacking:
+            // a second STFU extends the window rather than creating
+            // competing timeouts that un-mute prematurely).
+            if (stfuVisualTimeoutRef.current !== null) {
+              window.clearTimeout(stfuVisualTimeoutRef.current);
+            }
             // Auto-clear after 10s (matches the STFU mute window in PlayRoute)
-            const STFU_MUTE_MS = 10_000;
-            window.setTimeout(() => {
+            stfuVisualTimeoutRef.current = window.setTimeout(() => {
               setMutedSeats((prev) => {
                 const next = new Set(prev);
                 mutedSeatsArr.forEach((s) => next.delete(s));
                 return next;
               });
-            }, STFU_MUTE_MS);
+              stfuVisualTimeoutRef.current = null;
+            }, 10_000);
           }
           fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce);
           playCardSfx(msg.cardId);
@@ -854,14 +872,16 @@ function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
   return (
     <div style={tileBoxStyle(tile)}>
-      {/* Desaturation wash — semi-transparent gray that kills colour underneath */}
+      {/* Desaturation wash — semi-opaque medium-gray that visually
+          desaturates the camera feed beneath. CSS mixBlendMode: "saturation"
+          can't desaturate across OBS source layers (the video is in a
+          separate browser source, not a sibling DOM element), so we use a
+          gray overlay that pushes colours toward neutral. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(8, 6, 14, 0.55)",
-          // Screen blend makes it desaturate rather than darken too aggressively
-          mixBlendMode: "saturation",
+          background: "rgba(50, 45, 60, 0.6)",
           opacity: 1,
           transition: "opacity 250ms ease-out",
         }}
