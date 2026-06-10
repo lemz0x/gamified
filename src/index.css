@@ -586,12 +586,13 @@ body.overlay-route #root {
   100% { opacity: 0; }
 }
 
-/* STFU card cooldown pulse — faint red border glow that breathes on
-   the STFU card button during the 10s lockout window. Same rhythm as
-   the play-page pulse but scoped to the card button element. */
+/* STFU card cooldown pulse — faint border glow that breathes on
+   the card button during the 10s lockout window. Colour is neutral
+   so it works with any card theme (border/glow colours come from
+   inline styles on the button element). */
 @keyframes cooldownPulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(255,46,107,0.2); border-color: rgba(255,84,130,0.33); }
-  50% { box-shadow: 0 0 14px rgba(255,46,107,0.35); border-color: rgba(255,84,130,0.53); }
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
 }
 
 /* ── MVP winner flourishes ─────────────────────────────────────────────

@@ -742,9 +742,12 @@ function CardButton({ card, uses, cooldown, onClick }: CardButtonProps) {
   const slug = card.shortName ?? card.name;
   const [hovered, setHovered] = useState(false);
   // Cooldown visual: card stays coloured but icon/slug dimmer, counter replaced
-  // by Orbitron countdown in red, faint red border pulse animation.
+  // by Orbitron countdown in theme colour, faint theme-colour border pulse animation.
   const dimmed = onCooldown ? 0.7 : 1;
   const iconDimmed = onCooldown ? 0.6 : 1;
+  // Derive cooldown border/glow from the card's own theme colour
+  const cooldownBorder = theme.glow.replace(")", ",0.53)").replace("rgb", "rgba");
+  const cooldownGlow = theme.glow.replace(")", ",0.2)").replace("rgb", "rgba");
   return (
     <button
       type="button"
@@ -755,12 +758,12 @@ function CardButton({ card, uses, cooldown, onClick }: CardButtonProps) {
       style={{
         ...styles.card,
         background: used ? "#15151f" : theme.tint,
-        borderColor: used ? "#222230" : onCooldown ? "rgba(255,84,130,0.53)" : theme.edge,
+        borderColor: used ? "#222230" : onCooldown ? cooldownBorder : theme.edge,
         color: used ? NEON.textDim : NEON.text,
         boxShadow: used
           ? "none"
           : onCooldown
-            ? `0 0 8px rgba(255,46,107,0.2)`
+            ? `0 0 8px ${cooldownGlow}`
             : hovered
               ? `0 0 28px ${theme.glow}88, inset 0 0 30px ${theme.glow}44`
               : `0 0 18px ${theme.glow}66, inset 0 0 24px ${theme.glow}33`,
@@ -810,8 +813,8 @@ function CardButton({ card, uses, cooldown, onClick }: CardButtonProps) {
           fontFamily: '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize: 14,
-          color: "#ff2e6b",
-          textShadow: "0 0 8px rgba(255,46,107,0.4)",
+          color: theme.glow,
+          textShadow: `0 0 8px ${theme.glow}66`,
           textAlign: "center",
           marginTop: 2,
         }}>
