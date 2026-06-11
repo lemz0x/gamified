@@ -186,21 +186,11 @@ const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
     },
   };
 
-/** Per-emoji brand glow colours for hover effects. */
-const EMOJI_COLOURS: Record<string, { hex: string; core: number; spread: number }> = {
-  "\u{1F92F}": { hex: "#00e5ff", core: 0.50, spread: 20 },   // 🤯
-  "\u{1F525}": { hex: "#ffb800", core: 0.55, spread: 20 },   // 🔥
-  "\u{2764}\u{FE0F}": { hex: "#ff66b3", core: 0.50, spread: 20 },   // ❤️
-  "\u{1F4AF}": { hex: "#a3e600", core: 0.60, spread: 24 },   // 💯
-  "\u{1F44F}": { hex: "#5c8aff", core: 0.50, spread: 20 },   // 👏
-  "\u{1F44D}": { hex: "#00e676", core: 0.50, spread: 20 },   // 👍
-  "\u{1F602}": { hex: "#b866ff", core: 0.50, spread: 20 },   // 😂
-  "\u{1F480}": { hex: "#ff8c42", core: 0.50, spread: 20 },   // 💀
-  "\u{1F440}": { hex: "#ff4444", core: 0.50, spread: 20 },   // 👀
-  "\u{1F921}": { hex: "#ffd700", core: 0.70, spread: 26 },   // 🤡
-  "\u{1F4A9}": { hex: "#66ffcc", core: 0.60, spread: 24 },   // 💩
-  "\u{1F44E}": { hex: "#ff2a6d", core: 0.55, spread: 22 },   // 👎
-};
+import { EMOJI_COLOURS as EMOJI_COLOURS_RAW } from "../emojis";
+
+/** Per-emoji brand glow colours for hover effects. Derived from shared
+ *  EMOJI_COLOURS in emojis.ts; kept as a local alias for brevity. */
+const EMOJI_COLOURS = EMOJI_COLOURS_RAW;
 
 // ── component ────────────────────────────────────────────────────────────
 
