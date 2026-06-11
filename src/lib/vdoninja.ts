@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { CardId } from "../cards";
 import type { Emoji } from "../emojis";
-import type { SeatId, TileMap } from "../coords";
+import { SEAT_ORDER, type SeatId, type TileMap } from "../coords";
 
 // ── URL builders ────────────────────────────────────────────────────────
 
@@ -334,7 +334,7 @@ const VALID_TYPES = new Set([
   "buzzIn", "buzzOff",
 ] as const);
 
-const VALID_SEAT_IDS = new Set<SeatId>(["L1", "L2", "L3", "R1", "R2", "R3"]);
+const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
 const VALID_CARD_IDS = new Set<CardId>(["stfu", "micdrop", "wrapitup"]);
 
 function isValidSeatId(v: unknown): v is SeatId {

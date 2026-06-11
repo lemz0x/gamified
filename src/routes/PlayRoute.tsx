@@ -9,7 +9,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { CARDS, type Card, type CardId } from "../cards";
 import { CHAT_EMOJIS, EMOJIS, type Emoji } from "../emojis";
-import type { SeatId } from "../coords";
+import { SEAT_ORDER, type SeatId } from "../coords";
 import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildEditorIframeUrl,
@@ -25,7 +25,6 @@ import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
 /** Map ?seat=1..6 to the seat ids used everywhere else (see CLAUDE.md §5). */
-const SEAT_ORDER: readonly SeatId[] = ["L1", "L2", "L3", "R1", "R2", "R3"];
 
 function parseSeat(raw: string | null): SeatId | null {
   if (!raw) return null;
