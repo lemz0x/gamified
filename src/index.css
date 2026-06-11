@@ -1,5 +1,67 @@
 @import "tailwindcss";
 
+/* ── Self-hosted fonts ──────────────────────────────────────────────────
+   Inter + Orbitron served locally so OBS overlay never depends on
+   fonts.googleapis.com at runtime. Orbitron 900 uses font-display:
+   optional on the overlay route to prevent mid-animation font swaps. */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/inter-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/inter-800.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url("/fonts/inter-900.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Orbitron";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/orbitron-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Orbitron";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/orbitron-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Orbitron";
+  font-style: normal;
+  font-weight: 900;
+  /* optional: never swap mid-animation on the overlay route.
+     Panels use swap (below) via body class. */
+  font-display: optional;
+  src: url("/fonts/orbitron-900.woff2") format("woff2");
+}
+/* Override Orbitron 900 to swap for non-overlay routes (panel UI) */
+body:not(.overlay-route) .orbitron-swap,
+body:not(.overlay-route) [style*="Orbitron"] {
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
 }
