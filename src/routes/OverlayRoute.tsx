@@ -87,18 +87,24 @@ interface EmojiSprite {
   xWithinTile: number;
   /** Sway direction (+1 / −1) for the slight horizontal drift. */
   swaySign: 1 | -1;
+  /** Timestamp (ms) after which this sprite should be removed. */
+  expiresAt: number;
 }
 
 interface CardSprite {
   id: string;
   cardId: CardPlayEvent["cardId"];
   targetSeat: SeatId;
+  /** Timestamp (ms) after which this sprite should be removed. */
+  expiresAt: number;
 }
 
 /** Source aura sprite — gold glow on the tile of whoever played the card. */
 interface SourceAuraSprite {
   id: string;
   sourceSeat: SeatId;
+  /** Timestamp (ms) after which this sprite should be removed. */
+  expiresAt: number;
 }
 
 interface CardAnnounce {
@@ -217,8 +223,23 @@ export function OverlayRoute() {
     };
   }, []);
 
-  // Drop emoji sprites once their float animation has finished. Storing
-  // them in state lets React reconcile cleanly without a re-render loop.
+  // Single sweep interval: instead of per-sprite setTimeout removals
+  // (which create N individual state updates during a spam burst), we
+  // stamp each sprite with an expiresAt and run one interval that
+  // prunes all expired sprites across all three arrays in one render.
+  // Grace margin (80ms) ensures CSS animations finish before removal.
+  const SWEEP_INTERVAL_MS = 250;
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setEmojiSprites((prev) => prev.filter((s) => s.expiresAt > now));
+      setCardSprites((prev) => prev.filter((s) => s.expiresAt > now));
+      setSourceAuraSprites((prev) => prev.filter((s) => s.expiresAt > now));
+    }, SWEEP_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
   const enqueueEmoji = useCallback((sprite: EmojiSprite) => {
     setEmojiSprites((prev) => {
       // Per-seat soft cap: drop the oldest sprite for this seat first.
@@ -229,16 +250,10 @@ export function OverlayRoute() {
       }
       return [...next, sprite];
     });
-    window.setTimeout(() => {
-      setEmojiSprites((prev) => prev.filter((s) => s.id !== sprite.id));
-    }, EMOJI_FLOAT_MS + 80);
   }, []);
 
   const enqueueCard = useCallback((sprite: CardSprite) => {
     setCardSprites((prev) => [...prev, sprite]);
-    window.setTimeout(() => {
-      setCardSprites((prev) => prev.filter((s) => s.id !== sprite.id));
-    }, CARD_ANIM_MS + 80);
   }, []);
 
   /** Source aura duration: 300ms fade in + 2.4s hold + 300ms fade out. */
@@ -246,9 +261,6 @@ export function OverlayRoute() {
 
   const enqueueSourceAura = useCallback((sprite: SourceAuraSprite) => {
     setSourceAuraSprites((prev) => [...prev, sprite]);
-    window.setTimeout(() => {
-      setSourceAuraSprites((prev) => prev.filter((s) => s.id !== sprite.id));
-    }, SOURCE_AURA_MS + 80);
   }, []);
 
   const onMessage = useCallback(
@@ -258,10 +270,10 @@ export function OverlayRoute() {
           handleEmoji(msg, tiles, enqueueEmoji, nextId);
           break;
         case "cardPlay":
-          enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat });
+          enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat, expiresAt: Date.now() + CARD_ANIM_MS + 80 });
           // Source aura: show gold glow on the card-player's tile (guests only; host has no tile)
           if (msg.from.kind === "guest") {
-            enqueueSourceAura({ id: nextId(), sourceSeat: msg.from.seat });
+            enqueueSourceAura({ id: nextId(), sourceSeat: msg.from.seat, expiresAt: Date.now() + SOURCE_AURA_MS + 80 });
           }
           // STFU area mute visual: when STFU is played, all guest tiles except
           // the source get the "stfu" mute reason for 10s. The actual mic
@@ -392,12 +404,7 @@ const CARD_COLORS: Record<CardId, string> = {
   wrapitup: "#ff7700",
 };
 
-/** Card id → overlay sprite component. Module-level to avoid per-render allocation. */
-const CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
-  stfu: StfuCard,
-  micdrop: MicDropCard,
-  wrapitup: WrapItUpCard,
-};
+/** Card id → overlay sprite component. Declared below component definitions. */
 
 function fireCardAnnounce(
   msg: CardPlayEvent,
@@ -443,12 +450,13 @@ function handleEmoji(
     emoji: msg.emoji,
     xWithinTile: Math.random() * tile.w,
     swaySign: Math.random() < 0.5 ? -1 : 1,
+    expiresAt: Date.now() + EMOJI_FLOAT_MS + 80,
   });
 }
 
 // ── sprites ─────────────────────────────────────────────────────────────
 
-function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
+const CardAnnounceText = React.memo(function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
   return (
     <div
       style={{
@@ -484,14 +492,14 @@ function CardAnnounceText({ announce }: { announce: CardAnnounce }) {
       </div>
     </div>
   );
-}
+});
 
 interface EmojiFloatProps {
   sprite: EmojiSprite;
   tile: Tile;
 }
 
-function EmojiFloat({ sprite, tile }: EmojiFloatProps) {
+const EmojiFloat = React.memo(function EmojiFloat({ sprite, tile }: EmojiFloatProps) {
   // Spawn at the bottom edge of the tile, centered on the chosen X.
   // Keep the spawn position in static `top/left` (set once per element);
   // the float itself is a transform-only animation = compositor-friendly.
@@ -530,7 +538,7 @@ function EmojiFloat({ sprite, tile }: EmojiFloatProps) {
       </span>
     </div>
   );
-}
+});
 
 /**
  * STFU card animation (target tile only, ~2.5s).
@@ -551,7 +559,7 @@ function EmojiFloat({ sprite, tile }: EmojiFloatProps) {
  *   5. Two-line "SHUT THE / !@#$ UP!!" slams in with a stacked-stamp
  *      drop-shadow (red + red + red + black + glow).
  */
-function StfuCard({ tile }: { tile: Tile }) {
+const StfuCard = React.memo(function StfuCard({ tile }: { tile: Tile }) {
   // 32px at the spec'd 280px width; scales down on smaller tiles.
   const fontSize = Math.max(18, Math.round(tile.w * 0.115));
   return (
@@ -631,7 +639,7 @@ function StfuCard({ tile }: { tile: Tile }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * MIC DROP card animation (target tile only, ~2.5s).
@@ -651,7 +659,7 @@ function StfuCard({ tile }: { tile: Tile }) {
  *   4. "MIC DROP" slams in at the TOP of the tile around t=300ms,
  *      holds during the mic's fall, then fades.
  */
-function MicDropCard({ tile }: { tile: Tile }) {
+const MicDropCard = React.memo(function MicDropCard({ tile }: { tile: Tile }) {
   const fontSize = Math.max(20, Math.round(tile.w * 0.13));
   const micSize = Math.max(100, Math.round(tile.h * 0.45));
   // Start at the tile's top edge so it doesn't clip into the camera above.
@@ -744,7 +752,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * WRAP IT UP card animation (target tile only, ~2.5s).
@@ -764,7 +772,7 @@ function MicDropCard({ tile }: { tile: Tile }) {
  *   4. ⏰ emoji wobble — ticking-clock back-and-forth rotation.
  *   5. "WRAP IT UP!" Orbitron slam text with orange atmospheric glow.
  */
-function WrapItUpCard({ tile }: { tile: Tile }) {
+const WrapItUpCard = React.memo(function WrapItUpCard({ tile }: { tile: Tile }) {
   const fontSize = Math.max(18, Math.round(tile.w * 0.10));
   return (
     <div
@@ -850,7 +858,7 @@ function WrapItUpCard({ tile }: { tile: Tile }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * Source aura — gold inset glow ring on the card-player's tile.
@@ -866,7 +874,7 @@ function WrapItUpCard({ tile }: { tile: Tile }) {
  * person is active" and the center announcement says "what they played."
  * This avoids colour confusion with the target's per-card animation.
  */
-function SourceAura({ tile }: { tile: Tile }) {
+const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
   return (
     <div style={cardBoxStyle(tile)}>
       {/* Gold inset glow ring — same opacity curve as stfuGlowRing but longer */}
@@ -888,7 +896,7 @@ function SourceAura({ tile }: { tile: Tile }) {
       />
     </div>
   );
-}
+});
 
 /**
  * Muted tile overlay — desaturation wash + "SILENCED" label.
@@ -905,7 +913,7 @@ function SourceAura({ tile }: { tile: Tile }) {
  *      don't leave camera edges uncovered.
  *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
  */
-function MutedTileOverlay({ tile }: { tile: Tile }) {
+const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
   // Bleed past tile bounds so the wash covers rounded camera corners
   const bleed = 8;
@@ -960,7 +968,7 @@ function MutedTileOverlay({ tile }: { tile: Tile }) {
       </div>
     </div>
   );
-}
+});
 
 function CalibrationGrid({ tiles }: { tiles: TileMap }) {
   return (
@@ -995,6 +1003,13 @@ function CalibrationGrid({ tiles }: { tiles: TileMap }) {
     </>
   );
 }
+
+/** Card id → overlay sprite component. */
+const CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
+  stfu: StfuCard,
+  micdrop: MicDropCard,
+  wrapitup: WrapItUpCard,
+};
 
 function tileBoxStyle(tile: Tile): CSSProperties {
   // OBS layering handles z-order: overlays cover cams, nameplates/top
