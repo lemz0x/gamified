@@ -120,13 +120,13 @@ const GUEST_BROADCAST_PARAMS: Array<readonly [string, string | null]> = [
 ];
 
 /**
- * Builds the iframe `src` for a guest's wrapper. Layers the broadcast-
- * mode flags on top of the room constants so the guest sees only the
- * producer's composited stream (auto-discovered) — and other guests
- * joining doesn't shrink that view.
+ * Builds the iframe `src` for a guest's or host's wrapper. Uses
+ * broadcast-mode flags so the browser source shows only the producer's
+ * composited stream (auto-discovered) — and other guests joining doesn't
+ * shrink that view.
  *
  * Does **not** add an explicit `view=` — `&broadcast` auto-targets the
- * director's stream.
+ * director's stream. Guests and host share the same URL shape.
  */
 export function buildIframeUrl(params: GuestIframeParams): string {
   const all = [
@@ -138,20 +138,8 @@ export function buildIframeUrl(params: GuestIframeParams): string {
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
 }
 
-/**
- * Builds the iframe `src` for the host's wrapper. Uses the same
- * broadcast-mode flags as guests so the host sees only the producer's
- * composited stream (pinned to TBSqrdw), with a mini self-preview.
- */
-export function buildHostIframeUrl(params: GuestIframeParams): string {
-  const all = [
-    ...GUEST_ROOM_PARAMS,
-    ...GUEST_BROADCAST_PARAMS,
-    ["push", params.push] as const,
-    ["label", params.label] as const,
-  ];
-  return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
-}
+/** @deprecated Use buildIframeUrl — host and guest URLs are identical. */
+export const buildHostIframeUrl = buildIframeUrl;
 
 /**
  * Builds the iframe `src` for the editor's wrapper. The editor is
