@@ -154,6 +154,9 @@ function senderFromIdentity(identity: Identity): EventSender {
 
 // ── visual constants (gamified neon palette, dark theme) ─────────────────
 
+/** Buzzer auto-off duration (ms). After this, a buzzer is silently turned off. */
+const BUZZ_AUTO_OFF_MS = 120_000;
+
 const NEON = {
   bg: "#08080d",
   panelBg: "#0e0e16",
@@ -253,7 +256,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const nextChatId = () => `c${chatIdRef.current++}`;
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
-  // Auto-off timer: buzzers auto-clear after 30s so nobody forgets to turn off.
+  // Auto-off timer: buzzers auto-clear after 120s so nobody forgets to turn off.
   const buzzTimerRef = useRef<number | null>(null);
 
   // ── mute infrastructure (dual-flag reconcile, STFU area mute) ─────────
@@ -659,13 +662,13 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               if (nowOn) {
                 buzzOn(identity.seat);
                 send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
-                // Auto-off after 30s so nobody stays buzzing forever.
+                // Auto-off after 120s so nobody stays buzzing forever.
                 if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
                 buzzTimerRef.current = window.setTimeout(() => {
                   buzzOff(identity.seat);
                   send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
                   buzzTimerRef.current = null;
-                }, 120_000);
+                }, BUZZ_AUTO_OFF_MS);
               } else {
                 buzzOff(identity.seat);
                 send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
@@ -729,7 +732,7 @@ function LiveIndicator() {
 interface CardButtonProps {
   card: Card;
   uses: number;
-  /** Seconds remaining on cooldown (STFU only). null = not on cooldown. */
+  /** Seconds remaining on cooldown (STFU and WRAP IT UP). null = not on cooldown. */
   cooldown: number | null;
   onClick: () => void;
 }

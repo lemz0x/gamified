@@ -140,11 +140,52 @@ export function OverlayRoute() {
   const [sourceAuraSprites, setSourceAuraSprites] = useState<readonly SourceAuraSprite[]>([]);
   const [cardAnnounce, setCardAnnounce] = useState<CardAnnounce | null>(null);
 
-  // Muted-seats state: tracks which guest tiles should show the desat overlay.
-  const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+  // Muted-seats state: per-seat set of mute reasons. A seat renders
+  // SILENCED while any reason remains. "host" is removed by unmuteGuest;
+  // "stfu" is removed by the STFU visual timeout (10s). This prevents:
+  //  - STFU stacking orphaning a seat (each timeout only removes its own reason)
+  //  - STFU expiry visually unmuting a seat the host independently muted
+  const [muteReasons, setMuteReasons] = useState<Map<SeatId, Set<"host" | "stfu">>>(new Map());
   // Ref for the STFU area-mute visual timeout so we can clear it on
   // stacking (rapid back-to-back STFU plays) and on component unmount.
   const stfuVisualTimeoutRef = useRef<number | null>(null);
+
+  /** Add a mute reason for one or more seats. */
+  const addMuteReasons = useCallback((seats: SeatId[], reason: "host" | "stfu") => {
+    setMuteReasons((prev) => {
+      const next = new Map(prev);
+      for (const s of seats) {
+        const reasons = new Set(next.get(s));
+        reasons.add(reason);
+        next.set(s, reasons);
+      }
+      return next;
+    });
+  }, []);
+
+  /** Remove a mute reason for one or more seats. Seat unmutes when all reasons are gone. */
+  const removeMuteReasons = useCallback((seats: SeatId[], reason: "host" | "stfu") => {
+    setMuteReasons((prev) => {
+      const next = new Map(prev);
+      for (const s of seats) {
+        const reasons = next.get(s);
+        if (!reasons) continue;
+        const updated = new Set(reasons);
+        updated.delete(reason);
+        if (updated.size === 0) {
+          next.delete(s);
+        } else {
+          next.set(s, updated);
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  // Ref to latest muteReasons so the STFU timeout closure reads
+  // the current state 10s later (not a stale closure capture).
+  const muteReasonsRef = useRef(muteReasons);
+  muteReasonsRef.current = muteReasons;
 
   const idCounter = useRef(0);
   const nextId = () => `${Date.now().toString(36)}-${(idCounter.current++).toString(36)}`;
@@ -223,34 +264,36 @@ export function OverlayRoute() {
             enqueueSourceAura({ id: nextId(), sourceSeat: msg.from.seat });
           }
           // STFU area mute visual: when STFU is played, all guest tiles except
-          // the source show the desat + SILENCED overlay for 10s. The actual
-          // mic muting happens locally in each guest's PlayRoute, but that
+          // the source get the "stfu" mute reason for 10s. The actual mic
+          // muting happens locally in each guest's PlayRoute, but that
           // doesn't broadcast muteGuest events — so the overlay must handle
           // the visual treatment itself from the cardPlay event.
+          // Per-seat mute reasons prevent stacking bugs (each timeout only
+          // removes its own "stfu" reason) and host-mute interaction bugs
+          // (STFU expiry won't visually clear a host-muted seat).
           if (msg.cardId === "stfu") {
             const sourceSeat = msg.from.kind === "guest" ? msg.from.seat : null;
             const allSeats = Object.keys(tiles) as SeatId[];
             const mutedSeatsArr = sourceSeat
               ? allSeats.filter((s) => s !== sourceSeat)
               : allSeats;
-            setMutedSeats((prev) => {
-              const next = new Set(prev);
-              mutedSeatsArr.forEach((s) => next.add(s));
-              return next;
-            });
+            addMuteReasons(mutedSeatsArr, "stfu");
             // Clear any pending STFU visual timeout (handles stacking:
-            // a second STFU extends the window rather than creating
-            // competing timeouts that un-mute prematurely).
+            // a second STFU extends the window). The old timeout only
+            // removed "stfu" reasons, so orphaned "host" reasons are safe.
             if (stfuVisualTimeoutRef.current !== null) {
               window.clearTimeout(stfuVisualTimeoutRef.current);
             }
-            // Auto-clear after 10s (matches the STFU mute window in PlayRoute)
+            // Auto-clear after 10s (matches the STFU mute window in PlayRoute).
+            // This removes the "stfu" reason from ALL seats that currently
+            // have it — if the host also muted a seat, the "host" reason
+            // remains and the seat stays SILENCED.
             stfuVisualTimeoutRef.current = window.setTimeout(() => {
-              setMutedSeats((prev) => {
-                const next = new Set(prev);
-                mutedSeatsArr.forEach((s) => next.delete(s));
-                return next;
-              });
+              const stfuSeats = Object.keys(tiles).filter((s) => {
+                const reasons = muteReasonsRef.current.get(s as SeatId);
+                return reasons?.has("stfu");
+              }) as SeatId[];
+              removeMuteReasons(stfuSeats, "stfu");
               stfuVisualTimeoutRef.current = null;
             }, 10_000);
           }
@@ -269,26 +312,19 @@ export function OverlayRoute() {
           }
           break;
         case "muteGuest": {
-          // Add target seats to muted set for overlay desat treatment
+          // Add "host" mute reason for target seats
           const targets: SeatId[] = msg.target === "all"
             ? (Object.keys(tiles) as SeatId[])
             : [msg.target as SeatId];
-          setMutedSeats((prev) => {
-            const next = new Set(prev);
-            targets.forEach((s) => next.add(s));
-            return next;
-          });
+          addMuteReasons(targets, "host");
           break;
         }
         case "unmuteGuest": {
+          // Remove "host" mute reason for target seats
           const targets: SeatId[] = msg.target === "all"
             ? (Object.keys(tiles) as SeatId[])
             : [msg.target as SeatId];
-          setMutedSeats((prev) => {
-            const next = new Set(prev);
-            targets.forEach((s) => next.delete(s));
-            return next;
-          });
+          removeMuteReasons(targets, "host");
           break;
         }
         // cardReset, getResetEpoch → not needed by overlay.
@@ -298,7 +334,7 @@ export function OverlayRoute() {
     },
     // tiles is intentionally read fresh inside handleEmoji via closure;
     // re-binding the listener every tile change is fine and rare.
-    [tiles, enqueueEmoji, enqueueCard, enqueueSourceAura],
+    [tiles, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
   );
 
   const { iframeRef } = useVdoNinja({ onMessage });
@@ -321,8 +357,8 @@ export function OverlayRoute() {
           <SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
         ))}
 
-        {mutedSeats.size > 0 && (Object.keys(tiles) as SeatId[])
-          .filter((seat) => mutedSeats.has(seat))
+        {muteReasons.size > 0 && (Object.keys(tiles) as SeatId[])
+          .filter((seat) => muteReasons.has(seat))
           .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
