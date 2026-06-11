@@ -326,6 +326,59 @@ export type EventPayload =
   | BuzzInEvent
   | BuzzOffEvent;
 
+// ── Inbound payload validation ───────────────────────────────────────────
+
+const VALID_TYPES = new Set([
+  "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
+  "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
+  "buzzIn", "buzzOff",
+] as const);
+
+const VALID_SEAT_IDS = new Set<SeatId>(["L1", "L2", "L3", "R1", "R2", "R3"]);
+const VALID_CARD_IDS = new Set<CardId>(["stfu", "micdrop", "wrapitup"]);
+
+function isValidSeatId(v: unknown): v is SeatId {
+  return typeof v === "string" && VALID_SEAT_IDS.has(v as SeatId);
+}
+
+/** Narrow an unknown value to a valid EventPayload. Rejects malformed or
+ *  unexpected payloads so downstream switch statements never crash on
+ *  undefined access. Logs a warn in DEV mode so bugs surface fast. */
+export function validatePayload(raw: unknown): EventPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.type !== "string" || !VALID_TYPES.has(p.type as never)) {
+    if (import.meta.env.DEV) console.warn("[vdoninja] dropped payload with bad type:", p.type);
+    return null;
+  }
+
+  // Cross-check per-type invariants that downstream code assumes.
+  // We're defensive, not exhaustive — just enough to prevent crashes.
+  switch (p.type) {
+    case "emoji":
+      if (typeof p.emoji !== "string") return null;
+      break;
+    case "cardPlay":
+      if (!VALID_CARD_IDS.has(p.cardId as CardId)) return null;
+      if (typeof p.targetSeat === "string" && !isValidSeatId(p.targetSeat)) return null;
+      break;
+    case "muteGuest":
+    case "unmuteGuest":
+      if (p.target !== "all" && !isValidSeatId(p.target)) return null;
+      break;
+    case "muteCooldownDone":
+    case "buzzIn":
+    case "buzzOff":
+      if (!isValidSeatId(p.seat ?? p.target)) return null;
+      break;
+    case "calibration":
+      if (!p.tiles || typeof p.tiles !== "object") return null;
+      break;
+    // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
+  }
+  return p as unknown as EventPayload;
+}
+
 // ── Iframe data channel ─────────────────────────────────────────────────
 
 /** Namespace key our payloads sit under so we don't collide with other apps. */
@@ -396,10 +449,12 @@ export function onData(
       | undefined;
     const payload = data?.dataReceived?.[NAMESPACE];
     if (!payload || typeof payload !== "object") return;
+    const validated = validatePayload(payload);
+    if (!validated) return;
     if (import.meta.env.DEV) {
-      console.log("[vdoninja] ←", payload.type, payload);
+      console.log("[vdoninja] ←", validated.type, validated);
     }
-    callback(payload);
+    callback(validated);
   };
   window.addEventListener("message", handler);
   return () => window.removeEventListener("message", handler);
