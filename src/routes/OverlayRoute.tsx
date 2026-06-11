@@ -127,6 +127,7 @@ interface CardAnnounce {
 export function OverlayRoute() {
   const [search] = useSearchParams();
   const calibrateMode = search.get("calibrate") === "1";
+  const debugMode = search.get("debug") === "1";
 
   // Per-machine tile overrides (from prior CalibrationEvents). Live in
   // localStorage on this overlay browser source's machine.
@@ -145,6 +146,11 @@ export function OverlayRoute() {
   const [cardSprites, setCardSprites] = useState<readonly CardSprite[]>([]);
   const [sourceAuraSprites, setSourceAuraSprites] = useState<readonly SourceAuraSprite[]>([]);
   const [cardAnnounce, setCardAnnounce] = useState<CardAnnounce | null>(null);
+
+  // Debug HUD: track message counts + last-seen timestamp per type.
+  const debugCountsRef = useRef<Record<string, number>>({});
+  const debugLastSeenRef = useRef<Record<string, number>>({});
+  const [debugSnapshot, setDebugSnapshot] = useState<Record<string, { count: number; lastMs: number }>>({});
 
   // Muted-seats state: per-seat set of mute reasons. A seat renders
   // SILENCED while any reason remains. "host" is removed by unmuteGuest;
@@ -236,9 +242,17 @@ export function OverlayRoute() {
       setEmojiSprites((prev) => prev.filter((s) => s.expiresAt > now));
       setCardSprites((prev) => prev.filter((s) => s.expiresAt > now));
       setSourceAuraSprites((prev) => prev.filter((s) => s.expiresAt > now));
+      // Debug HUD: snapshot counters every sweep
+      if (debugMode) {
+        const snap: Record<string, { count: number; lastMs: number }> = {};
+        for (const [k, v] of Object.entries(debugCountsRef.current)) {
+          snap[k] = { count: v, lastMs: debugLastSeenRef.current[k] ?? 0 };
+        }
+        setDebugSnapshot(snap);
+      }
     }, SWEEP_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, []);
+  }, [debugMode]);
 
   const enqueueEmoji = useCallback((sprite: EmojiSprite) => {
     setEmojiSprites((prev) => {
@@ -265,6 +279,12 @@ export function OverlayRoute() {
 
   const onMessage = useCallback(
     (msg: EventPayload) => {
+      // Debug HUD: increment counters per event type
+      if (debugMode) {
+        const t = msg.type as string;
+        debugCountsRef.current[t] = (debugCountsRef.current[t] ?? 0) + 1;
+        debugLastSeenRef.current[t] = Date.now();
+      }
       switch (msg.type) {
         case "emoji":
           handleEmoji(msg, tiles, enqueueEmoji, nextId);
@@ -376,6 +396,7 @@ export function OverlayRoute() {
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
         {calibrateMode && <CalibrationGrid tiles={tiles} />}
+        {debugMode && <DebugHud snapshot={debugSnapshot} sprites={{ emoji: emojiSprites.length, card: cardSprites.length, aura: sourceAuraSprites.length, muted: muteReasons.size }} />}
       </div>
 
       {/*
@@ -1001,6 +1022,48 @@ function CalibrationGrid({ tiles }: { tiles: TileMap }) {
         );
       })}
     </>
+  );
+}
+
+/** ?debug=1 HUD: shows data-channel health (message counts, last-seen, sprite counts). */
+function DebugHud({
+  snapshot,
+  sprites,
+}: {
+  snapshot: Record<string, { count: number; lastMs: number }>;
+  sprites: { emoji: number; card: number; aura: number; muted: number };
+}) {
+  const now = Date.now();
+  const entries = Object.entries(snapshot).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 8,
+        right: 8,
+        background: "rgba(0,0,0,0.85)",
+        color: "#0f0",
+        fontFamily: "monospace",
+        fontSize: 11,
+        padding: "6px 10px",
+        borderRadius: 6,
+        lineHeight: 1.6,
+        zIndex: 9999,
+        pointerEvents: "none",
+        border: "1px solid rgba(0,255,0,0.25)",
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 2 }}>CHANNEL HEALTH</div>
+      {entries.length === 0 && <div style={{ opacity: 0.5 }}>no messages yet</div>}
+      {entries.map(([type, { count, lastMs }]) => (
+        <div key={type}>
+          {type}: {count} · {lastMs ? `${((now - lastMs) / 1000).toFixed(1)}s ago` : "—"}
+        </div>
+      ))}
+      <div style={{ borderTop: "1px solid rgba(0,255,0,0.2)", marginTop: 4, paddingTop: 4 }}>
+        sprites: 🎭{sprites.emoji} 🃏{sprites.card} ✨{sprites.aura} 🔇{sprites.muted}
+      </div>
+    </div>
   );
 }
 
