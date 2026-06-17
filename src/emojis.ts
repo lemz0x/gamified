@@ -50,3 +50,20 @@ export const CHAT_EMOJIS = [
   "\u{1F440}", // 👀
   "\u{1F480}", // 💀
 ] as const;
+
+/** Per-emoji brand colour + hover glow params. Single source of truth for
+ *  both OverlayRoute (drop-shadow) and PlayRoute (hover glow). */
+export const EMOJI_COLOURS: Record<string, { hex: string; core: number; spread: number }> = {
+  "\u{1F92F}": { hex: "#00e5ff", core: 0.50, spread: 20 },   // 🤯
+  "\u{1F525}": { hex: "#ffb800", core: 0.55, spread: 20 },   // 🔥
+  "\u{2764}\u{FE0F}": { hex: "#ff66b3", core: 0.50, spread: 20 },   // ❤️
+  "\u{1F4AF}": { hex: "#a3e600", core: 0.60, spread: 24 },   // 💯
+  "\u{1F44F}": { hex: "#5c8aff", core: 0.50, spread: 20 },   // 👏
+  "\u{1F44D}": { hex: "#00e676", core: 0.50, spread: 20 },   // 👍
+  "\u{1F602}": { hex: "#b866ff", core: 0.50, spread: 20 },   // 😂
+  "\u{1F480}": { hex: "#ff8c42", core: 0.50, spread: 20 },   // 💀
+  "\u{1F440}": { hex: "#ff4444", core: 0.50, spread: 20 },   // 👀
+  "\u{1F921}": { hex: "#ffd700", core: 0.70, spread: 26 },   // 🤡
+  "\u{1F4A9}": { hex: "#66ffcc", core: 0.60, spread: 24 },   // 💩
+  "\u{1F44E}": { hex: "#ff2a6d", core: 0.55, spread: 22 },   // 👎
+};

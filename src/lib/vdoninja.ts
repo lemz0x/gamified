@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { CardId } from "../cards";
 import type { Emoji } from "../emojis";
-import type { SeatId, TileMap } from "../coords";
+import { SEAT_ORDER, type SeatId, type TileMap } from "../coords";
 
 // ── URL builders ────────────────────────────────────────────────────────
 
@@ -120,13 +120,13 @@ const GUEST_BROADCAST_PARAMS: Array<readonly [string, string | null]> = [
 ];
 
 /**
- * Builds the iframe `src` for a guest's wrapper. Layers the broadcast-
- * mode flags on top of the room constants so the guest sees only the
- * producer's composited stream (auto-discovered) — and other guests
- * joining doesn't shrink that view.
+ * Builds the iframe `src` for a guest's or host's wrapper. Uses
+ * broadcast-mode flags so the browser source shows only the producer's
+ * composited stream (auto-discovered) — and other guests joining doesn't
+ * shrink that view.
  *
  * Does **not** add an explicit `view=` — `&broadcast` auto-targets the
- * director's stream.
+ * director's stream. Guests and host share the same URL shape.
  */
 export function buildIframeUrl(params: GuestIframeParams): string {
   const all = [
@@ -138,20 +138,8 @@ export function buildIframeUrl(params: GuestIframeParams): string {
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
 }
 
-/**
- * Builds the iframe `src` for the host's wrapper. Uses the same
- * broadcast-mode flags as guests so the host sees only the producer's
- * composited stream (pinned to TBSqrdw), with a mini self-preview.
- */
-export function buildHostIframeUrl(params: GuestIframeParams): string {
-  const all = [
-    ...GUEST_ROOM_PARAMS,
-    ...GUEST_BROADCAST_PARAMS,
-    ["push", params.push] as const,
-    ["label", params.label] as const,
-  ];
-  return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
-}
+/** @deprecated Use buildIframeUrl — host and guest URLs are identical. */
+export const buildHostIframeUrl = buildIframeUrl;
 
 /**
  * Builds the iframe `src` for the editor's wrapper. The editor is
@@ -204,6 +192,35 @@ export function buildChatOnlyUrl(params: { push: string; label: string }): strin
     ["label", params.label] as const,
   ];
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
+}
+
+/**
+ * Builds a public /play URL for a participant. Used by the producer panel's
+ * link generator so you can copy-paste a ready-made link to each guest.
+ */
+export function buildPlayUrl(params: {
+  /** Origin of the deployed site (e.g. `https://example.pages.dev`). */
+  base: string;
+  mode: "guest" | "host" | "editor";
+  /** Seat id, required for guests so the UI knows which card slot is yours. */
+  seat?: SeatId;
+  /** VDO.Ninja stream id this guest publishes under. */
+  push: string;
+  /** Display label VDO.Ninja shows in the room. */
+  label: string;
+}): string {
+  const u = new URL("/play", params.base);
+  u.searchParams.set("push", params.push);
+  u.searchParams.set("label", params.label);
+  if (params.mode === "guest" && params.seat) {
+    const idx: Record<SeatId, number> = {
+      L1: 1, L2: 2, L3: 3, R1: 4, R2: 5, R3: 6,
+    };
+    u.searchParams.set("seat", String(idx[params.seat]));
+  } else {
+    u.searchParams.set("role", params.mode);
+  }
+  return u.toString();
 }
 
 // ── Event payloads ──────────────────────────────────────────────────────
@@ -268,6 +285,12 @@ export interface GetResetEpochEvent {
   ts: number;
 }
 
+/** A wrapper just mounted and wants the current roster names. */
+export interface GetRosterEvent {
+  type: "getRoster";
+  ts: number;
+}
+
 /** Producer pushed updated tile coordinates from calibration mode. */
 export interface CalibrationEvent {
   type: "calibration";
@@ -319,12 +342,66 @@ export type EventPayload =
   | RosterUpdateEvent
   | CardResetEvent
   | GetResetEpochEvent
+  | GetRosterEvent
   | CalibrationEvent
   | MuteGuestEvent
   | UnmuteGuestEvent
   | MuteCooldownDoneEvent
   | BuzzInEvent
   | BuzzOffEvent;
+
+// ── Inbound payload validation ───────────────────────────────────────────
+
+const VALID_TYPES = new Set([
+  "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
+  "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
+  "buzzIn", "buzzOff",
+] as const);
+
+const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
+const VALID_CARD_IDS = new Set<CardId>(["stfu", "micdrop", "wrapitup"]);
+
+function isValidSeatId(v: unknown): v is SeatId {
+  return typeof v === "string" && VALID_SEAT_IDS.has(v as SeatId);
+}
+
+/** Narrow an unknown value to a valid EventPayload. Rejects malformed or
+ *  unexpected payloads so downstream switch statements never crash on
+ *  undefined access. Logs a warn in DEV mode so bugs surface fast. */
+export function validatePayload(raw: unknown): EventPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.type !== "string" || !VALID_TYPES.has(p.type as never)) {
+    if (import.meta.env.DEV) console.warn("[vdoninja] dropped payload with bad type:", p.type);
+    return null;
+  }
+
+  // Cross-check per-type invariants that downstream code assumes.
+  // We're defensive, not exhaustive — just enough to prevent crashes.
+  switch (p.type) {
+    case "emoji":
+      if (typeof p.emoji !== "string") return null;
+      break;
+    case "cardPlay":
+      if (!VALID_CARD_IDS.has(p.cardId as CardId)) return null;
+      if (typeof p.targetSeat === "string" && !isValidSeatId(p.targetSeat)) return null;
+      break;
+    case "muteGuest":
+    case "unmuteGuest":
+      if (p.target !== "all" && !isValidSeatId(p.target)) return null;
+      break;
+    case "muteCooldownDone":
+    case "buzzIn":
+    case "buzzOff":
+      if (!isValidSeatId(p.seat ?? p.target)) return null;
+      break;
+    case "calibration":
+      if (!p.tiles || typeof p.tiles !== "object") return null;
+      break;
+    // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
+  }
+  return p as unknown as EventPayload;
+}
 
 // ── Iframe data channel ─────────────────────────────────────────────────
 
@@ -396,10 +473,12 @@ export function onData(
       | undefined;
     const payload = data?.dataReceived?.[NAMESPACE];
     if (!payload || typeof payload !== "object") return;
+    const validated = validatePayload(payload);
+    if (!validated) return;
     if (import.meta.env.DEV) {
-      console.log("[vdoninja] ←", payload.type, payload);
+      console.log("[vdoninja] ←", validated.type, validated);
     }
-    callback(payload);
+    callback(validated);
   };
   window.addEventListener("message", handler);
   return () => window.removeEventListener("message", handler);

@@ -15,6 +15,9 @@
 
 export type SeatId = "L1" | "L2" | "L3" | "R1" | "R2" | "R3";
 
+/** Canonical seat order (matches the 6-guest grid: L1..L3 left, R1..R3 right). */
+export const SEAT_ORDER: readonly SeatId[] = ["L1", "L2", "L3", "R1", "R2", "R3"];
+
 export interface Tile {
   /** Left edge in pixels on the 1920-wide canvas. */
   x: number;

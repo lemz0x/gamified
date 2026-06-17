@@ -1,8 +1,26 @@
+import { lazy, Suspense } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
-import { ChatRoute } from "./routes/ChatRoute";
-import { OverlayRoute } from "./routes/OverlayRoute";
-import { PlayRoute } from "./routes/PlayRoute";
-import { ProducerRoute } from "./routes/ProducerRoute";
+
+// Code-split routes so each browser source only parses its own code.
+// The overlay (OBS browser source) drops from ~226KB to roughly a third.
+const ChatRoute = lazy(() => import("./routes/ChatRoute").then((m) => ({ default: m.ChatRoute })));
+const OverlayRoute = lazy(() => import("./routes/OverlayRoute").then((m) => ({ default: m.OverlayRoute })));
+const PlayRoute = lazy(() => import("./routes/PlayRoute").then((m) => ({ default: m.PlayRoute })));
+const ProducerRoute = lazy(() => import("./routes/ProducerRoute").then((m) => ({ default: m.ProducerRoute })));
+
+// Overlay suspense fallback: empty transparent div so OBS never captures
+// a loading flash. Panel fallback: minimal centered loading text.
+function OverlayFallback() {
+  return <div style={{ position: "fixed", inset: 0, background: "transparent" }} />;
+}
+
+function PanelFallback() {
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center text-gray-500">
+      Loading…
+    </div>
+  );
+}
 
 // Routing model:
 //   /play       guest/host wrapper around the VDO.Ninja iframe
@@ -17,14 +35,16 @@ export default function App() {
   const isOverlay = useLocation().pathname === "/overlay";
   return (
     <div className={isOverlay ? undefined : "min-h-screen w-full"}>
-      <Routes>
-        <Route path="/" element={<div>Gamified — pick a route: /play, /overlay, /producer, /chat, /editorchat</div>} />
-        <Route path="/play" element={<PlayRoute />} />
-        <Route path="/overlay" element={<OverlayRoute />} />
-        <Route path="/producer" element={<ProducerRoute />} />
-        <Route path="/chat" element={<ChatRoute />} />
-        <Route path="/editorchat" element={<ChatRoute defaultLabel="Phil" />} />
-      </Routes>
+      <Suspense fallback={isOverlay ? <OverlayFallback /> : <PanelFallback />}>
+        <Routes>
+          <Route path="/" element={<div>Gamified — pick a route: /play, /overlay, /producer, /chat, /editorchat</div>} />
+          <Route path="/play" element={<PlayRoute />} />
+          <Route path="/overlay" element={<OverlayRoute />} />
+          <Route path="/producer" element={<ProducerRoute />} />
+          <Route path="/chat" element={<ChatRoute />} />
+          <Route path="/editorchat" element={<ChatRoute defaultLabel="Phil" />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 }

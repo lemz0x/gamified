@@ -9,7 +9,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { CARDS, type Card, type CardId } from "../cards";
 import { CHAT_EMOJIS, EMOJIS, type Emoji } from "../emojis";
-import type { SeatId } from "../coords";
+import { SEAT_ORDER, type SeatId } from "../coords";
 import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildEditorIframeUrl,
@@ -25,7 +25,6 @@ import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
 /** Map ?seat=1..6 to the seat ids used everywhere else (see CLAUDE.md §5). */
-const SEAT_ORDER: readonly SeatId[] = ["L1", "L2", "L3", "R1", "R2", "R3"];
 
 function parseSeat(raw: string | null): SeatId | null {
   if (!raw) return null;
@@ -154,6 +153,9 @@ function senderFromIdentity(identity: Identity): EventSender {
 
 // ── visual constants (gamified neon palette, dark theme) ─────────────────
 
+/** Buzzer auto-off duration (ms). After this, a buzzer is silently turned off. */
+const BUZZ_AUTO_OFF_MS = 120_000;
+
 const NEON = {
   bg: "#08080d",
   panelBg: "#0e0e16",
@@ -183,21 +185,11 @@ const cardThemes: Record<CardId, { glow: string; edge: string; tint: string }> =
     },
   };
 
-/** Per-emoji brand glow colours for hover effects. */
-const EMOJI_COLOURS: Record<string, { hex: string; core: number; spread: number }> = {
-  "\u{1F92F}": { hex: "#00e5ff", core: 0.50, spread: 20 },   // 🤯
-  "\u{1F525}": { hex: "#ffb800", core: 0.55, spread: 20 },   // 🔥
-  "\u{2764}\u{FE0F}": { hex: "#ff66b3", core: 0.50, spread: 20 },   // ❤️
-  "\u{1F4AF}": { hex: "#a3e600", core: 0.60, spread: 24 },   // 💯
-  "\u{1F44F}": { hex: "#5c8aff", core: 0.50, spread: 20 },   // 👏
-  "\u{1F44D}": { hex: "#00e676", core: 0.50, spread: 20 },   // 👍
-  "\u{1F602}": { hex: "#b866ff", core: 0.50, spread: 20 },   // 😂
-  "\u{1F480}": { hex: "#ff8c42", core: 0.50, spread: 20 },   // 💀
-  "\u{1F440}": { hex: "#ff4444", core: 0.50, spread: 20 },   // 👀
-  "\u{1F921}": { hex: "#ffd700", core: 0.70, spread: 26 },   // 🤡
-  "\u{1F4A9}": { hex: "#66ffcc", core: 0.60, spread: 24 },   // 💩
-  "\u{1F44E}": { hex: "#ff2a6d", core: 0.55, spread: 22 },   // 👎
-};
+import { EMOJI_COLOURS as EMOJI_COLOURS_RAW } from "../emojis";
+
+/** Per-emoji brand glow colours for hover effects. Derived from shared
+ *  EMOJI_COLOURS in emojis.ts; kept as a local alias for brevity. */
+const EMOJI_COLOURS = EMOJI_COLOURS_RAW;
 
 // ── component ────────────────────────────────────────────────────────────
 
@@ -253,7 +245,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const nextChatId = () => `c${chatIdRef.current++}`;
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
-  // Auto-off timer: buzzers auto-clear after 30s so nobody forgets to turn off.
+  // Auto-off timer: buzzers auto-clear after 120s so nobody forgets to turn off.
   const buzzTimerRef = useRef<number | null>(null);
 
   // ── mute infrastructure (dual-flag reconcile, STFU area mute) ─────────
@@ -659,13 +651,13 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               if (nowOn) {
                 buzzOn(identity.seat);
                 send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
-                // Auto-off after 30s so nobody stays buzzing forever.
+                // Auto-off after 120s so nobody stays buzzing forever.
                 if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
                 buzzTimerRef.current = window.setTimeout(() => {
                   buzzOff(identity.seat);
                   send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
                   buzzTimerRef.current = null;
-                }, 120_000);
+                }, BUZZ_AUTO_OFF_MS);
               } else {
                 buzzOff(identity.seat);
                 send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
@@ -729,7 +721,7 @@ function LiveIndicator() {
 interface CardButtonProps {
   card: Card;
   uses: number;
-  /** Seconds remaining on cooldown (STFU only). null = not on cooldown. */
+  /** Seconds remaining on cooldown (STFU and WRAP IT UP). null = not on cooldown. */
   cooldown: number | null;
   onClick: () => void;
 }

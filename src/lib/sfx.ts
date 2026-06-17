@@ -10,10 +10,9 @@
  * don't re-download. Each playback clones the cached object so overlapping
  * sounds (e.g. rapid back-to-back cards) don't cut each other off.
  *
- * Volume is per-card: STFU is quieter (0.4) because the alarm sound is
- * piercing; MIC DROP is at 0.5; WRAP IT UP at 0.5.
- *
- * Files are normalized mono mp3s (loudnorm -16 LUFS, 44.1kHz, 128kbps).
+ * Volume is per-card: all cards at 0.4. The source files themselves are
+ * pre-attenuated (volume=0.5 applied at encode time, peaks around -9 dB)
+ * so the HTML5 volume slider scales on top of an already-quiet source.
  *
  * Cache-busting: SFX_SRC includes a version param so stale browser/CDN
  * caches never serve old files after an audio update. Bump SFX_VERSION
@@ -21,12 +20,12 @@
  */
 
 /** Bump this whenever any SFX file is replaced on disk. */
-const SFX_VERSION = "v5";
+const SFX_VERSION = "v7";
 
 const SFX_VOLUME: Record<string, number> = {
-  stfu: 0.3,       // alarm sound is piercing — quieter than the others
-  micdrop: 0.35,
-  wrapitup: 0.35,
+  stfu: 0.4,
+  micdrop: 0.4,
+  wrapitup: 0.4,
 };
 
 /** Map from cardId to its source file. Query param busts browser cache. */
@@ -73,6 +72,7 @@ export function playCardSfx(cardId: string): Promise<void> {
   }
   const clone = audio.cloneNode() as HTMLAudioElement;
   clone.volume = vol;
+  console.log(`[SFX] playing ${cardId} at volume ${vol} (src=${src})`);
   // Clean up the clone after playback so orphaned Audio nodes don't pile up.
   clone.addEventListener("ended", () => {
     clone.pause();

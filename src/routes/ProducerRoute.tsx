@@ -8,6 +8,7 @@ import {
 } from "react";
 import { CARDS, type CardId } from "../cards";
 import {
+  SEAT_ORDER,
   TILES,
   loadCalibratedTiles,
   saveCalibratedTiles,
@@ -30,7 +31,6 @@ import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
 // ── shared seat plumbing ────────────────────────────────────────────────
 
-const SEAT_ORDER: readonly SeatId[] = ["L1", "L2", "L3", "R1", "R2", "R3"];
 
 // Same key used by /play so both surfaces stay in sync via localStorage.
 const ROSTER_STORAGE_KEY = "gamified.roster.v1";
