@@ -24,9 +24,9 @@
 const SFX_VERSION = "v6";
 
 const SFX_VOLUME: Record<string, number> = {
-  stfu: 0.3,       // alarm sound is piercing — quieter than the others
-  micdrop: 0.35,
-  wrapitup: 0.35,
+  stfu: 0.15,      // alarm sound is piercing — quieter than the others
+  micdrop: 0.175,
+  wrapitup: 0.175,
 };
 
 /** Map from cardId to its source file. Query param busts browser cache. */
