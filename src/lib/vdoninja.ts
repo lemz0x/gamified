@@ -194,6 +194,35 @@ export function buildChatOnlyUrl(params: { push: string; label: string }): strin
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
 }
 
+/**
+ * Builds a public /play URL for a participant. Used by the producer panel's
+ * link generator so you can copy-paste a ready-made link to each guest.
+ */
+export function buildPlayUrl(params: {
+  /** Origin of the deployed site (e.g. `https://example.pages.dev`). */
+  base: string;
+  mode: "guest" | "host" | "editor";
+  /** Seat id, required for guests so the UI knows which card slot is yours. */
+  seat?: SeatId;
+  /** VDO.Ninja stream id this guest publishes under. */
+  push: string;
+  /** Display label VDO.Ninja shows in the room. */
+  label: string;
+}): string {
+  const u = new URL("/play", params.base);
+  u.searchParams.set("push", params.push);
+  u.searchParams.set("label", params.label);
+  if (params.mode === "guest" && params.seat) {
+    const idx: Record<SeatId, number> = {
+      L1: 1, L2: 2, L3: 3, R1: 4, R2: 5, R3: 6,
+    };
+    u.searchParams.set("seat", String(idx[params.seat]));
+  } else {
+    u.searchParams.set("role", params.mode);
+  }
+  return u.toString();
+}
+
 // ── Event payloads ──────────────────────────────────────────────────────
 
 /** Source of an outgoing event — either a numbered guest seat or the host. */
@@ -256,6 +285,12 @@ export interface GetResetEpochEvent {
   ts: number;
 }
 
+/** A wrapper just mounted and wants the current roster names. */
+export interface GetRosterEvent {
+  type: "getRoster";
+  ts: number;
+}
+
 /** Producer pushed updated tile coordinates from calibration mode. */
 export interface CalibrationEvent {
   type: "calibration";
@@ -307,6 +342,7 @@ export type EventPayload =
   | RosterUpdateEvent
   | CardResetEvent
   | GetResetEpochEvent
+  | GetRosterEvent
   | CalibrationEvent
   | MuteGuestEvent
   | UnmuteGuestEvent
