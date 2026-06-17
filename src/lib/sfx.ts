@@ -73,6 +73,7 @@ export function playCardSfx(cardId: string): Promise<void> {
   }
   const clone = audio.cloneNode() as HTMLAudioElement;
   clone.volume = vol;
+  console.log(`[SFX] playing ${cardId} at volume ${vol} (src=${src})`);
   // Clean up the clone after playback so orphaned Audio nodes don't pile up.
   clone.addEventListener("ended", () => {
     clone.pause();
