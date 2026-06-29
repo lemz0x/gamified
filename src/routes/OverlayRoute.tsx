@@ -884,18 +884,19 @@ const WrapItUpCard = React.memo(function WrapItUpCard({ tile }: { tile: Tile }) 
 const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
   return (
     <div style={cardBoxStyle(tile)}>
-      {/* Gold inset glow ring — same opacity curve as stfuGlowRing but longer */}
+      {/* Gold inset glow ring — strong, multi-layer, no border (per Aria spec).
+          Opacity cascade: 0.85 → 0.60 → 0.35 → 0.18 from edge to center.
+          The sourceAuraGlow keyframe is multiplicative with these values. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           boxShadow: [
-            "inset 0 0 35px rgba(255,215,0,0.6)",
-            "inset 0 0 70px rgba(255,215,0,0.35)",
-            "0 0 20px rgba(255,215,0,0.3)",
-            "0 0 45px rgba(255,215,0,0.15)",
+            "inset 0 0 20px rgba(255,215,0,0.85)",
+            "inset 0 0 45px rgba(255,215,0,0.60)",
+            "inset 0 0 80px rgba(255,215,0,0.35)",
+            "inset 0 0 120px rgba(255,215,0,0.18)",
           ].join(", "),
-          border: "2px solid rgba(255,215,0,0.45)",
           opacity: 0,
           willChange: "opacity",
           animation: "sourceAuraGlow 3000ms ease-in-out forwards",
@@ -906,19 +907,21 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
 });
 
 /**
- * Muted tile overlay — desaturation wash + "SILENCED" label.
+ * Muted tile overlay — grayscale wash + "SILENCED" label.
  *
- * Because the overlay is a separate OBS layer on top of the video feeds,
- * we can't apply CSS filter:grayscale() to the underlying camera. Instead
- * we paint a semi-opaque desaturated overlay that washes out the
- * colour of whatever is beneath it in OBS compositing.
+ * Uses mix-blend-mode: saturation with solid gray (#808080) to push
+ * the overlay's 0% saturation onto whatever is beneath it in OBS
+ * compositing. If OBS doesn't composite the blend mode across source
+ * layers, the fallback is a semi-opaque neutral gray wash — same
+ * visual, different mechanism.
  *
  * Two layers:
- *   1. Desaturation wash — medium-gray semi-opaque layer that
- *      pushes colours toward neutral, covering the full camera including
- *      corners. Uses a small bleed past tile bounds so rounded corners
- *      don't leave camera edges uncovered.
+ *   1. Grayscale wash — solid gray with mix-blend-mode: saturation,
+ *      covering the full camera including corners. Uses a small bleed
+ *      past tile bounds so rounded corners don't leave camera edges
+ *      uncovered.
  *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
+ *      Animates in with scale + fade via @keyframes silencedLabelIn.
  */
 const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
@@ -933,42 +936,40 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       height: tile.h + bleed * 2,
       pointerEvents: "none",
     }}>
-      {/* Desaturation wash — semi-opaque medium-gray that visually
-          desaturates the camera feed beneath. CSS mixBlendMode: "saturation"
-          can't desaturate across OBS source layers (the video is in a
-          separate browser source, not a sibling DOM element), so we use a
-          gray overlay that pushes colours toward neutral. */}
+      {/* Grayscale wash — solid gray with mix-blend-mode: saturation.
+          If OBS doesn't composite the blend, this renders as a solid
+          gray box. Fallback: swap to background: "rgba(95, 95, 95, 0.72)"
+          and remove mixBlendMode. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(50, 45, 60, 0.6)",
+          background: "#808080",
+          mixBlendMode: "saturation",
           opacity: 1,
-          transition: "opacity 250ms ease-out",
-          // Match VDO.Ninja's tile rounding so the wash hugs the camera
-          borderRadius: Math.round(Math.min(tile.w, tile.h) * 0.18),
+          transition: "opacity 300ms ease-out",
+          borderRadius: Math.round(Math.min(tile.w, tile.h) * 0.22),
         }}
       />
-      {/* SILENCED label */}
+      {/* SILENCED label — animates in with scale + fade */}
       <div
         style={{
           position: "absolute",
           left: "50%",
-          bottom: "18%",
-          transform: "translateX(-50%)",
+          bottom: "14%",
           fontFamily: '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize: labelSize,
           letterSpacing: 2,
           color: "#ff2e6b",
-          textShadow: "0 0 8px rgba(0,0,0,0.8), 0 0 16px rgba(255,46,107,0.53)",
-          padding: "3px 12px",
-          borderRadius: 5,
-          background: "rgba(10,6,16,0.85)",
-          border: "1px solid rgba(255,46,107,0.33)",
+          textShadow: "0 0 10px rgba(0,0,0,0.85), 0 0 20px rgba(255,46,107,0.6)",
+          padding: "4px 14px",
+          borderRadius: 6,
+          background: "rgba(10,6,16,0.92)",
+          border: "1px solid rgba(255,46,107,0.45)",
           whiteSpace: "nowrap",
           pointerEvents: "none",
-          transition: "opacity 250ms ease-out",
+          animation: "silencedLabelIn 300ms cubic-bezier(0.2, 1.5, 0.4, 1) forwards",
         }}
       >
         SILENCED

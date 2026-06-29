@@ -640,11 +640,11 @@ body.overlay-route #root {
    the visual language consistent. Total 3000ms. */
 @keyframes sourceAuraGlow {
   0% { opacity: 0; }
-  10% { opacity: 0.7; }
-  15% { opacity: 0.9; }
-  50% { opacity: 0.75; }
-  85% { opacity: 0.65; }
-  90% { opacity: 0.4; }
+  10% { opacity: 0.6; }
+  15% { opacity: 0.75; }
+  50% { opacity: 0.65; }
+  85% { opacity: 0.55; }
+  90% { opacity: 0.35; }
   100% { opacity: 0; }
 }
 
@@ -655,6 +655,13 @@ body.overlay-route #root {
 @keyframes cooldownPulse {
   0%, 100% { filter: brightness(1); }
   50% { filter: brightness(1.15); }
+}
+
+/* SILENCED label entrance — scale + fade in with overshoot bounce.
+   Used by MutedTileOverlay when a guest gets STFU'd. */
+@keyframes silencedLabelIn {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.2); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1); }
 }
 
 /* ── MVP winner flourishes ─────────────────────────────────────────────

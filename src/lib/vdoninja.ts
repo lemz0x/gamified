@@ -335,6 +335,16 @@ export interface BuzzOffEvent {
   ts: number;
 }
 
+/** Producer sent tracker answers to the host display. */
+export interface TrackerUpdateEvent {
+  type: "trackerUpdate";
+  /** Display title for the current tracker (e.g. "Bullish or Bullshit"). */
+  title: string;
+  /** Answers keyed by seat — empty string means "not yet answered". */
+  answers: Record<SeatId, string>;
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -348,14 +358,15 @@ export type EventPayload =
   | UnmuteGuestEvent
   | MuteCooldownDoneEvent
   | BuzzInEvent
-  | BuzzOffEvent;
+  | BuzzOffEvent
+  | TrackerUpdateEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
 const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
   "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
-  "buzzIn", "buzzOff",
+  "buzzIn", "buzzOff", "trackerUpdate",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -397,6 +408,9 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "calibration":
       if (!p.tiles || typeof p.tiles !== "object") return null;
+      break;
+    case "trackerUpdate":
+      if (!p.answers || typeof p.answers !== "object") return null;
       break;
     // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
   }
