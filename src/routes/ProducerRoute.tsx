@@ -324,6 +324,12 @@ function ProducerPanel() {
       answers: trackerDraft,
       ts: Date.now(),
     });
+    setFeed((prev) =>
+      [
+        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Answers sent: ${trackerTitle || "Tracker"}` },
+        ...prev,
+      ].slice(0, FEED_CAP),
+    );
   }, [trackerTitle, trackerDraft, send]);
 
   const clearTracker = useCallback(() => {
@@ -331,6 +337,12 @@ function ProducerPanel() {
     setTrackerDraft(empty);
     setTrackerTitle("");
     send({ type: "trackerUpdate", title: "Tracker", answers: empty, ts: Date.now() });
+    setFeed((prev) =>
+      [
+        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: "Answers cleared" },
+        ...prev,
+      ].slice(0, FEED_CAP),
+    );
   }, [send]);
 
   const updateTile = useCallback(

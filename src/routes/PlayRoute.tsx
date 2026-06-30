@@ -698,6 +698,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                             ? "0 0 8px rgba(255,232,102,0.4)"
                             : "none",
                           fontStyle: answer ? "normal" : "italic",
+                          textTransform: answer ? "uppercase" : "none",
                           opacity: answer ? 1 : 0.35,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
