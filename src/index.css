@@ -664,6 +664,13 @@ body.overlay-route #root {
   100% { opacity: 1; transform: translateX(-50%) scale(1); }
 }
 
+/* SILENCED border ring — pulsing pink border for the STFU overlay.
+   Breathes between dim and bright to draw attention. */
+@keyframes silencedRingPulse {
+  0%, 100% { opacity: 0.5; border-color: rgba(255,46,107,0.4); }
+  50% { opacity: 1; border-color: rgba(255,46,107,0.8); }
+}
+
 /* ── MVP winner flourishes ─────────────────────────────────────────────
    Two pieces: chasing marquee-bulb strips that wrap the winner's tile
    (four separate edge bands so the chase direction alternates around

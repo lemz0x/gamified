@@ -909,22 +909,20 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
 /**
  * Muted tile overlay — grayscale wash + "SILENCED" label.
  *
- * Uses a semi-opaque gray wash over the camera feed. OBS browser
- * sources don't composite mix-blend-mode across source layers, so
- * we use a transparent gray overlay instead — the camera is still
- * visible underneath but desaturated/dimmed.
- *
- * Two layers:
- *   1. Gray wash — rgba(95,95,95,0.72) covering the full camera
- *      including corners. Uses a small bleed past tile bounds so
- *      rounded corners don't leave camera edges uncovered.
- *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
- *      Animates in with scale + fade via @keyframes silencedLabelIn.
+ * Uses layered semi-opaque overlays (Aria's v2 spec, not mix-blend-mode):
+ *   1. Base wash — rgba(35,35,42,0.72) dark blue-gray
+ *   2. Vignette — radial gradient, center visible → dark edges
+ *   3. Pink border ring — pulsing accent (circuit-breaker style)
+ *   4. SILENCED label — Orbitron 900 in STFU red, lower third centered.
+ *      Animates in with scale + fade.
+ * OBS browser sources can't composite mix-blend-mode across layers,
+ * so all layers use plain opacity/anpha. Camera shows through
+ * underneath the layered wash.
  */
 const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
-  // Bleed past tile bounds so the wash covers rounded camera corners
   const bleed = 8;
+  const radius = Math.round(Math.min(tile.w, tile.h) * 0.22);
   return (
     <div style={{
       position: "absolute",
@@ -934,15 +932,49 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       height: tile.h + bleed * 2,
       pointerEvents: "none",
     }}>
-      {/* Gray wash — semi-opaque so camera is still visible underneath */}
+      {/* Layer 1: Base wash — dark blue-gray */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(95, 95, 95, 0.72)",
+          background: "rgba(35,35,42,0.72)",
           opacity: 1,
           transition: "opacity 300ms ease-out",
-          borderRadius: Math.round(Math.min(tile.w, tile.h) * 0.22),
+          borderRadius: radius,
+        }}
+      />
+      {/* Layer 2: Vignette — radial gradient for depth */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse at 50% 45%, transparent 0%, rgba(5,5,10,0.35) 45%, rgba(3,3,6,0.75) 75%, rgba(0,0,3,0.9) 100%)",
+          opacity: 1,
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius,
+        }}
+      />
+      {/* Layer 3: Pink accent tint */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "rgba(255,46,107,0.12)",
+          opacity: 1,
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius,
+        }}
+      />
+      {/* Layer 4: Pink border ring — pulsing */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 4,
+          borderRadius: Math.max(0, radius - 4),
+          border: "2px solid rgba(255,46,107,0.55)",
+          boxShadow: "inset 0 0 20px rgba(255,46,107,0.15)",
+          opacity: 1,
+          animation: "silencedRingPulse 1.3s ease-in-out infinite",
         }}
       />
       {/* SILENCED label — animates in with scale + fade */}
