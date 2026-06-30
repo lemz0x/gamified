@@ -467,38 +467,20 @@ function ProducerPanel() {
           spellCheck={false}
           placeholder="Tracker title..."
         />
-        <div style={styles.trackerGrid}>
-          {([
-            ["L1", "R1"],
-            ["L2", "R2"],
-            ["L3", "R3"],
-          ] as const).map(([left, right]) => (
-            <div key={left} style={styles.trackerRow}>
-              <label style={styles.trackerField}>
-                <span style={styles.trackerFieldLabel}>{`${left} · ${roster[left]}`}</span>
-                <input
-                  type="text"
-                  value={trackerDraft[left]}
-                  onChange={(e) =>
-                    setTrackerDraft((prev) => ({ ...prev, [left]: e.target.value }))
-                  }
-                  style={styles.trackerInput}
-                  spellCheck={false}
-                />
-              </label>
-              <label style={styles.trackerField}>
-                <span style={styles.trackerFieldLabel}>{`${right} · ${roster[right]}`}</span>
-                <input
-                  type="text"
-                  value={trackerDraft[right]}
-                  onChange={(e) =>
-                    setTrackerDraft((prev) => ({ ...prev, [right]: e.target.value }))
-                  }
-                  style={styles.trackerInput}
-                  spellCheck={false}
-                />
-              </label>
-            </div>
+        <div style={styles.trackerList}>
+          {SEAT_ORDER.map((seat) => (
+            <label key={seat} style={styles.rosterField}>
+              <span style={styles.rosterFieldLabel}>{`${seat} · ${roster[seat]}`}</span>
+              <input
+                type="text"
+                value={trackerDraft[seat]}
+                onChange={(e) =>
+                  setTrackerDraft((prev) => ({ ...prev, [seat]: e.target.value }))
+                }
+                style={styles.input}
+                spellCheck={false}
+              />
+            </label>
           ))}
         </div>
         <div style={styles.row}>
@@ -839,39 +821,11 @@ const styles: Record<string, CSSProperties> = {
     color: NEON.textDim,
     textTransform: "uppercase",
   },
-  trackerGrid: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    marginTop: 8,
-  },
-  trackerRow: {
+  trackerList: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
     gap: 8,
-  },
-  trackerField: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-  },
-  trackerFieldLabel: {
-    fontSize: 8,
-    letterSpacing: 0.6,
-    color: NEON.textDim,
-    textTransform: "uppercase",
-  },
-  trackerInput: {
-    appearance: "none",
-    background: NEON.surfaceAlt,
-    border: `1px solid rgba(255, 215, 0, 0.3)`,
-    borderRadius: 6,
-    padding: "5px 8px",
-    color: "#ffe866",
-    fontFamily: "inherit",
-    fontSize: 13,
-    fontWeight: 700,
-    outline: "none",
+    marginTop: 8,
   },
   input: {
     appearance: "none",

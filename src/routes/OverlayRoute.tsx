@@ -885,17 +885,17 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
   return (
     <div style={cardBoxStyle(tile)}>
       {/* Gold inset glow ring — strong, multi-layer, no border (per Aria spec).
-          Opacity cascade: 0.85 → 0.60 → 0.35 → 0.18 from edge to center.
+          Opacity cascade: 0.95 → 0.70 → 0.45 → 0.25 from edge to center.
           The sourceAuraGlow keyframe is multiplicative with these values. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           boxShadow: [
-            "inset 0 0 20px rgba(255,215,0,0.85)",
-            "inset 0 0 45px rgba(255,215,0,0.60)",
-            "inset 0 0 80px rgba(255,215,0,0.35)",
-            "inset 0 0 120px rgba(255,215,0,0.18)",
+            "inset 0 0 25px 4px rgba(255,215,0,0.95)",
+            "inset 0 0 55px 8px rgba(255,215,0,0.70)",
+            "inset 0 0 100px 12px rgba(255,215,0,0.45)",
+            "inset 0 0 150px 16px rgba(255,215,0,0.25)",
           ].join(", "),
           opacity: 0,
           willChange: "opacity",
@@ -909,17 +909,15 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
 /**
  * Muted tile overlay — grayscale wash + "SILENCED" label.
  *
- * Uses mix-blend-mode: saturation with solid gray (#808080) to push
- * the overlay's 0% saturation onto whatever is beneath it in OBS
- * compositing. If OBS doesn't composite the blend mode across source
- * layers, the fallback is a semi-opaque neutral gray wash — same
- * visual, different mechanism.
+ * Uses a semi-opaque gray wash over the camera feed. OBS browser
+ * sources don't composite mix-blend-mode across source layers, so
+ * we use a transparent gray overlay instead — the camera is still
+ * visible underneath but desaturated/dimmed.
  *
  * Two layers:
- *   1. Grayscale wash — solid gray with mix-blend-mode: saturation,
- *      covering the full camera including corners. Uses a small bleed
- *      past tile bounds so rounded corners don't leave camera edges
- *      uncovered.
+ *   1. Gray wash — rgba(95,95,95,0.72) covering the full camera
+ *      including corners. Uses a small bleed past tile bounds so
+ *      rounded corners don't leave camera edges uncovered.
  *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
  *      Animates in with scale + fade via @keyframes silencedLabelIn.
  */
@@ -936,16 +934,12 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       height: tile.h + bleed * 2,
       pointerEvents: "none",
     }}>
-      {/* Grayscale wash — solid gray with mix-blend-mode: saturation.
-          If OBS doesn't composite the blend, this renders as a solid
-          gray box. Fallback: swap to background: "rgba(95, 95, 95, 0.72)"
-          and remove mixBlendMode. */}
+      {/* Gray wash — semi-opaque so camera is still visible underneath */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "#808080",
-          mixBlendMode: "saturation",
+          background: "rgba(95, 95, 95, 0.72)",
           opacity: 1,
           transition: "opacity 300ms ease-out",
           borderRadius: Math.round(Math.min(tile.w, tile.h) * 0.22),

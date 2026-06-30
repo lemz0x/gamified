@@ -658,7 +658,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               textShadow: "0 0 10px rgba(255,215,0,0.53)",
               marginBottom: 4,
             }}>
-              TRACKER — {tracker.title}
+              PANELIST ANSWERS — {tracker.title}
             </div>
             <div style={{
               display: "flex",
@@ -677,8 +677,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                       <div key={seat} style={{
                         padding: "4px 8px",
                         borderRadius: 6,
-                        border: "1px solid rgba(255,215,0,0.2)",
-                        background: "rgba(255,215,0,0.05)",
+                        border: "1px solid #1f1f30",
+                        background: "#0e0e16",
                         minHeight: 42,
                       }}>
                         <div style={{
