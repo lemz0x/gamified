@@ -910,16 +910,20 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
 });
 
 /**
- * Muted tile overlay — grayscale wash + "SILENCED" label.
+ * Muted tile overlay — grayscale simulation + "SILENCED" label.
  *
- * Uses mix-blend-mode: saturation with solid gray (#808080) to push
- * the overlay's 0% saturation onto whatever is beneath it. This is
- * the clever grayscale simulation Aria designed — it works because
- * OBS CEF does composite mix-blend-mode within a single browser source.
+ * OBS composites browser sources as separate layers, so CSS
+ * mix-blend-mode can't reach the camera feed. Aria explored 8
+ * overlay-only gray wash variants in stfu-gray-exploration.html.
+ * The best grayscale simulation was a radial gradient: lighter
+ * gray in the center (so the person's face stays visible) fading
+ * to darker gray at edges. The gray actively competes with the
+ * camera's colors, reducing perceived saturation.
  *
  * Layers:
- *   1. Grayscale wash — solid gray with mix-blend-mode: saturation.
- *      Bleeds past tile bounds to cover rounded camera corners.
+ *   1. Radial gray wash — center rgba(100,100,108,0.55) fading to
+ *      edges rgba(45,45,52,0.92). Simulates desaturation by
+ *      overwhelming the camera's chromatic signal with neutral gray.
  *   2. SILENCED label — Orbitron 900 in STFU red, lower third centered.
  *      Animates in with scale + fade via @keyframes silencedLabelIn.
  */
@@ -935,19 +939,18 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       width: tile.w + bleed * 2,
       height: tile.h + bleed * 2,
       pointerEvents: "none",
-      // Clip to rounded rect so nothing bleeds past camera tile edges.
       overflow: "hidden",
       borderRadius: radius + bleed,
     }}>
-      {/* Grayscale wash — solid gray with mix-blend-mode: saturation.
-          This pushes 0% saturation onto whatever is underneath (the
-          camera feed), simulating a grayscale filter. */}
+      {/* Radial gray wash — Aria's v6 approach from stfu-gray-exploration.html.
+          Lighter center keeps the person visible; darker edges push
+          the gray perception harder. The neutral gray competes with
+          the camera's colors, reducing perceived saturation. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "#808080",
-          mixBlendMode: "saturation",
+          background: "radial-gradient(ellipse at 50% 45%, rgba(100,100,108,0.55) 0%, rgba(80,80,88,0.78) 55%, rgba(45,45,52,0.92) 100%)",
           opacity: 1,
           transition: "opacity 300ms ease-out",
           borderRadius: radius + bleed,
