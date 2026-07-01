@@ -375,8 +375,10 @@ export function UnderlayRoute() {
           <SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
         ))}
 
+        {/* SILENCED overlay — only for STFU, NOT for host mutes.
+            Host mutes are audio-only (no visual overlay). */}
         {muteReasons.size > 0 && (Object.keys(tiles) as SeatId[])
-          .filter((seat) => muteReasons.has(seat))
+          .filter((seat) => muteReasons.get(seat)?.has("stfu"))
           .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
@@ -578,24 +580,25 @@ const StfuCard = React.memo(function StfuCard({ tile }: { tile: Tile }) {
         animation: "stfuTileShake 360ms ease-in-out",
       }}
     >
-      {/* Heavy dim wash — darkens the tile so the red layers read on any bg */}
+      {/* Heavy dim wash — darkens the tile so the red layers read on any bg.
+          Aria's v2 spec: neutral dark blue-gray, not red-tinted. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(10, 4, 8, 0.82)",
+          background: "rgba(20,18,25,0.55)",
           opacity: 0,
           willChange: "opacity",
           animation: "stfuDim 2500ms ease-out forwards",
         }}
       />
-      {/* Red inset glow ring — stronger halo at edges */}
+      {/* Red inset glow ring — softer halo at edges (reduced from v1.2) */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           boxShadow:
-            "inset 0 0 50px #ff2e6b, inset 0 0 100px rgba(255, 46, 107, 0.8)",
+            "inset 0 0 30px rgba(255,46,107,0.5), inset 0 0 60px rgba(255,46,107,0.3)",
           opacity: 0,
           willChange: "opacity",
           animation: "stfuGlowRing 2500ms ease-in-out forwards",
@@ -932,12 +935,12 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       height: tile.h + bleed * 2,
       pointerEvents: "none",
     }}>
-      {/* Layer 1: Base wash — dark blue-gray */}
+      {/* Layer 1: Base wash — neutral dark blue-gray (Aria's v2 spec) */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(35,35,42,0.72)",
+          background: "rgba(20,18,25,0.55)",
           opacity: 1,
           transition: "opacity 300ms ease-out",
           borderRadius: radius,
@@ -1111,6 +1114,7 @@ function tileBoxStyle(tile: Tile): CSSProperties {
  */
 function cardBoxStyle(tile: Tile): CSSProperties {
   const bleed = 10;
+  const r = Math.round(Math.min(tile.w, tile.h) * 0.22);
   return {
     position: "absolute",
     left: tile.x - bleed,
@@ -1118,10 +1122,11 @@ function cardBoxStyle(tile: Tile): CSSProperties {
     width: tile.w + bleed * 2,
     height: tile.h + bleed * 2,
     pointerEvents: "none",
-    // No overflow:hidden — card effects (glow, dim, slam text) need
-    // to paint past the tile edges. OBS's video feed sits underneath;
-    // the overlay masks anything that bleeds too far.
-    // No borderRadius — we let the visual effects bleed square.
+    // Clip to rounded rect so glow/shadow effects don't bleed past
+    // the rounded camera tile edges. Inner effect layers use the
+    // same radius to stay within bounds.
+    overflow: "hidden",
+    borderRadius: r + bleed,
   };
 }
 
