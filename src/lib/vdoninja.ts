@@ -345,6 +345,22 @@ export interface TrackerUpdateEvent {
   ts: number;
 }
 
+/** Producer or host featured a chat message to display on the overlay. */
+export interface ChatToScreenEvent {
+  type: "chatToScreen";
+  /** Display name of the chat sender (from VDO.Ninja label). */
+  author: string;
+  /** The message text to display. Plain text, HTML already stripped. */
+  message: string;
+  ts: number;
+}
+
+/** Producer or host cleared the featured chat message from the overlay. */
+export interface ChatToScreenClearEvent {
+  type: "chatToScreenClear";
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -359,7 +375,9 @@ export type EventPayload =
   | MuteCooldownDoneEvent
   | BuzzInEvent
   | BuzzOffEvent
-  | TrackerUpdateEvent;
+  | TrackerUpdateEvent
+  | ChatToScreenEvent
+  | ChatToScreenClearEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
@@ -367,6 +385,7 @@ const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
   "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
   "buzzIn", "buzzOff", "trackerUpdate",
+  "chatToScreen", "chatToScreenClear",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -411,6 +430,13 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "trackerUpdate":
       if (!p.answers || typeof p.answers !== "object") return null;
+      break;
+    case "chatToScreen":
+      if (typeof p.author !== "string" || p.author.trim() === "") return null;
+      if (typeof p.message !== "string" || p.message.trim() === "") return null;
+      break;
+    case "chatToScreenClear":
+      // No fields beyond type + ts
       break;
     // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
   }

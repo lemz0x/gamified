@@ -528,6 +528,29 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const showCards = identity.kind !== "editor";
   const showEmojis = identity.kind === "guest";
   const showMuteControls = identity.kind === "host";
+  const canFeature = identity.kind === "host";
+
+  // Sanitize for overlay — strip control chars + zero-width + collapse whitespace.
+  const sanitizeForOverlay = useCallback((text: string): string => {
+    return text
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+      .replace(/[\u200B-\u200F\uFEFF]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }, []);
+
+  const featureMessage = useCallback(
+    (msg: ChatMessage) => {
+      const sanitized = sanitizeForOverlay(msg.msg);
+      if (!sanitized) return;
+      send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
+    },
+    [send, sanitizeForOverlay],
+  );
+
+  const clearChatScreen = useCallback(() => {
+    send({ type: "chatToScreenClear", ts: Date.now() });
+  }, [send]);
 
   const fireEmoji = useCallback(
     (emoji: Emoji) => {
@@ -645,6 +668,95 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               buzzingSeats={buzzingSeats}
               variant="play"
             />
+          </div>
+        )}
+
+        {canFeature && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: 1.5,
+              color: NEON.cyan,
+              textShadow: `0 0 10px ${NEON.cyan}88`,
+              marginBottom: 4,
+            }}>
+              CHAT TO SCREEN
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflowY: "auto" }}>
+              {chatMessages.filter((m) => m.source === "remote").slice(-10).map((msg) => (
+                <div
+                  key={msg.id}
+                  style={{
+                    background: "#14141f",
+                    border: "1px solid #1f1f30",
+                    borderRadius: 6,
+                    padding: "5px 7px",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 5,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      color: "#22e2ff",
+                      fontSize: 8,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                    }}>
+                      {msg.label}
+                    </div>
+                    <div style={{
+                      color: "#f0f0f8",
+                      fontSize: 10,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}>
+                      {msg.msg}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => featureMessage(msg)}
+                    style={{
+                      background: "#ff2e9f",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 4,
+                      padding: "2px 6px",
+                      fontSize: 8,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Feature
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={clearChatScreen}
+              style={{
+                background: "transparent",
+                color: "#ff5454",
+                border: "1px solid #ff5454",
+                borderRadius: 6,
+                padding: "4px 10px",
+                fontSize: 9,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                cursor: "pointer",
+                width: "100%",
+                marginTop: 4,
+              }}
+            >
+              Clear from Screen
+            </button>
           </div>
         )}
 
