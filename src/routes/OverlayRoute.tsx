@@ -884,18 +884,19 @@ const WrapItUpCard = React.memo(function WrapItUpCard({ tile }: { tile: Tile }) 
 const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
   return (
     <div style={cardBoxStyle(tile)}>
-      {/* Gold inset glow ring — same opacity curve as stfuGlowRing but longer */}
+      {/* Gold inset glow ring — strong, multi-layer, no border (per Aria spec).
+          Opacity cascade: 0.95 → 0.70 → 0.45 → 0.25 from edge to center.
+          The sourceAuraGlow keyframe is multiplicative with these values. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           boxShadow: [
-            "inset 0 0 35px rgba(255,215,0,0.6)",
-            "inset 0 0 70px rgba(255,215,0,0.35)",
-            "0 0 20px rgba(255,215,0,0.3)",
-            "0 0 45px rgba(255,215,0,0.15)",
+            "inset 0 0 25px 4px rgba(255,215,0,0.95)",
+            "inset 0 0 55px 8px rgba(255,215,0,0.70)",
+            "inset 0 0 100px 12px rgba(255,215,0,0.45)",
+            "inset 0 0 150px 16px rgba(255,215,0,0.25)",
           ].join(", "),
-          border: "2px solid rgba(255,215,0,0.45)",
           opacity: 0,
           willChange: "opacity",
           animation: "sourceAuraGlow 3000ms ease-in-out forwards",
@@ -906,24 +907,22 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
 });
 
 /**
- * Muted tile overlay — desaturation wash + "SILENCED" label.
+ * Muted tile overlay — grayscale wash + "SILENCED" label.
  *
- * Because the overlay is a separate OBS layer on top of the video feeds,
- * we can't apply CSS filter:grayscale() to the underlying camera. Instead
- * we paint a semi-opaque desaturated overlay that washes out the
- * colour of whatever is beneath it in OBS compositing.
- *
- * Two layers:
- *   1. Desaturation wash — medium-gray semi-opaque layer that
- *      pushes colours toward neutral, covering the full camera including
- *      corners. Uses a small bleed past tile bounds so rounded corners
- *      don't leave camera edges uncovered.
- *   2. "SILENCED" label — Orbitron 900 in STFU red, lower third centered.
+ * Uses layered semi-opaque overlays (Aria's v2 spec, not mix-blend-mode):
+ *   1. Base wash — rgba(35,35,42,0.72) dark blue-gray
+ *   2. Vignette — radial gradient, center visible → dark edges
+ *   3. Pink border ring — pulsing accent (circuit-breaker style)
+ *   4. SILENCED label — Orbitron 900 in STFU red, lower third centered.
+ *      Animates in with scale + fade.
+ * OBS browser sources can't composite mix-blend-mode across layers,
+ * so all layers use plain opacity/anpha. Camera shows through
+ * underneath the layered wash.
  */
 const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
-  // Bleed past tile bounds so the wash covers rounded camera corners
   const bleed = 8;
+  const radius = Math.round(Math.min(tile.w, tile.h) * 0.22);
   return (
     <div style={{
       position: "absolute",
@@ -933,42 +932,70 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       height: tile.h + bleed * 2,
       pointerEvents: "none",
     }}>
-      {/* Desaturation wash — semi-opaque medium-gray that visually
-          desaturates the camera feed beneath. CSS mixBlendMode: "saturation"
-          can't desaturate across OBS source layers (the video is in a
-          separate browser source, not a sibling DOM element), so we use a
-          gray overlay that pushes colours toward neutral. */}
+      {/* Layer 1: Base wash — dark blue-gray */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(50, 45, 60, 0.6)",
+          background: "rgba(35,35,42,0.72)",
           opacity: 1,
-          transition: "opacity 250ms ease-out",
-          // Match VDO.Ninja's tile rounding so the wash hugs the camera
-          borderRadius: Math.round(Math.min(tile.w, tile.h) * 0.18),
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius,
         }}
       />
-      {/* SILENCED label */}
+      {/* Layer 2: Vignette — radial gradient for depth */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse at 50% 45%, transparent 0%, rgba(5,5,10,0.35) 45%, rgba(3,3,6,0.75) 75%, rgba(0,0,3,0.9) 100%)",
+          opacity: 1,
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius,
+        }}
+      />
+      {/* Layer 3: Pink accent tint */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "rgba(255,46,107,0.12)",
+          opacity: 1,
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius,
+        }}
+      />
+      {/* Layer 4: Pink border ring — pulsing */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 4,
+          borderRadius: Math.max(0, radius - 4),
+          border: "2px solid rgba(255,46,107,0.55)",
+          boxShadow: "inset 0 0 20px rgba(255,46,107,0.15)",
+          opacity: 1,
+          animation: "silencedRingPulse 1.3s ease-in-out infinite",
+        }}
+      />
+      {/* SILENCED label — animates in with scale + fade */}
       <div
         style={{
           position: "absolute",
           left: "50%",
-          bottom: "18%",
-          transform: "translateX(-50%)",
+          bottom: "14%",
           fontFamily: '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize: labelSize,
           letterSpacing: 2,
           color: "#ff2e6b",
-          textShadow: "0 0 8px rgba(0,0,0,0.8), 0 0 16px rgba(255,46,107,0.53)",
-          padding: "3px 12px",
-          borderRadius: 5,
-          background: "rgba(10,6,16,0.85)",
-          border: "1px solid rgba(255,46,107,0.33)",
+          textShadow: "0 0 10px rgba(0,0,0,0.85), 0 0 20px rgba(255,46,107,0.6)",
+          padding: "4px 14px",
+          borderRadius: 6,
+          background: "rgba(10,6,16,0.92)",
+          border: "1px solid rgba(255,46,107,0.45)",
           whiteSpace: "nowrap",
           pointerEvents: "none",
-          transition: "opacity 250ms ease-out",
+          animation: "silencedLabelIn 300ms cubic-bezier(0.2, 1.5, 0.4, 1) forwards",
         }}
       >
         SILENCED

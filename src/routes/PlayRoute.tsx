@@ -154,7 +154,7 @@ function senderFromIdentity(identity: Identity): EventSender {
 // ── visual constants (gamified neon palette, dark theme) ─────────────────
 
 /** Buzzer auto-off duration (ms). After this, a buzzer is silently turned off. */
-const BUZZ_AUTO_OFF_MS = 120_000;
+const BUZZ_AUTO_OFF_MS = 300_000;
 
 const NEON = {
   bg: "#08080d",
@@ -233,6 +233,10 @@ interface PlaySurfaceProps {
 
 function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [roster, setRoster] = useState<Record<SeatId, string>>(loadRoster);
+  const [tracker, setTracker] = useState<{
+    title: string;
+    answers: Record<SeatId, string>;
+  } | null>(null);
   const [cardUses, setCardUses] = useState<Record<CardId, number>>(() =>
     loadCardUses(identity),
   );
@@ -245,7 +249,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const nextChatId = () => `c${chatIdRef.current++}`;
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
 
-  // Auto-off timer: buzzers auto-clear after 120s so nobody forgets to turn off.
+  // Auto-off timer: buzzers auto-clear after 5m so nobody forgets to turn off.
   const buzzTimerRef = useRef<number | null>(null);
 
   // ── mute infrastructure (dual-flag reconcile, STFU area mute) ─────────
@@ -320,6 +324,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           break;
         }
+        case "trackerUpdate":
+          setTracker({ title: msg.title, answers: msg.answers });
+          break;
         // Other event types (emoji, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
         case "cardPlay": {
@@ -641,6 +648,73 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           </div>
         )}
 
+        {identity.kind === "host" && tracker && (
+          <div style={{ flex: "0 0 auto", marginTop: 4 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: 1.5,
+              color: "#ffd700",
+              textShadow: "0 0 10px rgba(255,215,0,0.53)",
+              marginBottom: 4,
+            }}>
+              PANELIST ANSWERS — {tracker.title}
+            </div>
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}>
+              {([
+                ["L1", "R1"],
+                ["L2", "R2"],
+                ["L3", "R3"],
+              ] as const).map(([left, right]) => (
+                <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {([left, right] as const).map((seat) => {
+                    const answer = tracker.answers[seat] || "";
+                    return (
+                      <div key={seat} style={{
+                        padding: "4px 8px",
+                        borderRadius: 6,
+                        border: "1px solid #1f1f30",
+                        background: "#0e0e16",
+                        minHeight: 42,
+                      }}>
+                        <div style={{
+                          fontSize: 8,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.6,
+                          color: "#8a8aa3",
+                        }}>
+                          {seat} · {roster[seat]}
+                        </div>
+                        <div style={{
+                          fontFamily: '"Orbitron", system-ui, sans-serif',
+                          fontWeight: 900,
+                          fontSize: 12,
+                          color: answer ? "#ffe866" : "#8a8aa3",
+                          textShadow: answer
+                            ? "0 0 8px rgba(255,232,102,0.4)"
+                            : "none",
+                          fontStyle: answer ? "normal" : "italic",
+                          textTransform: answer ? "uppercase" : "none",
+                          opacity: answer ? 1 : 0.35,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {answer || "Waiting…"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {identity.kind === "guest" && (
           <BuzzPanel
             roster={roster}
@@ -651,7 +725,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               if (nowOn) {
                 buzzOn(identity.seat);
                 send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
-                // Auto-off after 120s so nobody stays buzzing forever.
+                // Auto-off after 5m so nobody stays buzzing forever.
                 if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
                 buzzTimerRef.current = window.setTimeout(() => {
                   buzzOff(identity.seat);

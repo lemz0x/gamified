@@ -159,6 +159,8 @@ function formatEvent(
       return "Wrapper requested resetEpoch";
     case "calibration":
       return "Calibration updated";
+    case "trackerUpdate":
+      return `Tracker: ${msg.title}`;
     default:
       return null;
   }
@@ -207,6 +209,10 @@ function ProducerPanel() {
   const [calibrate, setCalibrate] = useState(false);
   const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
   const [feed, setFeed] = useState<readonly FeedEntry[]>([]);
+  const [trackerTitle, setTrackerTitle] = useState("");
+  const [trackerDraft, setTrackerDraft] = useState<Record<SeatId, string>>(
+    () => Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
+  );
   const feedIdRef = useRef(0);
   // Latest reset epoch we've fired (persisted) — re-announced on demand so
   // wrappers that join after a reset still catch up.
@@ -306,6 +312,34 @@ function ProducerPanel() {
     setFeed((prev) =>
       [
         { id: `f${feedIdRef.current++}`, ts: epoch, text: "Cards reset for all guests" },
+        ...prev,
+      ].slice(0, FEED_CAP),
+    );
+  }, [send]);
+
+  const sendTracker = useCallback(() => {
+    send({
+      type: "trackerUpdate",
+      title: trackerTitle || "Tracker",
+      answers: trackerDraft,
+      ts: Date.now(),
+    });
+    setFeed((prev) =>
+      [
+        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Answers sent: ${trackerTitle || "Tracker"}` },
+        ...prev,
+      ].slice(0, FEED_CAP),
+    );
+  }, [trackerTitle, trackerDraft, send]);
+
+  const clearTracker = useCallback(() => {
+    const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
+    setTrackerDraft(empty);
+    setTrackerTitle("");
+    send({ type: "trackerUpdate", title: "Tracker", answers: empty, ts: Date.now() });
+    setFeed((prev) =>
+      [
+        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: "Answers cleared" },
         ...prev,
       ].slice(0, FEED_CAP),
     );
@@ -413,6 +447,95 @@ function ProducerPanel() {
         </div>
       </Section>
 
+      <Section title="Buzz board">
+        <BuzzPanel
+          roster={roster}
+          buzzingSeats={buzzingSeats}
+          variant="producer"
+        />
+      </Section>
+
+      <Section title="Reset cards">
+        <div style={styles.row}>
+          <button
+            type="button"
+            onClick={fireResetCards}
+            style={{ ...styles.primaryButton, background: NEON.red, color: "#fff" }}
+          >
+            Reset all cards
+          </button>
+          <span style={styles.hint}>
+            Zeroes per-guest counters and re-enables both card buttons in every wrapper.
+          </span>
+        </div>
+      </Section>
+
+      <Section title="Host tracker">
+        <input
+          type="text"
+          value={trackerTitle}
+          onChange={(e) => setTrackerTitle(e.target.value)}
+          style={styles.input}
+          spellCheck={false}
+          placeholder="Tracker title..."
+        />
+        <div style={styles.trackerList}>
+          {SEAT_ORDER.map((seat) => (
+            <label key={seat} style={styles.rosterField}>
+              <span style={styles.rosterFieldLabel}>{`${seat} · ${roster[seat]}`}</span>
+              <input
+                type="text"
+                value={trackerDraft[seat]}
+                onChange={(e) =>
+                  setTrackerDraft((prev) => ({ ...prev, [seat]: e.target.value }))
+                }
+                style={styles.input}
+                spellCheck={false}
+              />
+            </label>
+          ))}
+        </div>
+        <div style={styles.row}>
+          <button
+            type="button"
+            onClick={sendTracker}
+            style={{ ...styles.primaryButton, background: "#ffd700", color: "#0a0610" }}
+          >
+            Send to host
+          </button>
+          <button
+            type="button"
+            onClick={clearTracker}
+            style={styles.secondaryButton}
+          >
+            Clear
+          </button>
+        </div>
+      </Section>
+
+      <Section title="Activity feed">
+        {feed.length === 0 ? (
+          <div style={styles.emptyFeed}>
+            Listening for events… nothing yet.
+          </div>
+        ) : (
+          <ul style={styles.feedList}>
+            {feed.map((entry) => (
+              <li key={entry.id} style={styles.feedRow}>
+                <time style={styles.feedTime}>
+                  {new Date(entry.ts).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </time>
+                <span style={styles.feedText}>{entry.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section title="Calibration">
         <label style={styles.toggle}>
           <input
@@ -448,52 +571,6 @@ function ProducerPanel() {
               Reset to defaults
             </button>
           </div>
-        )}
-      </Section>
-
-      <Section title="Reset cards">
-        <div style={styles.row}>
-          <button
-            type="button"
-            onClick={fireResetCards}
-            style={{ ...styles.primaryButton, background: NEON.red, color: "#fff" }}
-          >
-            Reset all cards
-          </button>
-          <span style={styles.hint}>
-            Zeroes per-guest counters and re-enables both card buttons in every wrapper.
-          </span>
-        </div>
-      </Section>
-
-      <Section title="Buzz board">
-        <BuzzPanel
-          roster={roster}
-          buzzingSeats={buzzingSeats}
-          variant="producer"
-        />
-      </Section>
-
-      <Section title="Activity feed">
-        {feed.length === 0 ? (
-          <div style={styles.emptyFeed}>
-            Listening for events… nothing yet.
-          </div>
-        ) : (
-          <ul style={styles.feedList}>
-            {feed.map((entry) => (
-              <li key={entry.id} style={styles.feedRow}>
-                <time style={styles.feedTime}>
-                  {new Date(entry.ts).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })}
-                </time>
-                <span style={styles.feedText}>{entry.text}</span>
-              </li>
-            ))}
-          </ul>
         )}
       </Section>
 
@@ -755,6 +832,12 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: 1,
     color: NEON.textDim,
     textTransform: "uppercase",
+  },
+  trackerList: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gap: 8,
+    marginTop: 8,
   },
   input: {
     appearance: "none",
