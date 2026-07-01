@@ -580,25 +580,25 @@ const StfuCard = React.memo(function StfuCard({ tile }: { tile: Tile }) {
         animation: "stfuTileShake 360ms ease-in-out",
       }}
     >
-      {/* Heavy dim wash — darkens the tile so the red layers read on any bg.
-          Aria's v2 spec: neutral dark blue-gray, not red-tinted. */}
+      {/* Dim wash — darkens the tile so the red layers read on any bg.
+          Restored to dark (not Aria's neutral) so the red pop stays punchy. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(20,18,25,0.55)",
+          background: "rgba(10, 4, 8, 0.65)",
           opacity: 0,
           willChange: "opacity",
           animation: "stfuDim 2500ms ease-out forwards",
         }}
       />
-      {/* Red inset glow ring — softer halo at edges (reduced from v1.2) */}
+      {/* Red inset glow ring — strong halo at edges (restored to original intensity) */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           boxShadow:
-            "inset 0 0 30px rgba(255,46,107,0.5), inset 0 0 60px rgba(255,46,107,0.3)",
+            "inset 0 0 50px #ff2e6b, inset 0 0 100px rgba(255, 46, 107, 0.8)",
           opacity: 0,
           willChange: "opacity",
           animation: "stfuGlowRing 2500ms ease-in-out forwards",
@@ -912,15 +912,16 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
 /**
  * Muted tile overlay — grayscale wash + "SILENCED" label.
  *
- * Uses layered semi-opaque overlays (Aria's v2 spec, not mix-blend-mode):
- *   1. Base wash — rgba(35,35,42,0.72) dark blue-gray
- *   2. Vignette — radial gradient, center visible → dark edges
- *   3. Pink border ring — pulsing accent (circuit-breaker style)
- *   4. SILENCED label — Orbitron 900 in STFU red, lower third centered.
- *      Animates in with scale + fade.
- * OBS browser sources can't composite mix-blend-mode across layers,
- * so all layers use plain opacity/anpha. Camera shows through
- * underneath the layered wash.
+ * Uses mix-blend-mode: saturation with solid gray (#808080) to push
+ * the overlay's 0% saturation onto whatever is beneath it. This is
+ * the clever grayscale simulation Aria designed — it works because
+ * OBS CEF does composite mix-blend-mode within a single browser source.
+ *
+ * Layers:
+ *   1. Grayscale wash — solid gray with mix-blend-mode: saturation.
+ *      Bleeds past tile bounds to cover rounded camera corners.
+ *   2. SILENCED label — Orbitron 900 in STFU red, lower third centered.
+ *      Animates in with scale + fade via @keyframes silencedLabelIn.
  */
 const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
   const labelSize = Math.max(12, Math.round(tile.w * 0.05));
@@ -934,50 +935,22 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       width: tile.w + bleed * 2,
       height: tile.h + bleed * 2,
       pointerEvents: "none",
+      // Clip to rounded rect so nothing bleeds past camera tile edges.
+      overflow: "hidden",
+      borderRadius: radius + bleed,
     }}>
-      {/* Layer 1: Base wash — neutral dark blue-gray (Aria's v2 spec) */}
+      {/* Grayscale wash — solid gray with mix-blend-mode: saturation.
+          This pushes 0% saturation onto whatever is underneath (the
+          camera feed), simulating a grayscale filter. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(20,18,25,0.55)",
+          background: "#808080",
+          mixBlendMode: "saturation",
           opacity: 1,
           transition: "opacity 300ms ease-out",
-          borderRadius: radius,
-        }}
-      />
-      {/* Layer 2: Vignette — radial gradient for depth */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "radial-gradient(ellipse at 50% 45%, transparent 0%, rgba(5,5,10,0.35) 45%, rgba(3,3,6,0.75) 75%, rgba(0,0,3,0.9) 100%)",
-          opacity: 1,
-          transition: "opacity 300ms ease-out",
-          borderRadius: radius,
-        }}
-      />
-      {/* Layer 3: Pink accent tint */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "rgba(255,46,107,0.12)",
-          opacity: 1,
-          transition: "opacity 300ms ease-out",
-          borderRadius: radius,
-        }}
-      />
-      {/* Layer 4: Pink border ring — pulsing */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 4,
-          borderRadius: Math.max(0, radius - 4),
-          border: "2px solid rgba(255,46,107,0.55)",
-          boxShadow: "inset 0 0 20px rgba(255,46,107,0.15)",
-          opacity: 1,
-          animation: "silencedRingPulse 1.3s ease-in-out infinite",
+          borderRadius: radius + bleed,
         }}
       />
       {/* SILENCED label — animates in with scale + fade */}
