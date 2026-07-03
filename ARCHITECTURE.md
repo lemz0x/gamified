@@ -96,7 +96,7 @@ Tile coordinates define square 280x280 bounds. Camera windows have rounded corne
 
 ## What was in the original build spec that is now built
 
-The original `_planning/build-spec.md` listed many items as "out of scope for MVP" or "v2". Most have since been built:
+The original build spec listed many items as "out of scope for MVP" or "v2". Most have since been built:
 
 | Original scope | Status |
 |----------------|--------|
@@ -124,9 +124,5 @@ The wrapper preserves all existing URL params and adds itself as a layer:
 
 - [`AGENTS.md`](./AGENTS.md) — current state, rules, source files
 - [`CHANGELOG.md`](./CHANGELOG.md) — version history
-- [`_planning/build-spec.md`](./_planning/build-spec.md) — original brainstorm spec (historical, superseded)
-- [`_planning/aria-brief-v1.4.md`](./_planning/aria-brief-v1.4.md) — Aria's design brief for v1.4
-- [`_planning/aria-brief-v1.5.md`](./_planning/aria-brief-v1.5.md) — Aria's design brief for v1.5
-- [`_planning/execution-plan-v1.5.md`](./_planning/execution-plan-v1.5.md) — v1.5 execution plan
-- [`_planning/chat-to-screen-v1.md`](./_planning/chat-to-screen-v1.md) — chat-to-screen initial plan
-- [`_planning/chat-to-screen-v2.md`](./_planning/chat-to-screen-v2.md) — chat-to-screen v2 plan
+
+Internal planning docs (Aria briefs, execution plans, chat-to-screen plans, mockups) live in `_planning/` on local disk only. They are gitignored and not part of the repo.

@@ -17,18 +17,14 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 
-# Claude Code — keep project-level launch.json etc. in the repo, but
-# settings.local.json is the user's per-machine permission whitelist.
-.claude/settings.local.json
-
 # build caches
 .vite
 *.tsbuildinfo
 .worktrees/
 
-# Stray images — not referenced in source
-Gamified_logo.png
-Intro.png
+# Internal planning — brainstorming, design briefs, mockups.
+# Not deployed, not part of the app.
+_planning/
 
 # Hermes agent artifacts — not part of the Gamified app
 .hermes/
@@ -44,9 +40,5 @@ pipeline-upgrade-plan-*.md
 mockups/
 assets/
 
-# Untracked planning artifacts (large images, base64 dumps, HTML mockups)
-# Tracked planning docs in _planning/ are NOT excluded
-_planning/*_b64.txt
-_planning/full-overlay.png
-_planning/guest-*.png
-_planning/*.html
+# Stray images not used by the app
+Intro.png
