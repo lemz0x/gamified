@@ -1,6 +1,21 @@
-# Gamified — Build Spec
+# Gamified — Build Spec (HISTORICAL)
 
-This is the source-of-truth document for what's being built and why. Captured from a multi-session brainstorm between the producer and Claude. Keep this updated as decisions evolve.
+> **STATUS: SUPERSEDED.** This document was the original brainstorm spec from May 2026.
+> It captures the initial design decisions but does NOT reflect the current state of the project.
+> For current architecture, features, and rules, see [`../CLAUDE.md`](../CLAUDE.md).
+> For version history, see [`../CHANGELOG.md`](../CHANGELOG.md).
+>
+> Key items that have changed since this spec was written:
+> - 2 cards became 3 (WRAP IT UP added in v1.4)
+> - 10 emojis became 12 reaction emojis + 15 chat emojis
+> - "No audio in MVP" — SFX system shipped in v1.4
+> - Single overlay became two-layer (underlay + overlay) in v1.5/chat-to-screen
+> - Many "out of scope" items have since been built
+> - Room credentials are no longer stored in docs (security)
+>
+> Retained for historical reference. Do not use as an implementation guide.
+
+This document was captured from a multi-session brainstorm between the producer and Claude.
 
 ---
 

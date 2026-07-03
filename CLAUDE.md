@@ -4,174 +4,214 @@ You are working on **Gamified** — a podcast overlay system for a weekly video 
 
 ## What this project is
 
-A real-time gamification layer for an existing live-to-tape podcast. Six rotating guests debate gaming topics across themed rounds. The producer (the user you're talking to) runs the show through OBS. The host moderates. An editor records a backup.
+A real-time gamification layer for an existing live-to-tape podcast. Six rotating guests debate gaming topics across themed rounds. The producer (Lemz) runs the show through OBS. The host (Sam) moderates. An editor records a backup.
 
-This project does **not** replace the existing OBS + VDO.Ninja setup. It adds three things on top:
+This project does **not** replace the existing OBS + VDO.Ninja setup. It adds a thin layer on top:
 
-1. A **guest wrapper page** that iframes VDO.Ninja and surrounds it with reaction buttons + cards
-2. A **transparent OBS overlay** that animates emojis and card effects on top of the producer's existing scenes
-3. A **producer panel** (dockable inside OBS) for setting roster names, resetting cards, and calibrating tile positions
+1. A **guest wrapper page** (`/play`) that iframes VDO.Ninja and surrounds it with reaction buttons, cards, emoji picker, chat, and buzz-in
+2. A **transparent OBS underlay** (`/underlay`) that renders emoji floats, card animations, STFU overlays, host tracker, and calibration grid beneath OBS camera layers
+3. A **transparent OBS overlay** (`/overlay`) that renders top-layer graphics above all OBS sources (chat-to-screen feature, future top-layer elements)
+4. A **producer panel** (`/producer`) dockable inside OBS for roster, buzz board, card resets, host tracker, activity feed, and calibration
 
-All three are static pages served from Cloudflare Pages. There is no server. Real-time signaling rides VDO.Ninja's existing P2P data channels.
+All four are static pages served from Cloudflare Pages. There is no server. Real-time signaling rides VDO.Ninja's existing P2P data channels.
 
-## Why architecture choices were made (don't second-guess these)
+## Repositories and branching
 
-- **No backend server.** Earlier the project used Socket.IO + Fly.io. We removed it. Real-time events ride VDO.Ninja's `sendData` API (P2P data channels) instead. Adding a server later is allowed if state persistence becomes necessary, but only after explicit discussion. Default: stateless.
-- **Wrapper iframes VDO.Ninja, doesn't replace it.** Guest cameras still publish through VDO.Ninja's existing infrastructure with the user's existing push IDs and room. The wrapper is chrome around an iframe — it does **not** create new peer connections, does **not** capture video itself, does **not** handle WebRTC. Conserving guest upload bandwidth is the highest priority constraint of the entire show.
-- **One overlay browser source, nested as a scene.** The user has 8 OBS scenes. The overlay lives in a dedicated `_Overlay` scene, added as a nested scene source on top of every other scene. This means one peer connection, one render context, no scene-switch reconnects.
-- **Producer's Virtual Camera is what guests see.** Guests do not receive each other's video directly (`roombitrate=0`). They view the producer's composited stream via `view=TBSqrdw`. This means animations only need to render in the producer's OBS — they automatically reach all guests through the existing video pipe.
+| Repo | Purpose | Branch |
+|------|---------|--------|
+| `thaneclaw/gamified-hermes-staging` | Staging and all development | `staging` |
+| `lemz0x/gamified` | Production (manual PR from staging when tested) | `main` |
+
+**Workflow:**
+1. Feature branches off `staging` for development
+2. Cloudflare Pages auto-deploys `staging` branch for preview testing
+3. After thorough testing, Lemz opens a PR from `staging` to `lemz0x/gamified` `main`
+4. PR merge deploys to production at `gamified-2e9.pages.dev`
+
+The staging repo has no `main` branch. The production repo has no `staging` branch. This is intentional.
 
 ## Tech stack
 
-- **Frontend framework:** React + Vite + TypeScript (inherited from forked repo, kept)
-- **Routing:** React Router (already in repo)
-- **Styling:** keep whatever the existing repo uses; do not introduce new CSS frameworks
-- **Real-time transport:** VDO.Ninja IFRAME API (`postMessage` to/from the iframe; `sendData` for P2P broadcasts)
-- **State:** local component state + `localStorage` for per-guest persistence (card counters, roster names). No global store needed for MVP.
-- **Hosting:** Cloudflare Pages, auto-deploy from GitHub. Free `*.pages.dev` subdomain for MVP.
-- **Branches:** `main` = production, `staging` = pre-production validation, feature branches = preview URLs.
+- **Frontend framework:** React 18 + Vite 6 + TypeScript
+- **Routing:** React Router 6 (code-split via `React.lazy` per route)
+- **Styling:** Tailwind 4 + inline styles (no new CSS frameworks)
+- **Fonts:** Self-hosted Orbitron 900 (display) and Inter (body) at `/fonts/`. `font-display: optional` prevents mid-animation font swap
+- **Real-time transport:** VDO.Ninja IFRAME API (`postMessage` to/from iframe; `sendData` for P2P broadcasts)
+- **Chat:** VDO.Ninja's built-in websocket chat via `vdoninjaChat.ts`
+- **State:** local component state + `localStorage` for per-guest persistence. No global store
+- **Hosting:** Cloudflare Pages, auto-deploy from GitHub. `*.pages.dev` subdomain
+- **Icons:** `lucide-react`
 
-## Repo conventions
+## Source files
 
-- All new code lives under `src/` following the existing structure
-- New routes go in `src/routes/`
-- Tile coordinate config: `src/coords.ts` (NEW — replaces `src/slots.ts`)
-- VDO.Ninja iframe wrapper logic: `src/lib/vdoninja.ts` (NEW)
-- Card definitions: `src/cards.ts` (already exists, will be modified)
-- Emoji set: `src/emojis.ts` (NEW)
-- The legacy server/, plus old routes (LoginRoute, ProducerRoute, HostRoute, OverlayRoute, ContestantRoute) can be **deleted** — they were Socket.IO based and we are not migrating them. Strip them out cleanly rather than leaving dead code.
-- Do not introduce new dependencies without justifying it in the PR description.
+```
+src/
+  App.tsx                    # Route definitions, React.lazy code-split
+  main.tsx                   # Entry point
+  index.css                  # Global styles + all CSS keyframes
+  vite-env.d.ts
+  cards.ts                   # Card definitions (STFU, WRAP IT UP, MIC DROP)
+  emojis.ts                  # Reaction emojis (12), chat emojis (15), EMOJI_COLOURS
+  coords.ts                  # Tile coordinates (1920x1080 canvas) + SEAT_ORDER
+  components/
+    BuzzPanel.tsx            # Buzz-in button component
+  lib/
+    vdoninja.ts              # VDO.Ninja iframe wrapper, event types, payload validation
+    vdoninjaChat.ts          # VDO.Ninja chat plumbing (websocket, DOMParser sanitization)
+    sfx.ts                   # SFX system (preloaded, cached, cloned per playback)
+    auth.ts                   # Producer panel password gate (localStorage)
+  routes/
+    PlayRoute.tsx            # Guest/host/editor wrapper
+    UnderlayRoute.tsx        # OBS browser source - beneath camera layers
+    OverlayRoute.tsx         # OBS browser source - top layer (chat-to-screen)
+    ProducerRoute.tsx        # Dockable producer panel
+    ChatRoute.tsx            # Standalone chat UI (/chat + /editorchat)
+```
+
+## Routes
+
+| Route | Purpose |
+|-------|---------|
+| `/play` | Guest/host/editor wrapper: VDO.Ninja iframe + cards + emoji + chat + buzz + mute |
+| `/underlay` | Transparent OBS browser source beneath camera layers: emoji floats, card animations, STFU overlays, host tracker, calibration |
+| `/overlay` | Transparent OBS browser source above all sources: chat-to-screen card, future top-layer elements |
+| `/producer` | Dockable producer panel: roster, buzz board, reset cards, host tracker, activity feed, calibration |
+| `/chat` | Standalone chat UI for Lemz |
+| `/editorchat` | Chat-only route for editor (default label "Phil") |
+
+## Why architecture choices were made (don't second-guess these)
+
+- **No backend server.** Earlier the project used Socket.IO + Fly.io. Removed. Real-time events ride VDO.Ninja's `sendData` API (P2P data channels). Adding a server later requires explicit discussion. Default: stateless.
+- **Wrapper iframes VDO.Ninja, doesn't replace it.** Guest cameras publish through VDO.Ninja's infrastructure with existing push IDs and room. The wrapper is chrome around an iframe — no new peer connections, no video capture, no WebRTC. Conserving guest upload bandwidth is the highest priority constraint.
+- **Two-layer OBS architecture.** The underlay (`/underlay`) sits beneath OBS camera layers for effects that need to appear "part of the set" (emoji floats, card animations, STFU overlays). The overlay (`/overlay`) sits above all OBS sources for top-layer graphics (chat-to-screen). Both are independent browser sources connecting to VDO.Ninja independently as data-only codirectors.
+- **One overlay browser source, nested as a scene.** The underlay lives in a dedicated `_Overlay` scene added as a nested scene source on top of every other scene. One peer connection, one render context, no scene-switch reconnects.
+- **Producer's Virtual Camera is what guests see.** Guests do not receive each other's video directly (`roombitrate=0`). They view the producer's composited stream via `view=`. Animations only need to render in the producer's OBS.
+- **Overlay cannot apply CSS filters to camera video.** The overlay/underlay is a separate OBS browser source. CSS `filter: grayscale()` and `mix-blend-mode: saturation` do NOT work across OBS browser sources. All camera effects are painted as overlay divs with plain opacity/alpha.
 
 ## Hard rules
 
 1. **Never add VDO.Ninja peer connections beyond what already exists.** Each guest publishes once. The wrapper iframes their existing publish URL.
-2. **Never write text inside the center 44% of the 1920×1080 overlay canvas** unless explicitly asked — that area is reserved for the producer's existing topic graphics in OBS scenes.
-3. **Never use `localStorage` for shared state** — it's per-browser. Use it only for per-guest preferences (card counters, panel collapse state).
+2. **Never write text inside the center 44% of the 1920x1080 underlay canvas** unless explicitly asked — that area is reserved for the producer's existing topic graphics in OBS scenes.
+3. **Never use `localStorage` for shared state** — it's per-browser. Use it only for per-guest preferences (card counters, panel collapse state, calibration overrides).
 4. **Never write to or assume access to a server.** This is a static site.
-5. **Never break the legacy chat path.** The wrapper preserves VDO.Ninja's built-in chat inside the iframe (Option A). Do not strip iframe chrome that affects chat visibility.
+5. **Never break the legacy chat path.** The wrapper preserves VDO.Ninja's built-in chat infrastructure. Do not strip iframe chrome that affects chat visibility.
 6. **No emoji in code comments or UI text** — emoji are content, rendered via the configured set in `src/emojis.ts`. Do not hardcode emoji elsewhere.
-7. **Preserve the user's existing OBS scene structure.** This project adds one nested scene (`_Overlay`); it does not modify the eight existing episode scenes' layouts.
+7. **Preserve the user's existing OBS scene structure.** This project adds nested scene sources; it does not modify the existing eight episode scenes' layouts.
+8. **No credentials in plain text.** Room passwords and push IDs belong in `.env` or runtime config, not in docs or source code. Reference env var names only.
 
 ## Build workflow
 
-For every change:
 1. Create a feature branch from `staging` (`git checkout -b feat/<short-name>`)
 2. Implement the change
-3. Run the build (`npm run build`) — must pass
+3. Run `npm run build` — must pass (tsc + vite)
 4. Commit with a short imperative subject + body explaining the why
-5. Push the branch
-6. Open PR targeting `staging`
-7. Wait for the user to test the Cloudflare Pages preview URL
-8. After user approval, the user merges to `staging`
-9. Once a feature is verified on staging, the user merges `staging` → `main`
+5. Push the branch to origin
+6. Open PR targeting `staging` (or merge directly to staging for small changes)
+7. Wait for Lemz to test on the Cloudflare Pages staging URL
+8. After Lemz approves, he merges staging to `lemz0x/gamified` main via PR for production
 
-You can do everything up through opening the PR autonomously. The user is the merge gate.
+## Card system
 
-## Tile coordinates (1920×1080 canvas)
+Three cards, each 1 use per topic per guest, reset by producer between rounds:
 
-Final measured values from the user's OBS scenes. Use these as defaults in `src/coords.ts`:
+| Card | ID | Color | Icon | Description |
+|------|----|-------|------|-------------|
+| SHUT THE !@#$ UP | `stfu` | Red (#ff2e6b) | zipper-mouth | Cut off the current speaker. Mutes all guests except player for 10s |
+| WRAP IT UP! | `wrapitup` | Orange (#ff7700) | alarm clock | Nudge the speaker to finish |
+| MIC DROP | `micdrop` | Amber (#ffd700) | microphone | Crown the current speaker |
+
+Cards are defined in `src/cards.ts`. Adding a new card is a new config entry plus its visual treatment in the underlay/overlay routes.
+
+## Key features
+
+### STFU system
+- **Dual-flag mute:** `hostMutedRef` + `stfuMutedRef` with single circuit-breaker (500ms interval re-asserting `mic: false` while either flag is true)
+- **STFU card:** mutes all guests except the player for 10s. Global 10s lockout prevents retaliation
+- **SILENCED overlay:** Aria's layered approach — base wash `rgba(35,35,42,0.72)`, radial vignette, pink accent tint, pulsing pink border ring, SILENCED label with entrance animation. Does NOT use `mix-blend-mode` (doesn't work across OBS browser sources)
+- **Per-seat mute reasons:** fixes stacking bug where multiple STFUs could orphan a SILENCED overlay
+- Host mute is audio-only (no SILENCED overlay visual)
+
+### Host tracker
+- Producer types answers per seat in the producer panel, sends via `trackerUpdate` event on P2P data channel
+- Host display shows a 2x3 grid below buzzers with guest names + answers
+- Styled with dark cards (#0e0e16), Orbitron font, gold accent label
+- Activity feed logs tracker send/clear events
+
+### SFX system
+- Card sounds preloaded and cached, cloned per playback for overlap
+- Source files pre-attenuated at 50% volume at encode time
+- HTML5 volume: 0.4 for all cards
+- Cache-busting via `SFX_VERSION` (currently `v7`) — bump when replacing audio files
+- Plays on all three surfaces: underlay (OBS recording), wrapper (guests/host), producer panel
+
+### Buzzer system
+- Buzz-in panel with auto-off timer (300s / 5 minutes)
+- If guest's browser crashes mid-buzz, their buzz stays "on" until manually toggled off
+
+### Producer panel sections (in order)
+1. Roster names — editable per-seat, broadcasts to all wrappers
+2. Buzz board — buzzer controls
+3. Reset cards — clears per-card use counters across all wrappers
+4. Host tracker — per-seat text inputs, send to host display
+5. Activity feed — last 20 events on the data channel
+6. Calibration — tile coordinate editors, toggles `?calibrate=1` on underlay
+
+### Performance optimizations
+- `React.memo` on all sprite components (EmojiFloat, StfuCard, MicDropCard, WrapItUpCard, SourceAura, MutedTileOverlay) — prevents unnecessary re-renders in OBS Chromium
+- `React.lazy` code-split per route — overlay JS bundle roughly 1/3 of full bundle
+- Single sweep interval for sprite removal (replaces multiple `setTimeout` calls)
+- Self-hosted fonts (no Google Fonts CDN dependency)
+- Static inline style objects (not rebuilt on every render)
+
+### Payload validation
+- Runtime guard on inbound data-channel payloads
+- Validates event types, seat IDs, emoji strings, card IDs, string lengths, number finiteness
+- Rejects malformed payloads silently (no crash)
+
+### Debug HUD
+- `?calibrate=1` or `?debug=1` on underlay/overlay shows connection status chip
+- Tracks `lastEventAt` for data-channel health monitoring
+
+## Design system (v1.5+)
+
+| Token | Value |
+|-------|-------|
+| Background | #0a0a0a |
+| Panel BG | #0e0e16 |
+| Panel edge | #1f1f30 |
+| Text | #f0f0f8 |
+| Text dim | #8a8aa3 |
+| STFU red | #ff2e6b |
+| MIC DROP green | #00d96b |
+| Source aura gold | #ffd700 |
+| WRAP IT UP orange | #ff7700 |
+| Cyan | #22e2ff |
+| Purple | #a855ff |
+| Pink | #ff2e9f |
+
+**Color semantics:** cyan = audience/chat, pink = decorative/producer buttons, gold = highlight, red = disruption/punishment, green = success/celebration, orange = warning. Never use pink for communication elements.
+
+**Fonts:** Orbitron 900 for display/card branding, Inter for body text. Both self-hosted at `/fonts/`.
+
+## Tile coordinates (1920x1080 canvas)
+
+Measured from the producer's actual OBS scenes. Defaults in `src/coords.ts`:
 
 ```ts
 export const TILES = {
-  L1: { x: 94,   y: 53,  w: 280, h: 280 }, // top-left      — Guest 1 (Tony)
-  L2: { x: 94,   y: 382, w: 280, h: 280 }, // middle-left   — Guest 2 (Gnoc)
-  L3: { x: 94,   y: 717, w: 280, h: 280 }, // bottom-left   — Guest 3 (Matthew)
-  R1: { x: 1544, y: 53,  w: 280, h: 280 }, // top-right     — Guest 4 (Chris)
-  R2: { x: 1545, y: 385, w: 280, h: 280 }, // middle-right  — Guest 5 (Kohji)
-  R3: { x: 1544, y: 719, w: 280, h: 280 }, // bottom-right  — Guest 6 (Wills)
+  L1: { x: 94,   y: 53,  w: 280, h: 280 }, // top-left
+  L2: { x: 94,   y: 382, w: 280, h: 280 }, // middle-left
+  L3: { x: 94,   y: 717, w: 280, h: 280 }, // bottom-left
+  R1: { x: 1544, y: 53,  w: 280, h: 280 }, // top-right
+  R2: { x: 1545, y: 385, w: 280, h: 280 }, // middle-right
+  R3: { x: 1544, y: 719, w: 280, h: 280 }, // bottom-right
 };
 ```
 
-Calibration mode (producer panel toggles `?calibrate=1` on overlay) lets these be visually adjusted without code changes; adjustments persist via `localStorage` on the overlay browser source's machine.
+Calibration mode (producer panel toggles `?calibrate=1` on underlay) allows runtime adjustment. Values persist via `localStorage` on the underlay browser source's machine.
 
-## Current status (as of staging head)
-
-Phases shipped:
-- [x] Phase 1: Repo cleanup — legacy Socket.IO server, modes/slots removed
-- [x] Phase 2: Coordinate map + emoji/card config files (`src/coords.ts`, `src/emojis.ts`, `src/cards.ts`)
-- [x] Phase 3: VDO.Ninja iframe wrapper library (`src/lib/vdoninja.ts`)
-- [x] Phase 4: `/play` wrapper route — iframe + emoji panel + card panel
-- [x] Phase 5: `/overlay` route — transparent OBS browser source, animations
-- [x] Phase 6: `/producer` route — roster, calibration, reset cards, activity feed
-- [x] Phase 7: Deployment polish — `_redirects`, `_headers`, show-day docs
-
-v1.1 batch (PRs #11–15):
-- [x] Card reset bug attempted fix (epoch comparison) — DID NOT actually solve the bug, see iteration log
-- [x] Animation polish v1 (`slamIn` keyframes, mic fall)
-- [x] Header rework: GAMIFIED moved to top center between guest label and LIVE
-- [x] Producer panel section reorder: roster → calibration → reset → activity
-- [x] Chat extraction in wrapper (input + emoji picker + send button)
-
-v1.2 batch (PRs #16–22):
-- [x] Guest layout: added `&broadcast` to guest iframe URL — fixes layout breaking when multiple guests join
-- [x] Animation polish v2: MIC DROP green theme + falling mic, STFU intensity boost
-- [x] Producer auth: `localStorage` password gate on `/producer` (NOT `/play`, NOT `/overlay`)
-- [x] Editor role: `?role=editor` variant — audio-only publish, chat-only panel
-- [x] Card reset bug attempted fix (ref-pinned listener) — STILL DID NOT solve the bug
-- [x] Chat HTML parsing attempted fix (DOMParser-based) — STILL DID NOT solve the bug
-- [x] Host + editor single-URL pattern — director/codirector privileges baked into one URL
-
-Reset bug saga (PRs #20, #25, #26):
-- [x] PR #25: producer overlay context switched from `&dataonly` to `&novideo&noaudio&push`
-- [x] PR #26: switched producer to "dataonly codirector" pattern for bidirectional data flow
-- [x] Reset bug RESOLVED via PR #26 (verified — cards now propagate per-guest correctly across tabs)
-
-v1.2-staging additional fixes (PRs #30–32):
-- [x] STFU dim wash changed from near-black to bright red — multiple iterations, final approach uses inset shadow + red overlay layer
-- [x] Chat logging pipeline added to `vdoninjaChat.ts` to diagnose chat HTML parsing
-- [x] Chat HTML bleed RESOLVED — parser now handles all VDO.Ninja message shapes
-
-## v1.2 → staging iteration log
-
-This section captures what was tried, what worked, and what didn't, so future agents don't re-attempt failed approaches.
-
-### Card reset propagation
-The reset event needed to flow producer → wrappers via the VDO.Ninja P2P data channel.
-
-Attempts that did NOT work:
-- v1.1: `localStorage` epoch comparison logic. Issue: events were never reaching the wrapper at all, so comparison was moot.
-- v1.2 first try: ref-pinned `onMessage` listener to prevent identity churn. Verified with synthetic events but synthetic verification masked the actual broadcast-side regression.
-- PR #25: switched producer to `&novideo&noaudio&push`. Partial — established a peer connection but data wasn't bidirectional.
-
-What WORKS (current state, PR #26):
-- Producer joins overlay context as `dataonly codirector`. This gives bidirectional data channel between producer and the overlay/wrapper iframes.
-- Wrappers receive `CardResetEvent` and clear their `localStorage` card counters with React state re-render.
-- Verified per-guest tracking: Guest 2's MIC DROP shows "used", Guest 3's shows "1 of 1 left" — different states confirm the channel is delivering correctly.
-
-### Chat HTML parsing
-VDO.Ninja sends inbound chat with HTML markup baked in: `<b><span class='chat_name'>NAME</span>:</b> MSG`. The wrapper needs to extract NAME as sender, MSG as message body, and never render raw HTML.
-
-Attempts that did NOT work:
-- v1.2 first try: `parseChatBody` using DOMParser. Verified with synthetic test cases but failed on real VDO.Ninja messages.
-- v1.2-staging logging round (PR #21, #30): added aggressive `console.log` to `src/lib/vdoninjaChat.ts` to capture VDO.Ninja's actual message shape. Logging is in place.
-
-Status: RESOLVED. The parser now correctly handles all VDO.Ninja message shapes; raw HTML no longer bleeds into the chat panel.
-
-### STFU color
-v1.2 STFU animation used a near-black dim wash that read as "tile being turned off" rather than "tile being punished." Multiple iterations on staging:
-- Initial fix: red tinted overlay. Too subtle.
-- PR #30: bright red dim wash via `rgba(220, 0, 40, 0.55)`. Better but still feels sized off relative to rounded camera windows.
-
-Status: COLOR is bright red and reads correctly.
-
-### Animation sizing for rounded cams
-Tile coordinates in `src/coords.ts` define square 280×280 tile bounds. The camera windows in the overlay scene have rounded corners + a neon ring that extends past the bounds. Animation overlays (STFU red wash, MIC DROP green ring) now render correctly against the inner cam shape. RESOLVED.
-
-## v1.4 planned changes
-
-Config tweaks (no design needed):
-- Buzzer auto-off: 30s → 120s
-- STFU mute duration: 5s → 10s
-- STFU global lockout: 10s cooldown after any STFU is played (greys out all guests' STFU card with countdown timer)
-- SFX volume: stfu 0.4→0.3, micdrop 0.5→0.35, wrapitup 0.5→0.35
-- Card center-screen announce: 3s → 6s (camera animations stay at 2.5s)
-- Micdrop audio: trim from 6.3s to 3-4s with fade-out (needs video editor)
-
-Aria design brief at `_planning/aria-brief-v1.4.md`:
-1. Muted camera visual (overlay paint: desaturation + "SILENCED" label)
-2. Card source highlighting (subtle glow on card player's tile)
-3. STFU cooldown timer on guest sidebar (countdown + visual distinction from "used")
+The center area (~x:540 to x:1380, y:150 to y:640) is reserved for the producer's existing topic graphics. Do not render anything in this region.
 
 ## Communication style
 
-The user is technical but not a software engineer. Explain choices with one-sentence rationales when helpful, but don't lecture. Show diffs for meaningful changes. When something is genuinely ambiguous, ask before guessing — the user prefers a brief question over the wrong implementation.
+The user (Lemz) is technical but not a software engineer. Explain choices with one-sentence rationales when helpful, but don't lecture. Show diffs for meaningful changes. When something is genuinely ambiguous, ask before guessing — the user prefers a brief question over the wrong implementation.

@@ -1,17 +1,26 @@
 # Gamified
 
-A real-time gamification layer for an existing weekly video podcast (six rotating
-guests, one host, one producer running OBS). The project does **not** replace the
-existing OBS + VDO.Ninja setup — it adds a thin static layer on top of it: a
-**guest wrapper page** that iframes VDO.Ninja and surrounds it with reaction
-buttons and cards, a **transparent OBS overlay** that animates emojis and card
-effects on top of the producer's existing scenes, and a **producer panel** for
-roster names, card resets, and tile calibration. No backend server — real-time
-events ride VDO.Ninja's existing P2P data channels (`sendData`). Hosted as a
-static site on Cloudflare Pages.
+A real-time gamification overlay system for a weekly video gameshow. Six rotating
+guests, one host, one producer running OBS. The project adds a thin static layer
+on top of the existing VDO.Ninja + OBS setup.
 
-See [`CLAUDE.md`](./CLAUDE.md) for architecture rules and [`_planning/build-spec.md`](./_planning/build-spec.md)
-for the full build specification.
+See [`CLAUDE.md`](./CLAUDE.md) for full architecture rules and [`CHANGELOG.md`](./CHANGELOG.md)
+for version history.
+
+## What it adds
+
+- **Guest wrapper** (`/play`) — iframes VDO.Ninja, adds reaction buttons, cards,
+  emoji picker, chat, and buzz-in
+- **OBS underlay** (`/underlay`) — transparent browser source beneath camera
+  layers. Renders emoji floats, card animations, STFU silenced overlays, host
+  tracker, and calibration grid
+- **OBS overlay** (`/overlay`) — transparent browser source above all OBS
+  sources. Renders chat-to-screen and future top-layer graphics
+- **Producer panel** (`/producer`) — dockable OBS panel for roster, buzz board,
+  card resets, host tracker, activity feed, and calibration
+
+No backend server. Real-time events ride VDO.Ninja's existing P2P data channels.
+Hosted as a static site on Cloudflare Pages.
 
 ## Scripts
 
@@ -20,98 +29,123 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # type-check + production build
 npm run preview    # serve the production build
+npm run typecheck  # tsc only, no bundle
 ```
 
 ## Routes
 
 | Route | Purpose |
-| --- | --- |
-| `/play` | Guest/host wrapper around the VDO.Ninja iframe + reaction panel |
-| `/overlay` | Transparent OBS browser source that renders emoji + card animations |
-| `/producer` | Dockable producer panel: roster names, reset cards, calibration |
+|-------|---------|
+| `/play` | Guest/host/editor wrapper: VDO.Ninja iframe + cards + emoji + chat + buzz + mute |
+| `/underlay` | OBS browser source (beneath camera layers): emoji floats, card animations, STFU overlays, host tracker, calibration |
+| `/overlay` | OBS browser source (top layer): chat-to-screen card, future top-layer elements |
+| `/producer` | Dockable producer panel: roster, buzz board, reset cards, host tracker, activity feed, calibration |
+| `/chat` | Standalone chat UI |
+| `/editorchat` | Chat-only route for editor (default label "Phil") |
 
-## Branches
+## Cards
 
-- `main` — production
-- `staging` — pre-production validation
-- feature branches → automatic preview URLs
+Three cards, 1 use per topic per guest, reset by producer between rounds:
 
-Open PRs against `staging`.
+| Card | Effect |
+|------|--------|
+| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Global 10s lockout prevents retaliation. SILENCED overlay on muted tiles. |
+| WRAP IT UP! | Orange-themed "time's up" nudge |
+| MIC DROP | Gold-themed "crown the speaker" celebration |
+
+## Branches and deployment
+
+| Repo | Purpose | Branch |
+|------|---------|--------|
+| `thaneclaw/gamified-hermes-staging` | All development and staging | `staging` |
+| `lemz0x/gamified` | Production | `main` |
+
+- Feature branches auto-deploy preview URLs via Cloudflare Pages
+- `staging` branch auto-deploys to `gamified-hermes-staging.pages.dev`
+- After testing, Lemz opens a PR from `staging` to `lemz0x/gamified` `main`
+- Production deploys to `gamified-2e9.pages.dev`
 
 ## Show day setup
 
-Production lives at `https://<your-project>.pages.dev`. The producer holds a
-short bookmark list for the day: six guest URLs, one host URL, one OBS browser
-source URL, one producer dock URL. Build them once per push-ID rotation.
+Production lives at `https://gamified-2e9.pages.dev`. The producer holds a short
+bookmark list for the day: six guest URLs, one host URL, two OBS browser source
+URLs (underlay + overlay), one producer dock URL.
 
 ### Guest URLs (one per seat)
 
 ```
-https://<your-project>.pages.dev/play?seat=<1-6>&push=<pushID>&label=<Guest1-6>
+https://gamified-2e9.pages.dev/play?seat=<1-6>&push=<pushID>&label=<GuestName>
 ```
 
 - `seat=1..6` maps to tiles `L1, L2, L3, R1, R2, R3` (top-left, middle-left,
   bottom-left, top-right, middle-right, bottom-right).
-- `push` is the guest's existing VDO.Ninja stream id — the same one already in
-  rotation today (e.g. `i2zCGkA`). The wrapper iframes their existing publish
-  URL; it does **not** create a new peer connection.
-- `label` is what shows up in the wrapper's right-panel header and in VDO.Ninja's
-  built-in chat. Match the rotation roster (`Guest1`..`Guest6`).
-
-Send each guest the URL for their seat. They open it in a desktop browser and
-their existing publish setup carries over.
+- `push` is the guest's existing VDO.Ninja stream id. The wrapper iframes their
+  existing publish URL; it does not create a new peer connection.
+- `label` is what shows in the wrapper header and VDO.Ninja chat.
 
 ### Host URL
 
 ```
-https://<your-project>.pages.dev/play?role=host&push=Host1&label=Host
+https://gamified-2e9.pages.dev/play?role=host&push=<pushID>&label=Host
 ```
 
-Host wrapper is identical to a guest's, except the iframe URL also adds
-`&view=TBSqrdw` so the host receives the producer's composited Virtual Camera
-feed. The host is excluded from every guest's card target picker — guests can't
-card-target the host.
+Host wrapper includes `&view=` to receive the producer's composited Virtual
+Camera feed. Host is excluded from guest card target pickers.
 
-### OBS browser source — `/overlay`
-
-Add a new **Browser Source** in OBS pointing at:
+### Editor URL
 
 ```
-https://<your-project>.pages.dev/overlay
+https://gamified-2e9.pages.dev/play?role=editor&push=<pushID>&label=Editor
 ```
 
-- **Width / Height:** `1920` × `1080`
-- **Custom CSS:** leave empty (the route already sets the body background to
-  transparent via `body.overlay-route`).
-- **Shutdown source when not visible:** OFF (the data-channel iframe must stay
-  mounted for the WebRTC connection to persist).
+Editor publishes audio only (`&videodevice=0`), sees chat-only panel, excluded
+from card target pickers.
 
-Per the architecture rule in `CLAUDE.md`, this overlay lives in a dedicated
-**`_Overlay` scene** added as a *nested scene source* on top of every other
-scene. One peer connection, one render context, no scene-switch reconnects.
+### OBS browser source — `/underlay`
 
-For tile calibration during setup, append `?calibrate=1` to the URL — color-
-coded dashed rectangles will mark each guest tile so you can edit coordinates
-from the producer panel and see them update live.
+Add a **Browser Source** in OBS pointing at:
+
+```
+https://gamified-2e9.pages.dev/underlay
+```
+
+- **Width / Height:** `1920` x `1080`
+- **Custom CSS:** leave empty (body background is transparent via `body.overlay-route`)
+- **Shutdown source when not visible:** OFF (data-channel iframe must stay mounted)
+
+This lives in a dedicated `_Overlay` scene added as a nested scene source on top
+of every other scene. One peer connection, one render context, no scene-switch
+reconnects.
+
+For tile calibration during setup, append `?calibrate=1` to the URL.
+
+### OBS browser source — `/overlay` (top layer)
+
+Add a second **Browser Source** in OBS pointing at:
+
+```
+https://gamified-2e9.pages.dev/overlay
+```
+
+- Place this source at the **top** of the OBS source stack
+- Same width/height and shutdown settings as the underlay
+- This renders chat-to-screen and any future top-layer graphics
 
 ### Producer panel — Custom Browser Dock
 
-In OBS: **View → Docks → Custom Browser Docks…**, add a new dock with URL:
+In OBS: **View > Docks > Custom Browser Docks**, add a new dock with URL:
 
 ```
-https://<your-project>.pages.dev/producer
+https://gamified-2e9.pages.dev/producer
 ```
 
-The panel ships four sections:
+The panel ships six sections:
 
-1. **Roster names** — set Guest 1..6 names; Save broadcasts to every wrapper
-   so target pickers show real names.
-2. **Reset cards** — clears per-card use counters across every wrapper between
-   topics.
-3. **Calibration** — enable the coordinate editors and adjust X/Y/W/H per
-   tile; broadcasts live to the overlay.
-4. **Activity feed** — last 20 events on the data channel, for spot-checking
-   the connection during the show.
+1. **Roster names** — set Guest 1-6 names; Save broadcasts to all wrappers
+2. **Buzz board** — buzzer controls for each seat
+3. **Reset cards** — clears per-card use counters across all wrappers
+4. **Host tracker** — per-seat text inputs, send to host display via P2P
+5. **Activity feed** — last 20 events on the data channel
+6. **Calibration** — enable coordinate editors, adjust X/Y/W/H per tile, broadcasts live to underlay
 
-The dock is also viewable as a regular browser tab — useful when running OBS
-on a different machine than the producer's panel.
+The dock is also viewable as a regular browser tab.
