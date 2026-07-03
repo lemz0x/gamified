@@ -4,7 +4,7 @@
  * The wrapper page never creates its own peer connections — it iframes
  * the existing VDO.Ninja URL each guest already publishes through, then
  * piggy-backs on the room's P2P data channels for our gameplay events.
- * That keeps guest upload bandwidth untouched (Hard Rule #1 in CLAUDE.md).
+ * That keeps guest upload bandwidth untouched (Hard Rule #1 in AGENTS.md).
  *
  * Outbound: parent → iframe → broadcast to all peer connections.
  *   { sendData: { overlayNinja: <payload> }, type: 'pcs' }

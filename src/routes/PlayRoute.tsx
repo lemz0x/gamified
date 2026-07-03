@@ -24,7 +24,7 @@ import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
-/** Map ?seat=1..6 to the seat ids used everywhere else (see CLAUDE.md §5). */
+/** Map ?seat=1..6 to the seat ids used everywhere else (see AGENTS.md). */
 
 function parseSeat(raw: string | null): SeatId | null {
   if (!raw) return null;

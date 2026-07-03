@@ -7,7 +7,7 @@
  * target for STFU / MIC DROP card animations.
  *
  * Defaults below were measured directly from the producer's scene file
- * (see CLAUDE.md and _planning/build-spec.md §5). Calibration mode in the
+ * (see AGENTS.md). Calibration mode in the
  * producer panel can override any of them at runtime; overrides are
  * persisted per-machine in localStorage on the overlay browser source's
  * computer (see {@link loadCalibratedTiles}).

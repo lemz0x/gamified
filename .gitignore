@@ -26,6 +26,10 @@ dist-ssr
 *.tsbuildinfo
 .worktrees/
 
+# Stray images — not referenced in source
+Gamified_logo.png
+Intro.png
+
 # Hermes agent artifacts — not part of the Gamified app
 .hermes/
 learning-loop/

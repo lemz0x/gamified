@@ -2,7 +2,7 @@
 
 > **STATUS: SUPERSEDED.** This document was the original brainstorm spec from May 2026.
 > It captures the initial design decisions but does NOT reflect the current state of the project.
-> For current architecture, features, and rules, see [`../CLAUDE.md`](../CLAUDE.md).
+> For current architecture, features, and rules, see [`../AGENTS.md`](../AGENTS.md).
 > For version history, see [`../CHANGELOG.md`](../CHANGELOG.md).
 >
 > Key items that have changed since this spec was written:

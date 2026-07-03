@@ -4,7 +4,8 @@ A real-time gamification overlay system for a weekly video gameshow. Six rotatin
 guests, one host, one producer running OBS. The project adds a thin static layer
 on top of the existing VDO.Ninja + OBS setup.
 
-See [`CLAUDE.md`](./CLAUDE.md) for full architecture rules and [`CHANGELOG.md`](./CHANGELOG.md)
+See [`AGENTS.md`](./AGENTS.md) for current architecture rules, [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+for historical decisions and failed approaches, and [`CHANGELOG.md`](./CHANGELOG.md)
 for version history.
 
 ## What it adds
