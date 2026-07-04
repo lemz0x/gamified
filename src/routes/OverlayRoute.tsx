@@ -189,8 +189,8 @@ const chatCardStyle: CSSProperties = {
 };
 
 const logoLeftStyle: CSSProperties = {
-  width: 56,
-  height: 56,
+  width: 64,
+  height: 64,
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
@@ -207,8 +207,8 @@ const contentStyle: CSSProperties = {
 const authorStyle: CSSProperties = {
   fontFamily: '"Orbitron", sans-serif',
   fontWeight: 900,
-  fontSize: 12,
-  letterSpacing: 1.5,
+  fontSize: 16,
+  letterSpacing: 2,
   color: "#22e2ff",
   textTransform: "uppercase",
 };
@@ -216,7 +216,7 @@ const authorStyle: CSSProperties = {
 const messageStyle: CSSProperties = {
   fontFamily: '"Inter", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif',
   fontWeight: 700,
-  fontSize: 22,
+  fontSize: 26,
   color: "#f0f0f8",
   lineHeight: 1.3,
   wordBreak: "break-word",

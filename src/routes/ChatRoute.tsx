@@ -57,7 +57,7 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
     [label],
   );
 
-  const { iframeRef } = useVdoNinja({
+  const { iframeRef, send } = useVdoNinja({
     onMessage: (/* ignored — chat-only route, no card/emoji/roster events */) => { },
   });
 
@@ -85,6 +85,23 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
     [label, sendChat],
   );
 
+  const featureMessage = useCallback(
+    (msg: ChatMessage) => {
+      const sanitized = msg.msg
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+        .replace(/[\u200B-\u200F\uFEFF]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!sanitized) return;
+      send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
+    },
+    [send],
+  );
+
+  const clearChatScreen = useCallback(() => {
+    send({ type: "chatToScreenClear", ts: Date.now() });
+  }, [send]);
+
   const iframeSrc = buildChatOnlyUrl({ push, label });
 
   return (
@@ -97,10 +114,31 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
       </header>
 
       {/* ── chat feed ─── */}
-      <ChatFeed messages={messages} />
+      <ChatFeed messages={messages} onFeature={featureMessage} />
 
       {/* ── composer with emoji picker ─── */}
       <ChatComposer draft={draft} setDraft={setDraft} onSend={onSend} />
+
+      {/* ── clear from screen ─── */}
+      <button
+        type="button"
+        onClick={clearChatScreen}
+        style={{
+          background: "transparent",
+          color: "#ff5454",
+          border: "1px solid #ff5454",
+          borderRadius: 6,
+          padding: "6px 12px",
+          fontSize: 10,
+          fontWeight: 800,
+          textTransform: "uppercase",
+          cursor: "pointer",
+          margin: "0 14px 10px",
+          letterSpacing: 0.5,
+        }}
+      >
+        Clear from Screen
+      </button>
 
       {/* Hidden VDO.Ninja iframe — keeps the data channel alive */}
       <iframe
@@ -129,9 +167,10 @@ function LiveIndicator() {
 
 interface ChatFeedProps {
   messages: readonly ChatMessage[];
+  onFeature?: (msg: ChatMessage) => void;
 }
 
-function ChatFeed({ messages }: ChatFeedProps) {
+function ChatFeed({ messages, onFeature }: ChatFeedProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -145,7 +184,7 @@ function ChatFeed({ messages }: ChatFeedProps) {
         <div style={styles.chatEmpty}>Quiet so far — say something.</div>
       ) : (
         messages.map((m) => (
-          <div key={m.id} style={styles.chatRow}>
+          <div key={m.id} style={{ ...styles.chatRow, gap: 6 }}>
             <span
               style={{
                 ...styles.chatLabel,
@@ -155,6 +194,28 @@ function ChatFeed({ messages }: ChatFeedProps) {
               {m.source === "local" ? "you" : m.label}
             </span>
             <span style={styles.chatBody}>{m.msg}</span>
+            {onFeature && m.source === "remote" && (
+              <button
+                type="button"
+                onClick={() => onFeature(m)}
+                style={{
+                  background: "transparent",
+                  color: NEON.pink,
+                  border: `1px solid ${NEON.pink}55`,
+                  borderRadius: 4,
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  lineHeight: 1.4,
+                }}
+              >
+                Feature
+              </button>
+            )}
           </div>
         ))
       )}

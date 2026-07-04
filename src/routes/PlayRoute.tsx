@@ -236,7 +236,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [tracker, setTracker] = useState<{
     title: string;
     answers: Record<SeatId, string>;
-  } | null>(null);
+  }>({ title: "", answers: { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" } });
   const [cardUses, setCardUses] = useState<Record<CardId, number>>(() =>
     loadCardUses(identity),
   );
@@ -678,7 +678,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           onClearScreen={canFeature ? clearChatScreen : undefined}
         />
 
-        {identity.kind === "host" && tracker && (
+        {tracker && (
           <div style={{ flex: "0 0 auto", marginTop: 4 }}>
             <div style={{
               fontSize: 10,
@@ -775,13 +775,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             variant="play"
           />
         )}
-
-        <ChatPanel
-          messages={chatMessages}
-          onSend={sendChatMessage}
-          onFeature={canFeature ? featureMessage : undefined}
-          onClearScreen={canFeature ? clearChatScreen : undefined}
-        />
 
         {isMuted && (
           <div
