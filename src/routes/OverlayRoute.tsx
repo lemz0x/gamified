@@ -207,7 +207,7 @@ const contentStyle: CSSProperties = {
 const authorStyle: CSSProperties = {
   fontFamily: '"Orbitron", sans-serif',
   fontWeight: 900,
-  fontSize: 16,
+  fontSize: 20,
   letterSpacing: 2,
   color: "#22e2ff",
   textTransform: "uppercase",

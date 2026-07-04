@@ -671,12 +671,36 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           </div>
         )}
 
-        <ChatPanel
-          messages={chatMessages}
-          onSend={sendChatMessage}
-          onFeature={canFeature ? featureMessage : undefined}
-          onClearScreen={canFeature ? clearChatScreen : undefined}
-        />
+        {identity.kind === "guest" && (
+          <BuzzPanel
+            roster={roster}
+            buzzingSeats={buzzingSeats}
+            isBuzzing={buzzingSeats.has(identity.seat)}
+            onBuzzToggle={() => {
+              const nowOn = !buzzingSeats.has(identity.seat);
+              if (nowOn) {
+                buzzOn(identity.seat);
+                send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
+                // Auto-off after 5m so nobody stays buzzing forever.
+                if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
+                buzzTimerRef.current = window.setTimeout(() => {
+                  buzzOff(identity.seat);
+                  send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+                  buzzTimerRef.current = null;
+                }, BUZZ_AUTO_OFF_MS);
+              } else {
+                buzzOff(identity.seat);
+                send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
+                // Manual off cancels the auto-off timer.
+                if (buzzTimerRef.current !== null) {
+                  window.clearTimeout(buzzTimerRef.current);
+                  buzzTimerRef.current = null;
+                }
+              }
+            }}
+            variant="play"
+          />
+        )}
 
         {tracker && (
           <div style={{ flex: "0 0 auto", marginTop: 4 }}>
@@ -745,37 +769,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           </div>
         )}
 
-        {identity.kind === "guest" && (
-          <BuzzPanel
-            roster={roster}
-            buzzingSeats={buzzingSeats}
-            isBuzzing={buzzingSeats.has(identity.seat)}
-            onBuzzToggle={() => {
-              const nowOn = !buzzingSeats.has(identity.seat);
-              if (nowOn) {
-                buzzOn(identity.seat);
-                send({ type: "buzzIn", seat: identity.seat, ts: Date.now() });
-                // Auto-off after 5m so nobody stays buzzing forever.
-                if (buzzTimerRef.current !== null) window.clearTimeout(buzzTimerRef.current);
-                buzzTimerRef.current = window.setTimeout(() => {
-                  buzzOff(identity.seat);
-                  send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
-                  buzzTimerRef.current = null;
-                }, BUZZ_AUTO_OFF_MS);
-              } else {
-                buzzOff(identity.seat);
-                send({ type: "buzzOff", seat: identity.seat, ts: Date.now() });
-                // Manual off cancels the auto-off timer.
-                if (buzzTimerRef.current !== null) {
-                  window.clearTimeout(buzzTimerRef.current);
-                  buzzTimerRef.current = null;
-                }
-              }
-            }}
-            variant="play"
-          />
-        )}
-
         {isMuted && (
           <div
             style={{
@@ -795,6 +788,13 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             {"\u{1F507}"} SILENCED
           </div>
         )}
+
+        <ChatPanel
+          messages={chatMessages}
+          onSend={sendChatMessage}
+          onFeature={canFeature ? featureMessage : undefined}
+          onClearScreen={canFeature ? clearChatScreen : undefined}
+        />
       </aside>
 
       {activeCard && (
@@ -1040,7 +1040,7 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen }: ChatPanelProp
                 {m.source === "local" ? "you" : m.label}
               </span>
               <span style={styles.chatBody}>{m.msg}</span>
-              {onFeature && m.source === "remote" && (
+              {onFeature && (
                 <button
                   type="button"
                   onClick={() => onFeature(m)}
@@ -1048,9 +1048,9 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen }: ChatPanelProp
                     background: "transparent",
                     color: NEON.pink,
                     border: `1px solid ${NEON.pink}55`,
-                    borderRadius: 3,
-                    padding: "1px 5px",
-                    fontSize: 7,
+                    borderRadius: 4,
+                    padding: "3px 8px",
+                    fontSize: 11,
                     fontWeight: 800,
                     textTransform: "uppercase",
                     cursor: "pointer",

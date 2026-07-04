@@ -194,7 +194,7 @@ function ChatFeed({ messages, onFeature }: ChatFeedProps) {
               {m.source === "local" ? "you" : m.label}
             </span>
             <span style={styles.chatBody}>{m.msg}</span>
-            {onFeature && m.source === "remote" && (
+            {onFeature && (
               <button
                 type="button"
                 onClick={() => onFeature(m)}
@@ -203,14 +203,14 @@ function ChatFeed({ messages, onFeature }: ChatFeedProps) {
                   color: NEON.pink,
                   border: `1px solid ${NEON.pink}55`,
                   borderRadius: 4,
-                  padding: "2px 8px",
-                  fontSize: 10,
+                  padding: "3px 8px",
+                  fontSize: 11,
                   fontWeight: 800,
                   textTransform: "uppercase",
                   cursor: "pointer",
                   whiteSpace: "nowrap",
                   flexShrink: 0,
-                  lineHeight: 1.4,
+                  lineHeight: 1.3,
                 }}
               >
                 Feature

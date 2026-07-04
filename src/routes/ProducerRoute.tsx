@@ -358,15 +358,16 @@ function ProducerPanel() {
   }, [send]);
 
   const sendTracker = useCallback(() => {
+    const title = (trackerTitle || "Tracker").toUpperCase();
     send({
       type: "trackerUpdate",
-      title: trackerTitle || "Tracker",
+      title,
       answers: trackerDraft,
       ts: Date.now(),
     });
     setFeed((prev) =>
       [
-        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Answers sent: ${trackerTitle || "Tracker"}` },
+        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Answers sent: ${title}` },
         ...prev,
       ].slice(0, FEED_CAP),
     );
@@ -628,8 +629,8 @@ function ProducerPanel() {
                     color: "#fff",
                     border: "none",
                     borderRadius: 4,
-                    padding: "2px 7px",
-                    fontSize: 9,
+                    padding: "4px 10px",
+                    fontSize: 11,
                     fontWeight: 800,
                     textTransform: "uppercase",
                     cursor: "pointer",
