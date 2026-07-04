@@ -671,94 +671,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           </div>
         )}
 
-        {canFeature && (
-          <div style={{ marginTop: 4 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: 1.5,
-              color: NEON.cyan,
-              textShadow: `0 0 10px ${NEON.cyan}88`,
-              marginBottom: 4,
-            }}>
-              CHAT TO SCREEN
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflowY: "auto" }}>
-              {chatMessages.filter((m) => m.source === "remote").slice(-10).map((msg) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    background: "#14141f",
-                    border: "1px solid #1f1f30",
-                    borderRadius: 6,
-                    padding: "5px 7px",
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 5,
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      color: "#22e2ff",
-                      fontSize: 8,
-                      fontWeight: 800,
-                      textTransform: "uppercase",
-                    }}>
-                      {msg.label}
-                    </div>
-                    <div style={{
-                      color: "#f0f0f8",
-                      fontSize: 10,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}>
-                      {msg.msg}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => featureMessage(msg)}
-                    style={{
-                      background: "#ff2e9f",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 4,
-                      padding: "2px 6px",
-                      fontSize: 8,
-                      fontWeight: 800,
-                      textTransform: "uppercase",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                    }}
-                  >
-                    Feature
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={clearChatScreen}
-              style={{
-                background: "transparent",
-                color: "#ff5454",
-                border: "1px solid #ff5454",
-                borderRadius: 6,
-                padding: "4px 10px",
-                fontSize: 9,
-                fontWeight: 800,
-                textTransform: "uppercase",
-                cursor: "pointer",
-                width: "100%",
-                marginTop: 4,
-              }}
-            >
-              Clear from Screen
-            </button>
-          </div>
-        )}
+        <ChatPanel
+          messages={chatMessages}
+          onSend={sendChatMessage}
+          onFeature={canFeature ? featureMessage : undefined}
+          onClearScreen={canFeature ? clearChatScreen : undefined}
+        />
 
         {identity.kind === "host" && tracker && (
           <div style={{ flex: "0 0 auto", marginTop: 4 }}>
@@ -858,7 +776,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           />
         )}
 
-        <ChatPanel messages={chatMessages} onSend={sendChatMessage} />
+        <ChatPanel
+          messages={chatMessages}
+          onSend={sendChatMessage}
+          onFeature={canFeature ? featureMessage : undefined}
+          onClearScreen={canFeature ? clearChatScreen : undefined}
+        />
 
         {isMuted && (
           <div
@@ -1061,9 +984,11 @@ function EmojiButton({ emoji, pulsing, onClick }: EmojiButtonProps) {
 interface ChatPanelProps {
   messages: readonly ChatMessage[];
   onSend: (text: string) => boolean;
+  onFeature?: (msg: ChatMessage) => void;
+  onClearScreen?: () => void;
 }
 
-function ChatPanel({ messages, onSend }: ChatPanelProps) {
+function ChatPanel({ messages, onSend, onFeature, onClearScreen }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -1112,7 +1037,7 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} style={styles.chatRow}>
+            <div key={m.id} style={{ ...styles.chatRow, gap: 4 }}>
               <span
                 style={{
                   ...styles.chatLabel,
@@ -1122,6 +1047,28 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
                 {m.source === "local" ? "you" : m.label}
               </span>
               <span style={styles.chatBody}>{m.msg}</span>
+              {onFeature && m.source === "remote" && (
+                <button
+                  type="button"
+                  onClick={() => onFeature(m)}
+                  style={{
+                    background: "transparent",
+                    color: NEON.pink,
+                    border: `1px solid ${NEON.pink}55`,
+                    borderRadius: 3,
+                    padding: "1px 5px",
+                    fontSize: 7,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  Feature
+                </button>
+              )}
             </div>
           ))
         )}
@@ -1184,6 +1131,27 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
           </div>
         )}
       </div>
+      {onClearScreen && (
+        <button
+          type="button"
+          onClick={onClearScreen}
+          style={{
+            background: "transparent",
+            color: "#ff5454",
+            border: "1px solid #ff5454",
+            borderRadius: 6,
+            padding: "4px 10px",
+            fontSize: 9,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            cursor: "pointer",
+            width: "100%",
+            marginTop: 4,
+          }}
+        >
+          Clear from Screen
+        </button>
+      )}
     </section>
   );
 }

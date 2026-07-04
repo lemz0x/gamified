@@ -913,18 +913,17 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
  * Muted tile overlay — grayscale simulation + "SILENCED" label.
  *
  * OBS composites browser sources as separate layers, so CSS
- * mix-blend-mode can't reach the camera feed. Aria explored 8
- * overlay-only gray wash variants in stfu-gray-exploration.html.
- * The best grayscale simulation was a radial gradient: lighter
- * gray in the center (so the person's face stays visible) fading
- * to darker gray at edges. The gray actively competes with the
- * camera's colors, reducing perceived saturation.
+ * mix-blend-mode can't reach the camera feed. We use a multi-layer
+ * approach to simulate desaturation and make it feel "silenced":
  *
  * Layers:
- *   1. Radial gray wash — center rgba(100,100,108,0.55) fading to
- *      edges rgba(45,45,52,0.92). Simulates desaturation by
- *      overwhelming the camera's chromatic signal with neutral gray.
- *   2. SILENCED label — Orbitron 900 in STFU red, lower third centered.
+ *   1. Blue-teal darkening wash — cools the camera colors, pushing
+ *      skin tones toward blue-gray. Less "gray box" than neutral gray.
+ *   2. Radial gray wash — center lighter (face visible) to darker edges.
+ *      Overlaps with the blue layer to desaturate.
+ *   3. Red edge vignette — subtle STFU red tint around the border edges
+ *      so it reads as "punished" not just "muted".
+ *   4. SILENCED label — Orbitron 900 in STFU red, lower third centered.
  *      Animates in with scale + fade via @keyframes silencedLabelIn.
  */
 const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
@@ -942,16 +941,35 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
       overflow: "hidden",
       borderRadius: radius + bleed,
     }}>
-      {/* Radial gray wash — Aria's v6 approach from stfu-gray-exploration.html.
-          Lighter center keeps the person visible; darker edges push
-          the gray perception harder. The neutral gray competes with
-          the camera's colors, reducing perceived saturation. */}
+      {/* Layer 1: Blue-teal cooling wash. Cools skin tones toward blue-gray
+          so it reads as "desaturated" rather than "gray box over camera". */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "radial-gradient(ellipse at 50% 45%, rgba(100,100,108,0.55) 0%, rgba(80,80,88,0.78) 55%, rgba(45,45,52,0.92) 100%)",
-          opacity: 1,
+          background: "rgba(30,45,65,0.55)",
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius + bleed,
+        }}
+      />
+      {/* Layer 2: Radial gray wash — center lighter (face visible),
+          edges darker. Overlaps with blue layer to desaturate. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse at 50% 45%, rgba(60,65,78,0.35) 0%, rgba(40,45,55,0.65) 55%, rgba(20,22,28,0.88) 100%)",
+          transition: "opacity 300ms ease-out",
+          borderRadius: radius + bleed,
+        }}
+      />
+      {/* Layer 3: Red edge vignette — subtle STFU red tint around edges
+          so it reads as "punished" not just "muted". */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse at 50% 45%, transparent 50%, rgba(255,46,107,0.08) 80%, rgba(255,46,107,0.15) 100%)",
           transition: "opacity 300ms ease-out",
           borderRadius: radius + bleed,
         }}

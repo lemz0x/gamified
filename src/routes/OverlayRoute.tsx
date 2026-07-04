@@ -179,18 +179,18 @@ const glowRingStyle: CSSProperties = {
 const chatCardStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "10px 16px",
-  borderRadius: 14,
-  background: "rgba(10,6,16,0.95)",
-  maxWidth: 640,
+  gap: 14,
+  padding: "14px 20px",
+  borderRadius: 16,
+  background: "rgba(6,4,12,0.97)",
+  maxWidth: 880,
   border: "1.5px solid transparent",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+  boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
 };
 
 const logoLeftStyle: CSSProperties = {
-  width: 50,
-  height: 50,
+  width: 56,
+  height: 56,
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
@@ -207,8 +207,8 @@ const contentStyle: CSSProperties = {
 const authorStyle: CSSProperties = {
   fontFamily: '"Orbitron", sans-serif',
   fontWeight: 900,
-  fontSize: 9,
-  letterSpacing: 1,
+  fontSize: 12,
+  letterSpacing: 1.5,
   color: "#22e2ff",
   textTransform: "uppercase",
 };
@@ -216,9 +216,9 @@ const authorStyle: CSSProperties = {
 const messageStyle: CSSProperties = {
   fontFamily: '"Inter", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif',
   fontWeight: 700,
-  fontSize: 18,
+  fontSize: 22,
   color: "#f0f0f8",
-  lineHeight: 1.25,
+  lineHeight: 1.3,
   wordBreak: "break-word",
   display: "-webkit-box",
   WebkitLineClamp: 3,
