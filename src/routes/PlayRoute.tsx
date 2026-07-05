@@ -466,70 +466,38 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
-  // Detect when a host-muted guest self-unmutes by clicking their mic icon
-  // inside the VDO.Ninja iframe. VDO.Ninja doesn't post mic-state-change
-  // events back to the parent, so we poll getDetails with a callback ID
-  // every 2s while host-muted (not STFU). When we detect mic transitioned
-  // to unmuted, we:
-  //   1. Clear the local hostMutedRef + SILENCED badge
-  //   2. Broadcast guestSelfUnmuted so the host/producer can sync
-  // STFU mutes are NOT affected (circuit breaker still re-asserts those).
-  const selfUnmutePollRef = useRef<number | null>(null);
-  const selfUnmuteCibRef = useRef<string>("self-mic-check");
-
-  useEffect(() => {
-    function onVdoResponse(e: MessageEvent) {
-      if (!e.data || typeof e.data !== "object") return;
-      const data = e.data as Record<string, unknown>;
-      // Only process responses to our callback ID
-      if (data.cib !== selfUnmuteCibRef.current) return;
-      // Check if mic state is in the response
-      // VDO.Ninja getDetails response includes mic state
-      const micState = data.mic ?? data.microphone;
-      if (micState === true || micState === "true") {
-        // Guest unmuted themselves
-        if (hostMutedRef.current && !stfuMutedRef.current && identity.kind === "guest") {
-          hostMutedRef.current = false;
-          setIsMuted(false);
-          send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
-          window.dispatchEvent(
-            new CustomEvent("gamified-mute-state", {
-              detail: { seat: identity.seat, muted: false },
-            }),
-          );
-        }
-        // Stop polling once we detect unmute
-        if (selfUnmutePollRef.current !== null) {
-          window.clearInterval(selfUnmutePollRef.current);
-          selfUnmutePollRef.current = null;
-        }
-      }
+  // Detect when a host-muted guest self-unmutes.
+  // VDO.Ninja doesn't post mic-state-change events to the parent, and the
+  // getDetails response format is undocumented. Instead of polling, we
+  // provide an explicit "Unmute" button in the SILENCED badge that the
+  // guest clicks. See handleSelfUnmute below.
+  const handleSelfUnmuteRef = useRef<() => void>(() => {});
+  handleSelfUnmuteRef.current = () => {
+    if (!hostMutedRef.current || stfuMutedRef.current) return;
+    // Clear local mute state
+    hostMutedRef.current = false;
+    setIsMuted(false);
+    // Actually unmute the VDO.Ninja mic
+    muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
+    // Broadcast to host + producer so they clear the SILENCED badge
+    if (identity.kind === "guest") {
+      send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
     }
-    window.addEventListener("message", onVdoResponse);
-    return () => window.removeEventListener("message", onVdoResponse);
-  }, [identity, send]);
-
-  // Start/stop the polling based on mute state
-  useEffect(() => {
-    // Only poll if guest is host-muted (not STFU-muted)
-    if (hostMutedRef.current && !stfuMutedRef.current && identity.kind === "guest") {
-      if (selfUnmutePollRef.current === null) {
-        selfUnmutePollRef.current = window.setInterval(() => {
-          muteIframeRef.current?.contentWindow?.postMessage(
-            { action: "getDetails", cib: selfUnmuteCibRef.current },
-            "*",
-          );
-        }, 2000);
-      }
-    } else {
-      if (selfUnmutePollRef.current !== null) {
-        window.clearInterval(selfUnmutePollRef.current);
-        selfUnmutePollRef.current = null;
-      }
+    // Dispatch local custom event for the host UI mute indicators
+    if (identity.kind === "guest") {
+      window.dispatchEvent(
+        new CustomEvent("gamified-mute-state", {
+          detail: { seat: identity.seat, muted: false },
+        }),
+      );
     }
-  });
+  };
 
-  // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off, self-unmute poll.
+  const handleSelfUnmute = useCallback(() => {
+    handleSelfUnmuteRef.current();
+  }, []);
+
+  // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off.
   useEffect(() => {
     return () => {
       if (hostMuteIntervalRef.current !== null) {
@@ -543,9 +511,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       }
       if (buzzTimerRef.current !== null) {
         window.clearTimeout(buzzTimerRef.current);
-      }
-      if (selfUnmutePollRef.current !== null) {
-        window.clearInterval(selfUnmutePollRef.current);
       }
     };
   }, []);
@@ -863,6 +828,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           onFeature={canFeature ? featureMessage : undefined}
           onClearScreen={canFeature ? clearChatScreen : undefined}
           silenced={isMuted}
+          onSelfUnmute={identity.kind === "guest" ? handleSelfUnmute : undefined}
         />
       </aside>
 
@@ -1049,9 +1015,10 @@ interface ChatPanelProps {
   onFeature?: (msg: ChatMessage) => void;
   onClearScreen?: () => void;
   silenced?: boolean;
+  onSelfUnmute?: () => void;
 }
 
-function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: ChatPanelProps) {
+function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced, onSelfUnmute }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [colonMatch, setColonMatch] = useState<ColonMatch | null>(null);
@@ -1259,9 +1226,32 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
               textAlign: "center",
               textTransform: "uppercase",
               marginBottom: 4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
             }}
           >
-            {"\u{1F507}"} SILENCED
+            <span>{"\u{1F507}"} SILENCED</span>
+            {onSelfUnmute && (
+              <button
+                onClick={onSelfUnmute}
+                style={{
+                  background: "rgba(255, 46, 107, 0.2)",
+                  border: "1px solid #ff2e6b",
+                  borderRadius: 4,
+                  padding: "2px 8px",
+                  color: "#ff2e6b",
+                  fontWeight: 700,
+                  fontSize: 10,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                Unmute
+              </button>
+            )}
           </div>
         )}
         <div style={styles.chatComposer}>
