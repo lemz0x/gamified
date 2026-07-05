@@ -1968,7 +1968,7 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "center",
     gap: 4,
     background: "#14141e",
-    border: "1px solid #3a3a52",
+    border: "1px solid #5a5a72",
     borderRadius: 8,
     padding: "5px 6px",
     cursor: "pointer",
