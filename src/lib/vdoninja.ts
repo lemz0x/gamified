@@ -361,6 +361,17 @@ export interface ChatToScreenClearEvent {
   ts: number;
 }
 
+/** Guest unmuted themselves by clicking the mic icon in VDO.Ninja.
+ *  This is an advisory notification so the host/producer can clear
+ *  the SILENCED badge for that guest. STFU mutes are not cleared
+ *  (the circuit breaker continues to re-assert those). */
+export interface GuestSelfUnmutedEvent {
+  type: "guestSelfUnmuted";
+  /** Which guest seat self-unmuted. */
+  seat: SeatId;
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -377,7 +388,8 @@ export type EventPayload =
   | BuzzOffEvent
   | TrackerUpdateEvent
   | ChatToScreenEvent
-  | ChatToScreenClearEvent;
+  | ChatToScreenClearEvent
+  | GuestSelfUnmutedEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
@@ -385,7 +397,7 @@ const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
   "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
   "buzzIn", "buzzOff", "trackerUpdate",
-  "chatToScreen", "chatToScreenClear",
+  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -424,6 +436,9 @@ export function validatePayload(raw: unknown): EventPayload | null {
     case "buzzIn":
     case "buzzOff":
       if (!isValidSeatId(p.seat ?? p.target)) return null;
+      break;
+    case "guestSelfUnmuted":
+      if (!isValidSeatId(p.seat)) return null;
       break;
     case "calibration":
       if (!p.tiles || typeof p.tiles !== "object") return null;

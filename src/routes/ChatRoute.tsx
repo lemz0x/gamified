@@ -368,7 +368,7 @@ function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
           ref={inputRef}
           type="text"
           value={draft}
-          placeholder="Type a message... Tip: use :(emoji)"
+          placeholder="Type a message... use : for emojis"
           onChange={onInputChange}
           onKeyDown={onInputKeyDown}
           style={styles.input}

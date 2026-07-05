@@ -30,13 +30,13 @@ export const EMOJI_ALIASES: readonly EmojiAliasEntry[] = [
   { emoji: "\u{1F642}", aliases: ["smile"] },               // 🙂
   { emoji: "\u{1F603}", aliases: ["grin", "happy"] },                        // 😃
   { emoji: "\u{1F923}", aliases: ["rofl", "lmao"] },                         // 🤣
-  { emoji: "\u{1F972}", aliases: ["tearysmile", "emotional"] },                    // 🥲
+  { emoji: "\u{1F605}", aliases: ["sweat", "nervous"] },                     // 😅
   { emoji: "\u{1F62D}", aliases: ["sob", "cry"] },                           // 😭
   { emoji: "\u{1F622}", aliases: ["sad", "cry"] },                           // 😢
   { emoji: "\u{1F973}", aliases: ["party", "celebrate"] },                   // 🥳
   { emoji: "\u{1F60D}", aliases: ["love", "hearteyes"] },                     // 😍
   { emoji: "\u{1F914}", aliases: ["think", "hmm"] },                         // 🤔
-  { emoji: "\u{1F620}", aliases: ["angry", "mad"] },                         // 😡
+  { emoji: "\u{1F621}", aliases: ["angry", "mad"] },                         // 😡
   { emoji: "\u{1F634}", aliases: ["sleep", "tired"] },                       // 😴
   { emoji: "\u{1F937}", aliases: ["shrug", "idk"] },                        // 🤷 (gender-neutral person shrugging)
   { emoji: "\u{1F64F}", aliases: ["pray", "thanks"] },                      // 🙏

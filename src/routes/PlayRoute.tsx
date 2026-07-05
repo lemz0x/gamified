@@ -426,6 +426,19 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           // Kept for one release cycle to absorb stale events.
           break;
         }
+        case "guestSelfUnmuted": {
+          // A guest self-unmuted by clicking their mic in VDO.Ninja.
+          // Host and producer: clear the SILENCED badge for that seat.
+          // This doesn't affect STFU mutes (circuit breaker still re-asserts).
+          if (identity.kind === "host" || identity.kind === "editor") {
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", {
+                detail: { seat: msg.seat, muted: false, selfUnmuted: true },
+              }),
+            );
+          }
+          break;
+        }
         case "buzzIn": {
           buzzOn(msg.seat);
           break;
@@ -453,27 +466,70 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
-  // Listen for VDO.Ninja mic state changes from the guest's iframe.
-  // When a host-muted guest clicks their mic to unmute, clear the host
-  // mute flag so the SILENCED badge disappears. STFU mutes are not
-  // affected (circuit breaker re-asserts those).
+  // Detect when a host-muted guest self-unmutes by clicking their mic icon
+  // inside the VDO.Ninja iframe. VDO.Ninja doesn't post mic-state-change
+  // events back to the parent, so we poll getDetails with a callback ID
+  // every 2s while host-muted (not STFU). When we detect mic transitioned
+  // to unmuted, we:
+  //   1. Clear the local hostMutedRef + SILENCED badge
+  //   2. Broadcast guestSelfUnmuted so the host/producer can sync
+  // STFU mutes are NOT affected (circuit breaker still re-asserts those).
+  const selfUnmutePollRef = useRef<number | null>(null);
+  const selfUnmuteCibRef = useRef<string>("self-mic-check");
+
   useEffect(() => {
-    function onWindowMessage(e: MessageEvent) {
+    function onVdoResponse(e: MessageEvent) {
       if (!e.data || typeof e.data !== "object") return;
-      // VDO.Ninja sends { mic: true/false } when the user toggles mic.
-      if (e.data.mic === true) {
-        // Guest unmuted themselves. Clear host mute flag (advisory only).
-        if (hostMutedRef.current && !stfuMutedRef.current) {
+      const data = e.data as Record<string, unknown>;
+      // Only process responses to our callback ID
+      if (data.cib !== selfUnmuteCibRef.current) return;
+      // Check if mic state is in the response
+      // VDO.Ninja getDetails response includes mic state
+      const micState = data.mic ?? data.microphone;
+      if (micState === true || micState === "true") {
+        // Guest unmuted themselves
+        if (hostMutedRef.current && !stfuMutedRef.current && identity.kind === "guest") {
           hostMutedRef.current = false;
           setIsMuted(false);
+          send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
+          window.dispatchEvent(
+            new CustomEvent("gamified-mute-state", {
+              detail: { seat: identity.seat, muted: false },
+            }),
+          );
+        }
+        // Stop polling once we detect unmute
+        if (selfUnmutePollRef.current !== null) {
+          window.clearInterval(selfUnmutePollRef.current);
+          selfUnmutePollRef.current = null;
         }
       }
     }
-    window.addEventListener("message", onWindowMessage);
-    return () => window.removeEventListener("message", onWindowMessage);
-  }, []);
+    window.addEventListener("message", onVdoResponse);
+    return () => window.removeEventListener("message", onVdoResponse);
+  }, [identity, send]);
 
-  // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off.
+  // Start/stop the polling based on mute state
+  useEffect(() => {
+    // Only poll if guest is host-muted (not STFU-muted)
+    if (hostMutedRef.current && !stfuMutedRef.current && identity.kind === "guest") {
+      if (selfUnmutePollRef.current === null) {
+        selfUnmutePollRef.current = window.setInterval(() => {
+          muteIframeRef.current?.contentWindow?.postMessage(
+            { action: "getDetails", cib: selfUnmuteCibRef.current },
+            "*",
+          );
+        }, 2000);
+      }
+    } else {
+      if (selfUnmutePollRef.current !== null) {
+        window.clearInterval(selfUnmutePollRef.current);
+        selfUnmutePollRef.current = null;
+      }
+    }
+  });
+
+  // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off, self-unmute poll.
   useEffect(() => {
     return () => {
       if (hostMuteIntervalRef.current !== null) {
@@ -487,6 +543,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       }
       if (buzzTimerRef.current !== null) {
         window.clearTimeout(buzzTimerRef.current);
+      }
+      if (selfUnmutePollRef.current !== null) {
+        window.clearInterval(selfUnmutePollRef.current);
       }
     };
   }, []);
@@ -1210,7 +1269,7 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
             ref={inputRef}
             type="text"
             value={draft}
-            placeholder="Type a message... Tip: use :(emoji)"
+            placeholder="Type a message... use : for emojis"
             onChange={onInputChange}
             onKeyDown={onInputKeyDown}
             style={styles.chatInput}

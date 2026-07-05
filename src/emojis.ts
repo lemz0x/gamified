@@ -38,13 +38,13 @@ export const CHAT_EMOJIS = [
   "\u{1F603}", // 😃 grin
   "\u{1F602}", // 😂 laugh
   "\u{1F923}", // 🤣 rofl
-  "\u{1F972}", // 🥲 hold back tears
+  "\u{1F605}", // 😅 sweat smile (teary smile - universally supported)
   "\u{1F622}", // 😢 sad
   "\u{1F62D}", // 😭 sob
   "\u{1F973}", // 🥳 party face
   "\u{1F60D}", // 😍 heart eyes
   "\u{1F914}", // 🤔 think
-  "\u{1F620}", // 😡 angry
+  "\u{1F621}", // 😡 pouting face (red angry)
   "\u{1F634}", // 😴 sleepy
   "\u{1F937}", // 🤷 shrug
   "\u{1F44F}", // 👏 clap
