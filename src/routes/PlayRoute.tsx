@@ -1982,6 +1982,8 @@ const styles: Record<string, CSSProperties> = {
     textOverflow: "ellipsis",
     overflow: "hidden",
     whiteSpace: "nowrap",
+    outline: "1px solid rgba(255,255,255,0.12)",
+    outlineOffset: -2,
   },
   muteRowMuted: {
     background: "#2a1018",
