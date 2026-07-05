@@ -1968,7 +1968,7 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "center",
     gap: 4,
     background: "#14141e",
-    border: `1px solid ${NEON.panelEdge}`,
+    border: "1px solid #3a3a52",
     borderRadius: 8,
     padding: "5px 6px",
     cursor: "pointer",
@@ -1982,8 +1982,7 @@ const styles: Record<string, CSSProperties> = {
     textOverflow: "ellipsis",
     overflow: "hidden",
     whiteSpace: "nowrap",
-    outline: "1px solid rgba(255,255,255,0.12)",
-    outlineOffset: -2,
+    outline: "none",
   },
   muteRowMuted: {
     background: "#2a1018",
