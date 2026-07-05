@@ -469,13 +469,18 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // Detect when a host-muted guest self-unmutes by clicking their mic icon
   // inside the VDO.Ninja iframe.
   //
-  // VDO.Ninja pushes mic-state-change events to the parent via postMessage.
-  // The message format (confirmed via Bitfocus Companion source code) is:
-  //   { action: "mic", streamID: "...", value: false }  // false = unmuted
-  //   { action: "remoteMuted", streamID: "...", value: false }
+  // VDO.Ninja's iframe API posts mic-state-change events to the parent via
+  // postMessage. The event is posted by pokeIframeAPI() in lib.js (line ~18454):
+  //   parent.postMessage({ action: "mic-mute-state", value: session.muted }, ...)
   //
-  // We listen for these events. When we see mic unmute (value: false) while
-  // the guest is host-muted (but not STFU-muted), we:
+  // Key behavior confirmed from VDO.Ninja source code:
+  //   - Event fires ONLY when the guest clicks their own mic (toggleMute with !apply)
+  //   - Does NOT fire when we programmatically mute via { mic: false } (apply=true)
+  //   - value: true = muted, value: false = unmuted
+  //   - Requires ?iframetarget=* in the iframe URL (added to GUEST_BROADCAST_PARAMS)
+  //
+  // When we detect unmute (value: false) while the guest is host-muted
+  // (but not STFU-muted), we:
   //   1. Clear the local hostMutedRef + SILENCED badge
   //   2. Broadcast guestSelfUnmuted so the host/producer can sync
   // STFU mutes are NOT affected (circuit breaker still re-asserts those).
@@ -483,8 +488,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     function onVdoMicEvent(e: MessageEvent) {
       if (!e.data || typeof e.data !== "object") return;
       const data = e.data as Record<string, unknown>;
-      // VDO.Ninja pushes mic state changes as action: "mic" or "remoteMuted"
-      if (data.action !== "mic" && data.action !== "remoteMuted") return;
+      // VDO.Ninja posts mic state changes as action: "mic-mute-state"
+      if (data.action !== "mic-mute-state") return;
       // value: false means mic is unmuted
       if (data.value !== false) return;
       // Only react if we're a host-muted guest (not STFU-muted)

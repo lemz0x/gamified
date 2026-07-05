@@ -117,6 +117,11 @@ const GUEST_BROADCAST_PARAMS: Array<readonly [string, string | null]> = [
   ["broadcast", PRODUCER_VIEW_ID],
   ["showlist", "0"],
   ["minipreview", null],
+  // Required for VDO.Ninja to post mic-mute-state events back to the parent.
+  // Without iframetarget, pokeIframeAPI calls parent.postMessage(data, undefined)
+  // which either silently fails or throws depending on the browser.
+  // Value "*" ensures all cross-origin messages reach our parent.
+  ["iframetarget", "*"],
 ];
 
 /**
@@ -161,6 +166,7 @@ export function buildEditorIframeUrl(params: GuestIframeParams): string {
     ["broadcast", PRODUCER_VIEW_ID] as const,
     ["showlist", "0"] as const,
     ["minipreview", null] as const,
+    ["iframetarget", "*"] as const,
     ["videodevice", "0"] as const,
     ["push", params.push] as const,
     ["label", params.label] as const,
