@@ -94,7 +94,8 @@ export function OverlayRoute() {
       />
       {chatScreenSprite && (
         <>
-          <div style={cardBackdropStyle} />
+          <div style={ambientFeatherStyle} />
+          <div style={cardPillStyle} />
           <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
         </>
       )}
@@ -191,18 +192,40 @@ const chatCardStyle: CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 80px rgba(0,0,0,0.5)",
 };
 
-/** Darkening backdrop behind the card area. Since backdrop-filter
- *  cannot blur across OBS browser source layers, this creates a
- *  semi-transparent dark gradient strip behind the card to dull
- *  the background where the card sits. Rendered as a sibling
- *  absolutely positioned div in the root. */
-const cardBackdropStyle: CSSProperties = {
+/** Dual-Layer Focus (Approach 3): Two stacked elements behind the card.
+ *
+ *  Layer 1 (ambientFeatherStyle): Wide, low-opacity gradient across the full
+ *  bottom. Feathered edges, very subtle. Creates an ambient darkening without
+ *  a visible "bar" — the camera feed shows through faintly.
+ *
+ *  Layer 2 (cardPillStyle): Tight, rounded dark rectangle positioned directly
+ *  behind the card area. Higher opacity than the feather for maximum text
+ *  readability, but constrained to the card's footprint so it doesn't look like
+ *  a broadcast lower-third bar.
+ */
+
+const ambientFeatherStyle: CSSProperties = {
   position: "fixed",
   left: 0,
   right: 0,
   bottom: 0,
-  height: 200,
-  background: "linear-gradient(to top, rgba(0,0,0,0.6), rgba(0,0,0,0.25) 65%, transparent)",
+  height: 280,
+  background:
+    "radial-gradient(ellipse 1400px 240px at 50% 100%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.22) 50%, transparent 80%)",
+  pointerEvents: "none",
+  zIndex: 54,
+};
+
+const cardPillStyle: CSSProperties = {
+  position: "fixed",
+  left: "50%",
+  transform: "translateX(-50%)",
+  bottom: 0,
+  width: 1180,
+  height: 120,
+  borderRadius: 24,
+  background:
+    "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.12) 90%, transparent 100%)",
   pointerEvents: "none",
   zIndex: 55,
 };
@@ -226,7 +249,7 @@ const contentStyle: CSSProperties = {
 const authorStyle: CSSProperties = {
   fontFamily: '"Orbitron", sans-serif',
   fontWeight: 900,
-  fontSize: 20,
+  fontSize: 22,
   letterSpacing: 2,
   color: "#22e2ff",
   textTransform: "uppercase",
