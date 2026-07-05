@@ -1485,10 +1485,10 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
     <section style={styles.mutePanel}>
       <div style={styles.mutePanelHeader}>
         <span style={styles.mutePanelTitle}>GUEST MUTE</span>
-        <button type="button" onClick={unmuteAll} style={styles.unmuteAllBtn}>
+        <button type="button" onClick={(e) => { unmuteAll(); e.currentTarget.blur(); }} style={styles.unmuteAllBtn}>
           UNMUTE ALL
         </button>
-        <button type="button" onClick={muteAll} style={styles.muteAllBtn}>
+        <button type="button" onClick={(e) => { muteAll(); e.currentTarget.blur(); }} style={styles.muteAllBtn}>
           MUTE ALL
         </button>
       </div>
@@ -1499,7 +1499,7 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
             <button
               key={seat}
               type="button"
-              onClick={() => muteSeat(seat)}
+              onClick={(e) => { muteSeat(seat); e.currentTarget.blur(); }}
               style={{
                 ...styles.muteRow,
                 ...(muted ? styles.muteRowMuted : {}),
