@@ -182,12 +182,10 @@ const chatCardStyle: CSSProperties = {
   gap: 14,
   padding: "14px 20px",
   borderRadius: 16,
-  background: "rgba(6,4,12,0.85)",
-  maxWidth: 900,
+  background: "rgba(6,4,12,0.95)",
+  maxWidth: 1100,
   border: "1.5px solid transparent",
-  boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
-  backdropFilter: "blur(4px)",
-  WebkitBackdropFilter: "blur(4px)",
+  boxShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 60px rgba(0,0,0,0.4)",
 };
 
 const logoLeftStyle: CSSProperties = {

@@ -271,11 +271,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     // Only start if not already running
     if (hostMuteIntervalRef.current !== null) return;
     hostMuteIntervalRef.current = window.setInterval(() => {
-      if (hostMutedRef.current || stfuMutedRef.current) {
-        // Re-assert the mute — guest might have clicked their mic icon
+      if (stfuMutedRef.current) {
+        // STFU is a hard lock — re-assert mute even if guest clicks mic.
+        // Host mutes are advisory: guests can unmute themselves.
         muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
       } else {
-        // Both flags cleared — stop the breaker
+        // STFU cleared — stop the breaker
         if (hostMuteIntervalRef.current !== null) {
           window.clearInterval(hostMuteIntervalRef.current);
           hostMuteIntervalRef.current = null;
@@ -288,7 +289,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const reconcileMicRef = useRef<() => void>(() => {});
   reconcileMicRef.current = () => {
     const muted = hostMutedRef.current || stfuMutedRef.current;
-    muteIframeRef.current?.contentWindow?.postMessage({ mic: !muted }, "*");
+    // Only force-mute for STFU. Host mutes are advisory (guest can unmute).
+    if (stfuMutedRef.current) {
+      muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+    }
     setIsMuted(muted);
   };
 
@@ -388,8 +392,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             hostMutedRef.current = true;
-            reconcileMicRef.current();
-            startCircuitBreaker();
+            // Mute once, but don't start circuit breaker — host mutes are
+            // advisory. Guest can unmute themselves by clicking their mic.
+            muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+            setIsMuted(true);
           }
           if (isTarget || identity.kind === "host") {
             window.dispatchEvent(
@@ -1244,7 +1250,7 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
                 key={e}
                 type="button"
                 onClick={() => insertEmoji(e)}
-                title={emojiShorthand(e)}
+                title={emojiShorthand(e) ? `:${emojiShorthand(e)}` : undefined}
                 style={styles.chatPickerBtn}
               >
                 {e}

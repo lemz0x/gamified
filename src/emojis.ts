@@ -34,24 +34,30 @@ export const EMOJIS = [
  * these are conversational and never broadcast as overlay events.
  */
 export const CHAT_EMOJIS = [
-  "\u{1F600}", // 😀
-  "\u{1F602}", // 😂
-  "\u{1F923}", // 🤣
-  "\u{1F62D}", // 😭
-  "\u{1F60D}", // 😍
-  "\u{1F914}", // 🤔
-  "\u{1F44F}", // 👏
-  "\u{1F64F}", // 🙏
-  "\u{2764}\u{FE0F}", // ❤️
-  "\u{1F525}", // 🔥
-  "\u{1F44D}", // 👍
-  "\u{1F44E}", // 👎
-  "\u{1F4A9}", // 💩
-  "\u{1F921}", // 🤡
-  "\u{1F440}", // 👀
-  "\u{1F480}", // 💀
-  "\u{1F60E}", // 😎
-  "\u{1F389}", // 🎉
+  "\u{1F600}", // 😀 grin
+  "\u{1F603}", // 😃 smile
+  "\u{1F602}", // 😂 laugh
+  "\u{1F923}", // 🤣 rofl
+  "\u{1F62D}", // 😭 sob
+  "\u{1F622}", // 😢 sad
+  "\u{1F60D}", // 😍 heart eyes
+  "\u{1F914}", // 🤔 think
+  "\u{1F620}", // 😡 angry
+  "\u{1F634}", // 😴 sleepy
+  "\u{1F937}", // 🤷 shrug
+  "\u{1F44F}", // 👏 clap
+  "\u{1F64F}", // 🙏 pray
+  "\u{270A}", // ✊ fist
+  "\u{2764}\u{FE0F}", // ❤️ heart
+  "\u{1F525}", // 🔥 fire
+  "\u{1F44D}", // 👍 thumbs up
+  "\u{1F44E}", // 👎 thumbs down
+  "\u{1F4A9}", // 💩 poop
+  "\u{1F921}", // 🤡 clown
+  "\u{1F440}", // 👀 eyes
+  "\u{1F480}", // 💀 skull
+  "\u{1F389}", // 🎉 party
+  "\u{1F60E}", // 😎 cool
 ] as const;
 
 /** Per-emoji brand colour + hover glow params. Single source of truth for
