@@ -466,36 +466,45 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
-  // Detect when a host-muted guest self-unmutes.
-  // VDO.Ninja doesn't post mic-state-change events to the parent, and the
-  // getDetails response format is undocumented. Instead of polling, we
-  // provide an explicit "Unmute" button in the SILENCED badge that the
-  // guest clicks. See handleSelfUnmute below.
-  const handleSelfUnmuteRef = useRef<() => void>(() => {});
-  handleSelfUnmuteRef.current = () => {
-    if (!hostMutedRef.current || stfuMutedRef.current) return;
-    // Clear local mute state
-    hostMutedRef.current = false;
-    setIsMuted(false);
-    // Actually unmute the VDO.Ninja mic
-    muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
-    // Broadcast to host + producer so they clear the SILENCED badge
-    if (identity.kind === "guest") {
+  // Detect when a host-muted guest self-unmutes by clicking their mic icon
+  // inside the VDO.Ninja iframe.
+  //
+  // VDO.Ninja pushes mic-state-change events to the parent via postMessage.
+  // The message format (confirmed via Bitfocus Companion source code) is:
+  //   { action: "mic", streamID: "...", value: false }  // false = unmuted
+  //   { action: "remoteMuted", streamID: "...", value: false }
+  //
+  // We listen for these events. When we see mic unmute (value: false) while
+  // the guest is host-muted (but not STFU-muted), we:
+  //   1. Clear the local hostMutedRef + SILENCED badge
+  //   2. Broadcast guestSelfUnmuted so the host/producer can sync
+  // STFU mutes are NOT affected (circuit breaker still re-asserts those).
+  useEffect(() => {
+    function onVdoMicEvent(e: MessageEvent) {
+      if (!e.data || typeof e.data !== "object") return;
+      const data = e.data as Record<string, unknown>;
+      // VDO.Ninja pushes mic state changes as action: "mic" or "remoteMuted"
+      if (data.action !== "mic" && data.action !== "remoteMuted") return;
+      // value: false means mic is unmuted
+      if (data.value !== false) return;
+      // Only react if we're a host-muted guest (not STFU-muted)
+      if (!hostMutedRef.current || stfuMutedRef.current) return;
+      if (identity.kind !== "guest") return;
+      // Clear local mute state
+      hostMutedRef.current = false;
+      setIsMuted(false);
+      // Broadcast to host + producer so they clear the SILENCED badge
       send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
-    }
-    // Dispatch local custom event for the host UI mute indicators
-    if (identity.kind === "guest") {
+      // Dispatch local custom event for the host UI mute indicators
       window.dispatchEvent(
         new CustomEvent("gamified-mute-state", {
           detail: { seat: identity.seat, muted: false },
         }),
       );
     }
-  };
-
-  const handleSelfUnmute = useCallback(() => {
-    handleSelfUnmuteRef.current();
-  }, []);
+    window.addEventListener("message", onVdoMicEvent);
+    return () => window.removeEventListener("message", onVdoMicEvent);
+  }, [identity, send]);
 
   // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off.
   useEffect(() => {
@@ -828,7 +837,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           onFeature={canFeature ? featureMessage : undefined}
           onClearScreen={canFeature ? clearChatScreen : undefined}
           silenced={isMuted}
-          onSelfUnmute={identity.kind === "guest" ? handleSelfUnmute : undefined}
         />
       </aside>
 
@@ -1015,10 +1023,9 @@ interface ChatPanelProps {
   onFeature?: (msg: ChatMessage) => void;
   onClearScreen?: () => void;
   silenced?: boolean;
-  onSelfUnmute?: () => void;
 }
 
-function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced, onSelfUnmute }: ChatPanelProps) {
+function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [colonMatch, setColonMatch] = useState<ColonMatch | null>(null);
@@ -1226,32 +1233,9 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced, onSel
               textAlign: "center",
               textTransform: "uppercase",
               marginBottom: 4,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
             }}
           >
-            <span>{"\u{1F507}"} SILENCED</span>
-            {onSelfUnmute && (
-              <button
-                onClick={onSelfUnmute}
-                style={{
-                  background: "rgba(255, 46, 107, 0.2)",
-                  border: "1px solid #ff2e6b",
-                  borderRadius: 4,
-                  padding: "2px 8px",
-                  color: "#ff2e6b",
-                  fontWeight: 700,
-                  fontSize: 10,
-                  letterSpacing: 1,
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                }}
-              >
-                Unmute
-              </button>
-            )}
+            {"\u{1F507}"} SILENCED
           </div>
         )}
         <div style={styles.chatComposer}>
