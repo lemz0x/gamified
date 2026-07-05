@@ -77,6 +77,8 @@ interface EmojiSprite {
   expiresAt: number;
 }
 
+type MuteReason = "host" | "stfu" | "muteall";
+
 interface CardSprite {
   id: string;
   cardId: CardPlayEvent["cardId"];
@@ -140,16 +142,18 @@ export function UnderlayRoute() {
 
   // Muted-seats state: per-seat set of mute reasons. A seat renders
   // SILENCED while any reason remains. "host" is removed by unmuteGuest;
-  // "stfu" is removed by the STFU visual timeout (10s). This prevents:
+  // "stfu" is removed by the STFU visual timeout (10s). "muteall" is added
+  // when host uses mute-all (removed on unmute-all). This prevents:
   //  - STFU stacking orphaning a seat (each timeout only removes its own reason)
   //  - STFU expiry visually unmuting a seat the host independently muted
-  const [muteReasons, setMuteReasons] = useState<Map<SeatId, Set<"host" | "stfu">>>(new Map());
+  //  - Individual host mutes showing the SILENCED overlay (only mute-all + STFU do)
+  const [muteReasons, setMuteReasons] = useState<Map<SeatId, Set<MuteReason>>>(new Map());
   // Ref for the STFU area-mute visual timeout so we can clear it on
   // stacking (rapid back-to-back STFU plays) and on component unmount.
   const stfuVisualTimeoutRef = useRef<number | null>(null);
 
   /** Add a mute reason for one or more seats. */
-  const addMuteReasons = useCallback((seats: SeatId[], reason: "host" | "stfu") => {
+  const addMuteReasons = useCallback((seats: SeatId[], reason: MuteReason) => {
     setMuteReasons((prev) => {
       const next = new Map(prev);
       for (const s of seats) {
@@ -162,7 +166,7 @@ export function UnderlayRoute() {
   }, []);
 
   /** Remove a mute reason for one or more seats. Seat unmutes when all reasons are gone. */
-  const removeMuteReasons = useCallback((seats: SeatId[], reason: "host" | "stfu") => {
+  const removeMuteReasons = useCallback((seats: SeatId[], reason: MuteReason) => {
     setMuteReasons((prev) => {
       const next = new Map(prev);
       for (const s of seats) {
@@ -330,19 +334,21 @@ export function UnderlayRoute() {
           }
           break;
         case "muteGuest": {
-          // Add "host" mute reason for target seats
+          // Add mute reason for target seats.
+          // "muteall" is used for SILENCED overlay (shown for mute-all + STFU only).
+          // Individual host mutes use "host" reason (no SILENCED overlay).
           const targets: SeatId[] = msg.target === "all"
             ? (Object.keys(tiles) as SeatId[])
             : [msg.target as SeatId];
-          addMuteReasons(targets, "host");
+          addMuteReasons(targets, msg.target === "all" ? "muteall" : "host");
           break;
         }
         case "unmuteGuest": {
-          // Remove "host" mute reason for target seats
+          // Remove mute reason for target seats
           const targets: SeatId[] = msg.target === "all"
             ? (Object.keys(tiles) as SeatId[])
             : [msg.target as SeatId];
-          removeMuteReasons(targets, "host");
+          removeMuteReasons(targets, msg.target === "all" ? "muteall" : "host");
           break;
         }
         // cardReset, getResetEpoch → not needed by overlay.
@@ -375,10 +381,13 @@ export function UnderlayRoute() {
           <SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
         ))}
 
-        {/* SILENCED overlay — only for STFU, NOT for host mutes.
-            Host mutes are audio-only (no visual overlay). */}
+        {/* SILENCED overlay — shown for STFU and mute-all only.
+            Individual host mutes are audio-only (no visual overlay). */}
         {muteReasons.size > 0 && (Object.keys(tiles) as SeatId[])
-          .filter((seat) => muteReasons.get(seat)?.has("stfu"))
+          .filter((seat) => {
+            const reasons = muteReasons.get(seat);
+            return reasons?.has("stfu") || reasons?.has("muteall");
+          })
           .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
@@ -895,10 +904,10 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
           position: "absolute",
           inset: 0,
           boxShadow: [
-            "inset 0 0 25px 4px rgba(255,215,0,0.95)",
-            "inset 0 0 55px 8px rgba(255,215,0,0.70)",
-            "inset 0 0 100px 12px rgba(255,215,0,0.45)",
-            "inset 0 0 150px 16px rgba(255,215,0,0.25)",
+            "inset 0 0 25px 4px rgba(212,175,55,0.95)",
+            "inset 0 0 55px 8px rgba(212,175,55,0.80)",
+            "inset 0 0 100px 12px rgba(212,175,55,0.55)",
+            "inset 0 0 150px 16px rgba(212,175,55,0.40)",
           ].join(", "),
           opacity: 0,
           willChange: "opacity",

@@ -183,9 +183,11 @@ const chatCardStyle: CSSProperties = {
   padding: "14px 20px",
   borderRadius: 16,
   background: "rgba(6,4,12,0.97)",
-  maxWidth: 880,
+  maxWidth: 1200,
   border: "1.5px solid transparent",
   boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
+  backdropFilter: "blur(3px)",
+  WebkitBackdropFilter: "blur(3px)",
 };
 
 const logoLeftStyle: CSSProperties = {
@@ -221,7 +223,7 @@ const messageStyle: CSSProperties = {
   lineHeight: 1.3,
   wordBreak: "break-word",
   display: "-webkit-box",
-  WebkitLineClamp: 3,
+  WebkitLineClamp: 2,
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
 };

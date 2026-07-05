@@ -19,14 +19,9 @@ import {
 import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildOverlayDataOnlyUrl,
-  buildChatOnlyUrl,
   useVdoNinja,
   type EventPayload,
 } from "../lib/vdoninja";
-import {
-  useVdoNinjaChat,
-  type ChatMessage,
-} from "../lib/vdoninjaChat";
 import {
   PRODUCER_PASSWORD,
   isProducerAuthenticated,
@@ -137,15 +132,6 @@ function cardLabel(id: CardId): string {
   return CARDS.find((c) => c.id === id)?.name ?? id.toUpperCase();
 }
 
-/** Strip control chars + zero-width chars + collapse whitespace. */
-function sanitizeForOverlay(text: string): string {
-  return text
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-    .replace(/[\u200B-\u200F\uFEFF]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function formatEvent(
   msg: EventPayload,
   roster: Record<SeatId, string>,
@@ -240,20 +226,6 @@ function ProducerPanel() {
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
     draftHostName !== hostName;
 
-  // ── Chat to screen state ──────────────────────────────────────────────
-  const [chatMessages, setChatMessages] = useState<readonly ChatMessage[]>([]);
-  const chatIdRef = useRef(0);
-  const nextChatId = () => `c${chatIdRef.current++}`;
-
-  const onChatIncoming = useCallback(
-    (msg: { msg: string; label: string; ts: number }) => {
-      setChatMessages((prev) =>
-        [...prev, { id: nextChatId(), source: "remote" as const, ...msg }].slice(-50),
-      );
-    },
-    [],
-  );
-
   // Forward-declared sender so the message handler can re-broadcast on
   // demand without depending on `send` (which would create a cycle).
   const sendRef = useRef<((p: EventPayload) => void) | null>(null);
@@ -313,14 +285,6 @@ function ProducerPanel() {
   const { iframeRef, send } = useVdoNinja({ onMessage });
   // Preload card SFX so first play is instant (no network delay).
   useEffect(() => { preloadCardSfx(); }, []);
-
-  // Second hidden iframe for VDO.Ninja chat reception.
-  const chatIframeRef = useRef<HTMLIFrameElement>(null);
-  const chatIframeSrc = useMemo(
-    () => buildChatOnlyUrl({ push: "", label: "Producer" }),
-    [],
-  );
-  useVdoNinjaChat(chatIframeRef, onChatIncoming);
 
   // Keep the ref in sync so the listener (which captures `send` via the ref
   // to avoid a re-subscribe loop) always calls the live sender.
@@ -425,32 +389,6 @@ function ProducerPanel() {
     setTiles(fresh);
     saveCalibratedTiles(fresh);
     send({ type: "calibration", tiles: fresh, ts: Date.now() });
-  }, [send]);
-
-  // ── Chat to screen handlers ───────────────────────────────────────────
-  const featureMessage = useCallback(
-    (msg: ChatMessage) => {
-      const sanitized = sanitizeForOverlay(msg.msg);
-      if (!sanitized) return;
-      send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
-      setFeed((prev) =>
-        [
-          { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Featured: "${sanitized.slice(0, 40)}" — ${msg.label}` },
-          ...prev,
-        ].slice(0, FEED_CAP),
-      );
-    },
-    [send],
-  );
-
-  const clearChatScreen = useCallback(() => {
-    send({ type: "chatToScreenClear", ts: Date.now() });
-    setFeed((prev) =>
-      [
-        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: "Cleared chat from screen" },
-        ...prev,
-      ].slice(0, FEED_CAP),
-    );
   }, [send]);
 
   return (
@@ -580,92 +518,6 @@ function ProducerPanel() {
         </div>
       </Section>
 
-      <Section title="Chat to screen">
-        {chatMessages.length === 0 ? (
-          <div style={styles.emptyFeed}>
-            Waiting for chat messages…
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 300, overflowY: "auto" }}>
-            {chatMessages.map((msg) => (
-              <div
-                key={msg.id}
-                style={{
-                  background: "#14141f",
-                  border: "1px solid #1f1f30",
-                  borderRadius: 6,
-                  padding: "7px 9px",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 7,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    color: "#22e2ff",
-                    fontSize: 9,
-                    fontWeight: 800,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.5,
-                  }}>
-                    {msg.label}
-                  </div>
-                  <div style={{
-                    color: "#f0f0f8",
-                    fontSize: 11,
-                    lineHeight: 1.3,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}>
-                    {msg.msg}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => featureMessage(msg)}
-                  style={{
-                    background: "#ff2e9f",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 4,
-                    padding: "4px 10px",
-                    fontSize: 11,
-                    fontWeight: 800,
-                    textTransform: "uppercase",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                    marginTop: 1,
-                  }}
-                >
-                  Feature
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={clearChatScreen}
-          style={{
-            background: "transparent",
-            color: "#ff5454",
-            border: "1px solid #ff5454",
-            borderRadius: 6,
-            padding: "6px 12px",
-            fontSize: 10,
-            fontWeight: 800,
-            textTransform: "uppercase",
-            cursor: "pointer",
-            width: "100%",
-            marginTop: 6,
-          }}
-        >
-          Clear from Screen
-        </button>
-      </Section>
-
       <Section title="Activity feed">
         {feed.length === 0 ? (
           <div style={styles.emptyFeed}>
@@ -732,16 +584,6 @@ function ProducerPanel() {
         ref={iframeRef}
         src={overlayUrl}
         title="VDO.Ninja data channel"
-        style={styles.hiddenIframe}
-        allow="microphone; camera"
-        aria-hidden="true"
-        tabIndex={-1}
-      />
-      {/* Hidden chat iframe — receives VDO.Ninja websocket chat events. */}
-      <iframe
-        ref={chatIframeRef}
-        src={chatIframeSrc}
-        title="VDO.Ninja chat"
         style={styles.hiddenIframe}
         allow="microphone; camera"
         aria-hidden="true"
