@@ -9,7 +9,7 @@ import { useSearchParams } from "react-router-dom";
 import { buildChatOnlyUrl, useVdoNinja } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { CHAT_EMOJIS } from "../emojis";
-import { findColonToken, tryAutoInsert, replaceAllColonTokens, type ColonMatch } from "../lib/emojiAliases";
+import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 
 // ── neon palette (sync with PlayRoute) ──────────────────────────────────
 
@@ -368,7 +368,7 @@ function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
           ref={inputRef}
           type="text"
           value={draft}
-          placeholder="Type a message…  Pro tip: type :fire followed by space"
+          placeholder="Type a message... Tip: use :(emoji)"
           onChange={onInputChange}
           onKeyDown={onInputKeyDown}
           style={styles.input}
@@ -400,36 +400,35 @@ function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
       </div>
       {pickerOpen && (
         <div style={styles.chatPicker} role="menu">
-          <div style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            marginBottom: 2,
-          }}>
-            <button
-              type="button"
-              onClick={() => setPickerOpen(false)}
-              aria-label="Close emoji picker"
-              style={{
-                appearance: "none",
-                background: "transparent",
-                border: 0,
-                color: NEON.textDim,
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 700,
-                lineHeight: 1,
-                padding: "2px 4px",
-                fontFamily: "inherit",
-              }}
-            >
-              {"\u2715"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(false)}
+            aria-label="Close emoji picker"
+            style={{
+              position: "absolute",
+              top: 4,
+              right: 6,
+              appearance: "none",
+              background: "transparent",
+              border: 0,
+              color: NEON.textDim,
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 700,
+              lineHeight: 1,
+              padding: "2px 4px",
+              fontFamily: "inherit",
+              zIndex: 1,
+            }}
+          >
+            {"\u2715"}
+          </button>
           {CHAT_EMOJIS.map((e) => (
             <button
               key={e}
               type="button"
               onClick={() => insertEmoji(e)}
+              title={emojiShorthand(e) ? `:${emojiShorthand(e)}` : undefined}
               style={styles.chatPickerBtn}
             >
               {e}
@@ -596,9 +595,10 @@ const styles: Record<string, CSSProperties> = {
     border: `1px solid ${NEON.panelEdge}`,
     borderRadius: 10,
     padding: 6,
+    paddingTop: 20,
     boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 18px ${NEON.purple}33`,
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 4,
     zIndex: 20,
   },

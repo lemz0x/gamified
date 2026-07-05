@@ -21,7 +21,7 @@ import {
 } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
-import { findColonToken, tryAutoInsert, replaceAllColonTokens, type ColonMatch } from "../lib/emojiAliases";
+import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -737,7 +737,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                         minHeight: 42,
                       }}>
                         <div style={{
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: 800,
                           textTransform: "uppercase",
                           letterSpacing: 0.5,
@@ -749,7 +749,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
                         <div style={{
                           fontFamily: '"Orbitron", system-ui, sans-serif',
                           fontWeight: 900,
-                          fontSize: 15,
+                          fontSize: 13,
                           color: answer ? "#ffe866" : "#8a8aa3",
                           textShadow: answer
                             ? "0 0 8px rgba(255,232,102,0.4)"
@@ -772,31 +772,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           </div>
         )}
 
-        {isMuted && (
-          <div
-            style={{
-              background: "rgba(255, 46, 107, 0.15)",
-              border: "1px solid #ff2e6b",
-              borderRadius: 8,
-              padding: "8px 12px",
-              color: "#ff2e6b",
-              fontWeight: 800,
-              fontSize: 12,
-              letterSpacing: 2,
-              textAlign: "center",
-              textTransform: "uppercase",
-              marginTop: 8,
-            }}
-          >
-            {"\u{1F507}"} SILENCED
-          </div>
-        )}
-
         <ChatPanel
           messages={chatMessages}
           onSend={sendChatMessage}
           onFeature={canFeature ? featureMessage : undefined}
           onClearScreen={canFeature ? clearChatScreen : undefined}
+          silenced={isMuted}
         />
       </aside>
 
@@ -982,9 +963,10 @@ interface ChatPanelProps {
   onSend: (text: string) => boolean;
   onFeature?: (msg: ChatMessage) => void;
   onClearScreen?: () => void;
+  silenced?: boolean;
 }
 
-function ChatPanel({ messages, onSend, onFeature, onClearScreen }: ChatPanelProps) {
+function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [colonMatch, setColonMatch] = useState<ColonMatch | null>(null);
@@ -1155,35 +1137,54 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen }: ChatPanelProp
           ))
         )}
       </div>
-      {colonMatch && colonMatch.suggestions.length > 0 && (
-        <div style={styles.colonPicker}>
-          {colonMatch.suggestions.map((s, i) => (
-            <button
-              key={`${s.alias}-${i}`}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                insertColonEmoji(s.emoji, colonMatch);
-              }}
-              style={{
-                ...styles.colonPickerBtn,
-                background: i === colonHighlight ? `${NEON.cyan}22` : "transparent",
-                borderColor: i === colonHighlight ? `${NEON.cyan}55` : "transparent",
-              }}
-            >
-              <span style={styles.colonPickerEmoji}>{s.emoji}</span>
-              <span style={styles.colonPickerAlias}>:{s.alias}</span>
-            </button>
-          ))}
-        </div>
-      )}
       <div style={styles.chatComposerWrap}>
+        {colonMatch && colonMatch.suggestions.length > 0 && (
+          <div style={styles.colonPicker}>
+            {colonMatch.suggestions.map((s, i) => (
+              <button
+                key={`${s.alias}-${i}`}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertColonEmoji(s.emoji, colonMatch);
+                }}
+                style={{
+                  ...styles.colonPickerBtn,
+                  background: i === colonHighlight ? `${NEON.cyan}22` : "transparent",
+                  borderColor: i === colonHighlight ? `${NEON.cyan}55` : "transparent",
+                }}
+              >
+                <span style={styles.colonPickerEmoji}>{s.emoji}</span>
+                <span style={styles.colonPickerAlias}>:{s.alias}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {silenced && (
+          <div
+            style={{
+              background: "rgba(255, 46, 107, 0.15)",
+              border: "1px solid #ff2e6b",
+              borderRadius: 8,
+              padding: "6px 12px",
+              color: "#ff2e6b",
+              fontWeight: 800,
+              fontSize: 11,
+              letterSpacing: 2,
+              textAlign: "center",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            {"\u{1F507}"} SILENCED
+          </div>
+        )}
         <div style={styles.chatComposer}>
           <input
             ref={inputRef}
             type="text"
             value={draft}
-            placeholder="Type a message…  Pro tip: type :fire followed by space"
+            placeholder="Type a message... Tip: use :(emoji)"
             onChange={onInputChange}
             onKeyDown={onInputKeyDown}
             style={styles.chatInput}
@@ -1215,36 +1216,35 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen }: ChatPanelProp
         </div>
         {pickerOpen && (
           <div style={styles.chatPicker} role="menu">
-            <div style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              marginBottom: 2,
-            }}>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(false)}
-                aria-label="Close emoji picker"
-                style={{
-                  appearance: "none",
-                  background: "transparent",
-                  border: 0,
-                  color: NEON.textDim,
-                  cursor: "pointer",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  lineHeight: 1,
-                  padding: "2px 4px",
-                  fontFamily: "inherit",
-                }}
-              >
-                {"\u2715"}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(false)}
+              aria-label="Close emoji picker"
+              style={{
+                position: "absolute",
+                top: 4,
+                right: 6,
+                appearance: "none",
+                background: "transparent",
+                border: 0,
+                color: NEON.textDim,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 700,
+                lineHeight: 1,
+                padding: "2px 4px",
+                fontFamily: "inherit",
+                zIndex: 1,
+              }}
+            >
+              {"\u2715"}
+            </button>
             {CHAT_EMOJIS.map((e) => (
               <button
                 key={e}
                 type="button"
                 onClick={() => insertEmoji(e)}
+                title={emojiShorthand(e)}
                 style={styles.chatPickerBtn}
               >
                 {e}
@@ -1712,9 +1712,10 @@ const styles: Record<string, CSSProperties> = {
     border: `1px solid ${NEON.panelEdge}`,
     borderRadius: 10,
     padding: 6,
+    paddingTop: 20,
     boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 18px ${NEON.purple}33`,
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 4,
     zIndex: 20,
   },

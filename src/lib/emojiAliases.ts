@@ -152,3 +152,16 @@ export function replaceAllColonTokens(text: string): string {
     return emoji ?? match;
   });
 }
+
+/** Get the primary shorthand for an emoji (for hover tooltips). */
+const EMOJI_TO_SHORTHAND: ReadonlyMap<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const entry of EMOJI_ALIASES) {
+    m.set(entry.emoji, entry.aliases[0]);
+  }
+  return m;
+})();
+
+export function emojiShorthand(emoji: string): string | undefined {
+  return EMOJI_TO_SHORTHAND.get(emoji);
+}

@@ -51,7 +51,7 @@ export const CARDS: readonly Card[] = [
     icon: "\u{23F0}",
     subtitle: "Time's Up",
     color: "orange",
-    usesPerTopic: 1,
+    usesPerTopic: 3,
     description: "Nudge the speaker to finish",
   },
   {
@@ -61,7 +61,7 @@ export const CARDS: readonly Card[] = [
     icon: "\u{1F3A4}",
     subtitle: "Crown the Speaker",
     color: "amber",
-    usesPerTopic: 1,
+    usesPerTopic: 3,
     description: "Crown the current speaker",
   },
 ] as const;
