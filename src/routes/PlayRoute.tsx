@@ -453,6 +453,26 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     muteIframeRef.current = iframeRef.current;
   });
 
+  // Listen for VDO.Ninja mic state changes from the guest's iframe.
+  // When a host-muted guest clicks their mic to unmute, clear the host
+  // mute flag so the SILENCED badge disappears. STFU mutes are not
+  // affected (circuit breaker re-asserts those).
+  useEffect(() => {
+    function onWindowMessage(e: MessageEvent) {
+      if (!e.data || typeof e.data !== "object") return;
+      // VDO.Ninja sends { mic: true/false } when the user toggles mic.
+      if (e.data.mic === true) {
+        // Guest unmuted themselves. Clear host mute flag (advisory only).
+        if (hostMutedRef.current && !stfuMutedRef.current) {
+          hostMutedRef.current = false;
+          setIsMuted(false);
+        }
+      }
+    }
+    window.addEventListener("message", onWindowMessage);
+    return () => window.removeEventListener("message", onWindowMessage);
+  }, []);
+
   // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off.
   useEffect(() => {
     return () => {

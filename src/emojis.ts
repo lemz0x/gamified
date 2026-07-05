@@ -34,12 +34,14 @@ export const EMOJIS = [
  * these are conversational and never broadcast as overlay events.
  */
 export const CHAT_EMOJIS = [
-  "\u{1F600}", // 😀 grin
-  "\u{1F603}", // 😃 smile
+  "\u{1F642}", // 🙂 slight smile
+  "\u{1F603}", // 😃 grin
   "\u{1F602}", // 😂 laugh
   "\u{1F923}", // 🤣 rofl
-  "\u{1F62D}", // 😭 sob
+  "\u{1F972}", // 🥲 hold back tears
   "\u{1F622}", // 😢 sad
+  "\u{1F62D}", // 😭 sob
+  "\u{1F973}", // 🥳 party face
   "\u{1F60D}", // 😍 heart eyes
   "\u{1F914}", // 🤔 think
   "\u{1F620}", // 😡 angry
@@ -56,8 +58,6 @@ export const CHAT_EMOJIS = [
   "\u{1F921}", // 🤡 clown
   "\u{1F440}", // 👀 eyes
   "\u{1F480}", // 💀 skull
-  "\u{1F389}", // 🎉 party
-  "\u{1F60E}", // 😎 cool
 ] as const;
 
 /** Per-emoji brand colour + hover glow params. Single source of truth for

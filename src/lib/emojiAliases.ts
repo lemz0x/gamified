@@ -27,11 +27,13 @@ export const EMOJI_ALIASES: readonly EmojiAliasEntry[] = [
   { emoji: "\u{1F4A9}", aliases: ["poop", "shit", "crap"] },                  // 💩
   { emoji: "\u{1F44E}", aliases: ["thumbsdown", "down", "no"] },              // 👎
   // Chat-only emojis (not in reaction set)
-  { emoji: "\u{1F600}", aliases: ["grin", "smile", "happy"] },               // 😀
-  { emoji: "\u{1F603}", aliases: ["smile", "grin"] },                        // 😃
+  { emoji: "\u{1F642}", aliases: ["smile"] },               // 🙂
+  { emoji: "\u{1F603}", aliases: ["grin", "happy"] },                        // 😃
   { emoji: "\u{1F923}", aliases: ["rofl", "lmao"] },                         // 🤣
+  { emoji: "\u{1F972}", aliases: ["tearysmile", "emotional"] },                    // 🥲
   { emoji: "\u{1F62D}", aliases: ["sob", "cry"] },                           // 😭
   { emoji: "\u{1F622}", aliases: ["sad", "cry"] },                           // 😢
+  { emoji: "\u{1F973}", aliases: ["party", "celebrate"] },                   // 🥳
   { emoji: "\u{1F60D}", aliases: ["love", "hearteyes"] },                     // 😍
   { emoji: "\u{1F914}", aliases: ["think", "hmm"] },                         // 🤔
   { emoji: "\u{1F620}", aliases: ["angry", "mad"] },                         // 😡
@@ -39,8 +41,6 @@ export const EMOJI_ALIASES: readonly EmojiAliasEntry[] = [
   { emoji: "\u{1F937}", aliases: ["shrug", "idk"] },                        // 🤷 (gender-neutral person shrugging)
   { emoji: "\u{1F64F}", aliases: ["pray", "thanks"] },                      // 🙏
   { emoji: "\u{270A}", aliases: ["fist", "power"] },                         // ✊
-  { emoji: "\u{1F389}", aliases: ["party", "celebrate"] },                   // 🎉
-  { emoji: "\u{1F60E}", aliases: ["cool", "sunglasses"] },                   // 😎
 ];
 
 /** Flatten to a map for O(1) exact-match lookup: "fire" -> "🔥" */

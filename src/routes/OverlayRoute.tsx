@@ -93,7 +93,10 @@ export function OverlayRoute() {
         title="data-channel"
       />
       {chatScreenSprite && (
-        <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
+        <>
+          <div style={cardBackdropStyle} />
+          <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
+        </>
       )}
     </>
   );
@@ -182,10 +185,26 @@ const chatCardStyle: CSSProperties = {
   gap: 14,
   padding: "14px 20px",
   borderRadius: 16,
-  background: "rgba(6,4,12,0.95)",
+  background: "rgba(6,4,12,0.97)",
   maxWidth: 1100,
   border: "1.5px solid transparent",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 60px rgba(0,0,0,0.4)",
+  boxShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 80px rgba(0,0,0,0.5)",
+};
+
+/** Darkening backdrop behind the card area. Since backdrop-filter
+ *  cannot blur across OBS browser source layers, this creates a
+ *  semi-transparent dark gradient strip behind the card to dull
+ *  the background where the card sits. Rendered as a sibling
+ *  absolutely positioned div in the root. */
+const cardBackdropStyle: CSSProperties = {
+  position: "fixed",
+  left: 0,
+  right: 0,
+  bottom: 0,
+  height: 200,
+  background: "linear-gradient(to top, rgba(0,0,0,0.6), rgba(0,0,0,0.25) 65%, transparent)",
+  pointerEvents: "none",
+  zIndex: 55,
 };
 
 const logoLeftStyle: CSSProperties = {
