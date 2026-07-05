@@ -200,35 +200,6 @@ export function buildChatOnlyUrl(params: { push: string; label: string }): strin
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
 }
 
-/**
- * Builds a public /play URL for a participant. Used by the producer panel's
- * link generator so you can copy-paste a ready-made link to each guest.
- */
-export function buildPlayUrl(params: {
-  /** Origin of the deployed site (e.g. `https://example.pages.dev`). */
-  base: string;
-  mode: "guest" | "host" | "editor";
-  /** Seat id, required for guests so the UI knows which card slot is yours. */
-  seat?: SeatId;
-  /** VDO.Ninja stream id this guest publishes under. */
-  push: string;
-  /** Display label VDO.Ninja shows in the room. */
-  label: string;
-}): string {
-  const u = new URL("/play", params.base);
-  u.searchParams.set("push", params.push);
-  u.searchParams.set("label", params.label);
-  if (params.mode === "guest" && params.seat) {
-    const idx: Record<SeatId, number> = {
-      L1: 1, L2: 2, L3: 3, R1: 4, R2: 5, R3: 6,
-    };
-    u.searchParams.set("seat", String(idx[params.seat]));
-  } else {
-    u.searchParams.set("role", params.mode);
-  }
-  return u.toString();
-}
-
 // ── Event payloads ──────────────────────────────────────────────────────
 
 /** Source of an outgoing event — either a numbered guest seat or the host. */
@@ -320,13 +291,6 @@ export interface UnmuteGuestEvent {
   ts: number;
 }
 
-/** Guest's 3s circuit-breaker expired. Host should clear the red highlight. */
-export interface MuteCooldownDoneEvent {
-  type: "muteCooldownDone";
-  target: SeatId;
-  ts: number;
-}
-
 /** Guest buzzed in to signal they want to speak. */
 export interface BuzzInEvent {
   type: "buzzIn";
@@ -389,7 +353,6 @@ export type EventPayload =
   | CalibrationEvent
   | MuteGuestEvent
   | UnmuteGuestEvent
-  | MuteCooldownDoneEvent
   | BuzzInEvent
   | BuzzOffEvent
   | TrackerUpdateEvent
@@ -401,9 +364,9 @@ export type EventPayload =
 
 const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
-  "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
+  "calibration", "muteGuest", "unmuteGuest",
   "buzzIn", "buzzOff", "trackerUpdate",
-  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted",
+  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "getRoster",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -438,7 +401,6 @@ export function validatePayload(raw: unknown): EventPayload | null {
     case "unmuteGuest":
       if (p.target !== "all" && !isValidSeatId(p.target)) return null;
       break;
-    case "muteCooldownDone":
     case "buzzIn":
     case "buzzOff":
       if (!isValidSeatId(p.seat ?? p.target)) return null;
@@ -515,17 +477,15 @@ export function onData(
   callback: (payload: EventPayload) => void,
 ): () => void {
   const handler = (event: MessageEvent) => {
-    // Soft source check: if the iframe is present, verify the origin looks
-    // like VDO.Ninja. We skip strict event.source === contentWindow because
-    // VDO.Ninja navigates the iframe after load, invalidating the ref.
-    // Matches the approach in vdoninjaChat.ts onChat().
+    // Origin allow-list: only accept messages from VDO.Ninja. When the
+    // iframe is mounted, also accept events from its contentWindow (which
+    // may differ during iframe navigation). This closes the unmounted-iframe
+    // gap where any origin could reach the callback.
     const win = iframeRef.current?.contentWindow;
-    if (
-      win &&
-      event.source !== win &&
-      event.origin !== "https://vdo.ninja" &&
-      event.origin !== "https://www.vdo.ninja"
-    ) {
+    const fromNinja =
+      event.origin === "https://vdo.ninja" ||
+      event.origin === "https://www.vdo.ninja";
+    if (!fromNinja && (!win || event.source !== win)) {
       return;
     }
 

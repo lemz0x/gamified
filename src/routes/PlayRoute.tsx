@@ -266,6 +266,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const stfuMutedRef = useRef(false);
   const stfuMuteTimeoutRef = useRef<number | null>(null);
   const hostMuteIntervalRef = useRef<number | null>(null);
+  const lastEmojiTsRef = useRef(0);
 
   function startCircuitBreaker() {
     // Only start if not already running
@@ -421,11 +422,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           }
           break;
         }
-        case "muteCooldownDone": {
-          // No-op: circuit-breaker now runs until unmuteGuest, not a fixed window.
-          // Kept for one release cycle to absorb stale events.
-          break;
-        }
         case "guestSelfUnmuted": {
           // A guest self-unmuted by clicking their mic in VDO.Ninja.
           // Host and producer: clear the SILENCED badge for that seat.
@@ -529,12 +525,13 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     };
   }, []);
 
-  // On mount, ask the producer to (re)announce the latest reset epoch so
-  // we can catch up on any reset broadcast that fired while we were closed.
-  // Small delay so the data channel is actually established first.
+  // On mount, ask the producer to (re)announce the latest reset epoch and
+  // current roster/tracker so we can catch up on anything broadcast while
+  // we were closed. Small delay so the data channel is actually established.
   useEffect(() => {
     const id = window.setTimeout(() => {
       send({ type: "getResetEpoch", ts: Date.now() });
+      send({ type: "getRoster", ts: Date.now() });
     }, 1500);
     return () => window.clearTimeout(id);
   }, [send]);
@@ -545,10 +542,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // because the iframe doesn't reliably echo own messages.
   const onChatIncoming = useCallback(
     (msg: { msg: string; label: string; ts: number }) => {
-      setChatMessages((prev) => [
-        ...prev,
-        { id: nextChatId(), source: "remote", ...msg },
-      ]);
+      setChatMessages((prev) => {
+        const next = [...prev, { id: nextChatId(), source: "remote" as const, ...msg }];
+        return next.length > 300 ? next.slice(-300) : next;
+      });
     },
     [],
   );
@@ -560,16 +557,16 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       if (!trimmed) return false;
       const ok = sendChat(trimmed);
       if (ok) {
-        setChatMessages((prev) => [
-          ...prev,
-          {
+        setChatMessages((prev) => {
+          const next = [...prev, {
             id: nextChatId(),
-            source: "local",
+            source: "local" as const,
             label: identity.label,
             msg: trimmed,
             ts: Date.now(),
-          },
-        ]);
+          }];
+          return next.length > 300 ? next.slice(-300) : next;
+        });
       }
       return ok;
     },
@@ -619,6 +616,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
 
   const fireEmoji = useCallback(
     (emoji: Emoji) => {
+      const now = Date.now();
+      if (now - lastEmojiTsRef.current < 150) return;
+      lastEmojiTsRef.current = now;
       send({
         type: "emoji",
         from: senderFromIdentity(identity),
@@ -888,8 +888,8 @@ function CardButton({ card, uses, cooldown, onClick }: CardButtonProps) {
   const dimmed = onCooldown ? 0.7 : 1;
   const iconDimmed = onCooldown ? 0.6 : 1;
   // Derive cooldown border/glow from the card's own theme colour
-  const cooldownBorder = theme.glow.replace(")", ",0.53)").replace("rgb", "rgba");
-  const cooldownGlow = theme.glow.replace(")", ",0.2)").replace("rgb", "rgba");
+  const cooldownBorder = `${theme.glow}88`;
+  const cooldownGlow = `${theme.glow}33`;
   return (
     <button
       type="button"

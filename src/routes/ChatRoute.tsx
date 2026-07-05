@@ -50,10 +50,10 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
     (msg: { msg: string; label: string; ts: number }) => {
       // Filter out echos of our own messages — VDO.Ninja sometimes loops them.
       if (isOwnLabel(label, msg.label)) return;
-      setMessages((prev) => [
-        ...prev,
-        { id: nextChatId(), source: "remote", ...msg },
-      ]);
+      setMessages((prev) => {
+        const next = [...prev, { id: nextChatId(), source: "remote" as const, ...msg }];
+        return next.length > 300 ? next.slice(-300) : next;
+      });
     },
     [label],
   );
@@ -70,16 +70,16 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
       if (!trimmed) return false;
       const ok = sendChat(trimmed);
       if (ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
+        setMessages((prev) => {
+          const next = [...prev, {
             id: nextChatId(),
-            source: "local",
+            source: "local" as const,
             label,
             msg: trimmed,
             ts: Date.now(),
-          },
-        ]);
+          }];
+          return next.length > 300 ? next.slice(-300) : next;
+        });
       }
       return ok;
     },

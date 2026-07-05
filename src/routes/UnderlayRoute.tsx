@@ -71,8 +71,14 @@ interface EmojiSprite {
   emoji: string;
   /** X offset within the tile (0..tile.w). */
   xWithinTile: number;
-  /** Sway direction (+1 / −1) for the slight horizontal drift. */
+  /** Sway direction (+1 / -1) for the slight horizontal drift. */
   swaySign: 1 | -1;
+  /** Font size in px (randomized for variety). */
+  fontSize: number;
+  /** Animation duration in ms (randomized for variety). */
+  durationMs: number;
+  /** Rotation in degrees (randomized for variety). */
+  rotation: number;
   /** Timestamp (ms) after which this sprite should be removed. */
   expiresAt: number;
 }
@@ -229,9 +235,13 @@ export function UnderlayRoute() {
   useEffect(() => {
     const id = window.setInterval(() => {
       const now = Date.now();
-      setEmojiSprites((prev) => prev.filter((s) => s.expiresAt > now));
-      setCardSprites((prev) => prev.filter((s) => s.expiresAt > now));
-      setSourceAuraSprites((prev) => prev.filter((s) => s.expiresAt > now));
+      const prune = <T extends { expiresAt: number }>(prev: readonly T[]): readonly T[] => {
+        const next = prev.filter((s) => s.expiresAt > now);
+        return next.length === prev.length ? prev : next;
+      };
+      setEmojiSprites(prune);
+      setCardSprites(prune);
+      setSourceAuraSprites(prune);
       // Debug HUD: snapshot counters every sweep
       if (debugMode) {
         const snap: Record<string, { count: number; lastMs: number }> = {};
@@ -462,13 +472,17 @@ function handleEmoji(
   if (msg.from.kind !== "guest") return;
   const tile = tiles[msg.from.seat];
   if (!tile) return;
+  const durationMs = EMOJI_FLOAT_MS + Math.round((Math.random() - 0.5) * 400);
   enqueue({
     id: nextId(),
     seat: msg.from.seat,
     emoji: msg.emoji,
     xWithinTile: Math.random() * tile.w,
     swaySign: Math.random() < 0.5 ? -1 : 1,
-    expiresAt: Date.now() + EMOJI_FLOAT_MS + 80,
+    fontSize: 44 + Math.round(Math.random() * 20),
+    durationMs,
+    rotation: (Math.random() - 0.5) * 20,
+    expiresAt: Date.now() + durationMs + 80,
   });
 }
 
@@ -533,7 +547,7 @@ const EmojiFloat = React.memo(function EmojiFloat({ sprite, tile }: EmojiFloatPr
         height: 0,
         // The keyframe animates --sway via translate; per-sprite var below.
         ["--sway" as string]: `${sprite.swaySign * 18}px`,
-        animation: `floatUpOverlay ${EMOJI_FLOAT_MS}ms cubic-bezier(0.22, 1, 0.36, 1) forwards`,
+        animation: `floatUpOverlay ${sprite.durationMs}ms cubic-bezier(0.22, 1, 0.36, 1) forwards`,
         willChange: "transform, opacity",
         pointerEvents: "none",
       }}
@@ -541,8 +555,8 @@ const EmojiFloat = React.memo(function EmojiFloat({ sprite, tile }: EmojiFloatPr
       <span
         style={{
           position: "absolute",
-          transform: "translate(-50%, -50%)",
-          fontSize: 56,
+          transform: `translate(-50%, -50%) rotate(${sprite.rotation}deg)`,
+          fontSize: sprite.fontSize,
           lineHeight: 1,
           filter: EMOJI_COLOURS[sprite.emoji]
             ? `drop-shadow(0 0 12px ${EMOJI_COLOURS[sprite.emoji].hex}aa) drop-shadow(0 0 24px ${EMOJI_COLOURS[sprite.emoji].hex}66) drop-shadow(0 0 4px rgba(0, 0, 0, 0.7))`

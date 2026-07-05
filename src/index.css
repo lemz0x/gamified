@@ -36,30 +36,11 @@
 @font-face {
   font-family: "Orbitron";
   font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/orbitron-500.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Orbitron";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/orbitron-700.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Orbitron";
-  font-style: normal;
   font-weight: 900;
   /* optional: never swap mid-animation on the overlay route.
      Panels use swap (below) via body class. */
   font-display: optional;
   src: url("/fonts/orbitron-900.woff2") format("woff2");
-}
-/* Override Orbitron 900 to swap for non-overlay routes (panel UI) */
-body:not(.overlay-route) .orbitron-swap,
-body:not(.overlay-route) [style*="Orbitron"] {
-  font-display: swap;
 }
 
 :root {

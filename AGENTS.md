@@ -24,7 +24,6 @@ Staging auto-deploys to `gamified-hermes-staging.pages.dev`. Production deploys 
 - Tailwind 4 + inline styles
 - Self-hosted fonts: Orbitron 900 (display), Inter (body) at `/public/fonts/`
 - VDO.Ninja IFRAME API for P2P data channels
-- `lucide-react` for icons
 - No backend, no server, no database
 
 ## Source files
@@ -95,31 +94,45 @@ src/
 
 ## Cards
 
-Three cards, 1 use per topic per guest, reset by producer:
+Three cards, 1 use per topic per guest, reset by producer between rounds. STFU and WRAP IT UP share a 10s global cooldown to prevent stacking:
 
 | Card | ID | Color | Effect |
 |------|----|-------|--------|
-| SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. 10s global lockout. SILENCED overlay. |
-| WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge |
+| SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. 10s global lockout (shared with WRAP IT UP). SILENCED overlay. |
+| WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge. Shares 10s global cooldown with STFU. |
 | MIC DROP | `micdrop` | Amber #ffd700 | Crown the speaker |
 
 ## Key systems
 
 **STFU mute:** Dual-flag system (`hostMutedRef` + `stfuMutedRef`) with single circuit-breaker (500ms interval re-asserting `mic: false`). Per-seat mute reasons prevent stacking orphans. SILENCED overlay uses Aria's layered approach (base wash, vignette, pink border ring, label animation). No `mix-blend-mode`.
 
+**Late joiner sync:** Wrappers send `getRoster` on mount (1.5s delay for channel setup). Producer re-broadcasts current roster, host name, and last tracker payload. Mirrors the `getResetEpoch` handshake pattern.
+
 **Host tracker:** Producer types per-seat answers, sends via `trackerUpdate` P2P event. Host display shows 2x3 grid below buzzers. Dark cards (#0e0e16), Orbitron font, gold accent.
 
-**SFX:** Card sounds preloaded, cached, cloned per playback. Source files pre-attenuated at 50%. HTML5 volume 0.4. Cache-busting via `SFX_VERSION` (currently `v7`). Plays on underlay, wrapper, and producer.
+**SFX:** Card sounds preloaded, cached, cloned per playback. Source files pre-attenuated at 50%. HTML5 volume 0.4. Cache-busting via `SFX_VERSION` (currently `v7`). Plays on underlay, wrapper, and producer. Clone cleanup on both `ended` and `error` events. DEV-only console logging.
 
-**Buzzer:** Buzz-in panel with 300s auto-off. Crash leaves buzz "on" until manual toggle.
+**Buzzer:** Buzz-in panel with 300s auto-off. Producer can clear individual stuck buzzers by clicking the buzzing seat in the buzz board. Crash leaves buzz "on" until manual toggle (producer clear or guest re-toggle).
+
+**Producer panel:** ConfirmButton component replaces `window.confirm()` (which is suppressed in OBS CEF docks). Two-step click with 3s auto-disarm.
+
+**Chat:** Capped at 300 messages per panel (PlayRoute + ChatRoute). Prevents unbounded memory growth during multi-hour shows.
+
+**Emoji floats:** Randomized font size (44-64px), duration (±200ms), and rotation (±10deg) per sprite for visual variety. Sender-side throttle (150ms) prevents data channel flooding from rapid clicking.
+
+**postMessage security:** Origin allow-list for VDO.Ninja domains. Closes the unmounted-iframe gap where any origin could reach callbacks.
+
+**Underlay sweep:** Prunes expired sprites every 250ms. Returns the same array reference when nothing changed to avoid unnecessary React re-renders.
 
 **Producer panel order:** Roster > Buzz board > Reset cards > Host tracker > Activity feed > Calibration.
 
-**Performance:** `React.memo` on all sprites, `React.lazy` per route, single sweep sprite removal, self-hosted fonts, static inline styles.
+**Performance:** `React.memo` on all sprites, `React.lazy` per route, single sweep sprite removal (no re-render when idle), self-hosted fonts, static inline styles.
 
 **Payload validation:** Runtime guard on data-channel events. Validates event types, seat IDs, strings, numbers.
 
 **Debug HUD:** `?calibrate=1` or `?debug=1` shows connection status chip on underlay/overlay.
+
+**Cache headers:** `/*` serves `no-cache` so SPA routes always pick up fresh deploys. `/assets/*` and `/fonts/*` are immutable (content-hashed). `/sfx/*` has 7-day TTL with `SFX_VERSION` query param as cache-buster.
 
 ## Design system
 
