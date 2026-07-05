@@ -4,7 +4,7 @@
  * The wrapper page never creates its own peer connections — it iframes
  * the existing VDO.Ninja URL each guest already publishes through, then
  * piggy-backs on the room's P2P data channels for our gameplay events.
- * That keeps guest upload bandwidth untouched (Hard Rule #1 in CLAUDE.md).
+ * That keeps guest upload bandwidth untouched (Hard Rule #1 in AGENTS.md).
  *
  * Outbound: parent → iframe → broadcast to all peer connections.
  *   { sendData: { overlayNinja: <payload> }, type: 'pcs' }
@@ -117,6 +117,11 @@ const GUEST_BROADCAST_PARAMS: Array<readonly [string, string | null]> = [
   ["broadcast", PRODUCER_VIEW_ID],
   ["showlist", "0"],
   ["minipreview", null],
+  // Required for VDO.Ninja to post mic-mute-state events back to the parent.
+  // Without iframetarget, pokeIframeAPI calls parent.postMessage(data, undefined)
+  // which either silently fails or throws depending on the browser.
+  // Value "*" ensures all cross-origin messages reach our parent.
+  ["iframetarget", "*"],
 ];
 
 /**
@@ -161,6 +166,7 @@ export function buildEditorIframeUrl(params: GuestIframeParams): string {
     ["broadcast", PRODUCER_VIEW_ID] as const,
     ["showlist", "0"] as const,
     ["minipreview", null] as const,
+    ["iframetarget", "*"] as const,
     ["videodevice", "0"] as const,
     ["push", params.push] as const,
     ["label", params.label] as const,
@@ -345,6 +351,33 @@ export interface TrackerUpdateEvent {
   ts: number;
 }
 
+/** Producer or host featured a chat message to display on the overlay. */
+export interface ChatToScreenEvent {
+  type: "chatToScreen";
+  /** Display name of the chat sender (from VDO.Ninja label). */
+  author: string;
+  /** The message text to display. Plain text, HTML already stripped. */
+  message: string;
+  ts: number;
+}
+
+/** Producer or host cleared the featured chat message from the overlay. */
+export interface ChatToScreenClearEvent {
+  type: "chatToScreenClear";
+  ts: number;
+}
+
+/** Guest unmuted themselves by clicking the mic icon in VDO.Ninja.
+ *  This is an advisory notification so the host/producer can clear
+ *  the SILENCED badge for that guest. STFU mutes are not cleared
+ *  (the circuit breaker continues to re-assert those). */
+export interface GuestSelfUnmutedEvent {
+  type: "guestSelfUnmuted";
+  /** Which guest seat self-unmuted. */
+  seat: SeatId;
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -359,7 +392,10 @@ export type EventPayload =
   | MuteCooldownDoneEvent
   | BuzzInEvent
   | BuzzOffEvent
-  | TrackerUpdateEvent;
+  | TrackerUpdateEvent
+  | ChatToScreenEvent
+  | ChatToScreenClearEvent
+  | GuestSelfUnmutedEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
@@ -367,6 +403,7 @@ const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
   "calibration", "muteGuest", "unmuteGuest", "muteCooldownDone",
   "buzzIn", "buzzOff", "trackerUpdate",
+  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -406,11 +443,21 @@ export function validatePayload(raw: unknown): EventPayload | null {
     case "buzzOff":
       if (!isValidSeatId(p.seat ?? p.target)) return null;
       break;
+    case "guestSelfUnmuted":
+      if (!isValidSeatId(p.seat)) return null;
+      break;
     case "calibration":
       if (!p.tiles || typeof p.tiles !== "object") return null;
       break;
     case "trackerUpdate":
       if (!p.answers || typeof p.answers !== "object") return null;
+      break;
+    case "chatToScreen":
+      if (typeof p.author !== "string" || p.author.trim() === "") return null;
+      if (typeof p.message !== "string" || p.message.trim() === "") return null;
+      break;
+    case "chatToScreenClear":
+      // No fields beyond type + ts
       break;
     // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
   }

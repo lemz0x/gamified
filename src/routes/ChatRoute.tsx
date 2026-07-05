@@ -9,6 +9,7 @@ import { useSearchParams } from "react-router-dom";
 import { buildChatOnlyUrl, useVdoNinja } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { CHAT_EMOJIS } from "../emojis";
+import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 
 // ── neon palette (sync with PlayRoute) ──────────────────────────────────
 
@@ -57,7 +58,7 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
     [label],
   );
 
-  const { iframeRef } = useVdoNinja({
+  const { iframeRef, send } = useVdoNinja({
     onMessage: (/* ignored — chat-only route, no card/emoji/roster events */) => { },
   });
 
@@ -85,6 +86,23 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
     [label, sendChat],
   );
 
+  const featureMessage = useCallback(
+    (msg: ChatMessage) => {
+      const sanitized = msg.msg
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+        .replace(/[\u200B-\u200F\uFEFF]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!sanitized) return;
+      send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
+    },
+    [send],
+  );
+
+  const clearChatScreen = useCallback(() => {
+    send({ type: "chatToScreenClear", ts: Date.now() });
+  }, [send]);
+
   const iframeSrc = buildChatOnlyUrl({ push, label });
 
   return (
@@ -97,10 +115,31 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
       </header>
 
       {/* ── chat feed ─── */}
-      <ChatFeed messages={messages} />
+      <ChatFeed messages={messages} onFeature={featureMessage} />
 
       {/* ── composer with emoji picker ─── */}
       <ChatComposer draft={draft} setDraft={setDraft} onSend={onSend} />
+
+      {/* ── clear from screen ─── */}
+      <button
+        type="button"
+        onClick={clearChatScreen}
+        style={{
+          background: "transparent",
+          color: "#ff5454",
+          border: "1px solid #ff5454",
+          borderRadius: 6,
+          padding: "6px 12px",
+          fontSize: 10,
+          fontWeight: 800,
+          textTransform: "uppercase",
+          cursor: "pointer",
+          margin: "0 14px 10px",
+          letterSpacing: 0.5,
+        }}
+      >
+        Clear from Screen
+      </button>
 
       {/* Hidden VDO.Ninja iframe — keeps the data channel alive */}
       <iframe
@@ -129,9 +168,10 @@ function LiveIndicator() {
 
 interface ChatFeedProps {
   messages: readonly ChatMessage[];
+  onFeature?: (msg: ChatMessage) => void;
 }
 
-function ChatFeed({ messages }: ChatFeedProps) {
+function ChatFeed({ messages, onFeature }: ChatFeedProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -145,7 +185,7 @@ function ChatFeed({ messages }: ChatFeedProps) {
         <div style={styles.chatEmpty}>Quiet so far — say something.</div>
       ) : (
         messages.map((m) => (
-          <div key={m.id} style={styles.chatRow}>
+          <div key={m.id} style={{ ...styles.chatRow, gap: 6 }}>
             <span
               style={{
                 ...styles.chatLabel,
@@ -155,6 +195,28 @@ function ChatFeed({ messages }: ChatFeedProps) {
               {m.source === "local" ? "you" : m.label}
             </span>
             <span style={styles.chatBody}>{m.msg}</span>
+            {onFeature && (
+              <button
+                type="button"
+                onClick={() => onFeature(m)}
+                style={{
+                  background: "transparent",
+                  color: NEON.pink,
+                  border: `1px solid ${NEON.pink}55`,
+                  borderRadius: 4,
+                  padding: "3px 8px",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  lineHeight: 1.3,
+                }}
+              >
+                Feature
+              </button>
+            )}
           </div>
         ))
       )}
@@ -170,25 +232,29 @@ interface ChatComposerProps {
 
 function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [colonMatch, setColonMatch] = useState<ColonMatch | null>(null);
+  const [colonHighlight, setColonHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const submit = () => {
-    if (!draft.trim()) return;
-    if (onSend(draft)) setDraft("");
+    const processed = replaceAllColonTokens(draft);
+    if (!processed.trim()) return;
+    if (onSend(processed)) {
+      setDraft("");
+      setColonMatch(null);
+    }
   };
 
   const insertEmoji = (e: string) => {
     const input = inputRef.current;
     if (!input) {
       setDraft((d: string) => d + e);
-      setPickerOpen(false);
       return;
     }
     const start = input.selectionStart ?? draft.length;
     const end = input.selectionEnd ?? draft.length;
     const next = draft.slice(0, start) + e + draft.slice(end);
     setDraft(next);
-    setPickerOpen(false);
     requestAnimationFrame(() => {
       input.focus();
       const caret = start + e.length;
@@ -196,23 +262,115 @@ function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
     });
   };
 
+  const insertColonEmoji = (emoji: string, match: ColonMatch) => {
+    const input = inputRef.current;
+    const before = draft.slice(0, match.start);
+    const after = draft.slice(match.end);
+    const next = before + emoji + after;
+    setDraft(next);
+    setColonMatch(null);
+    setColonHighlight(0);
+    if (input) {
+      const caret = match.start + emoji.length;
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(caret, caret);
+      });
+    }
+  };
+
+  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target;
+    const newVal = el.value;
+    const cursorPos = el.selectionStart ?? newVal.length;
+
+    if (cursorPos > 0 && !/[a-zA-Z0-9]/.test(newVal[cursorPos - 1])) {
+      const result = tryAutoInsert(newVal, cursorPos);
+      if (result) {
+        setDraft(result.text);
+        setColonMatch(null);
+        setColonHighlight(0);
+        if (inputRef.current) {
+          requestAnimationFrame(() => {
+            inputRef.current?.focus();
+            inputRef.current?.setSelectionRange(result.cursorPos, result.cursorPos);
+          });
+        }
+        return;
+      }
+    }
+
+    setDraft(newVal);
+    const match = findColonToken(newVal, cursorPos);
+    setColonMatch(match && match.suggestions.length > 0 ? match : null);
+    setColonHighlight(0);
+  };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (colonMatch && colonMatch.suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setColonHighlight((h) => (h + 1) % colonMatch.suggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setColonHighlight((h) => h === 0 ? colonMatch.suggestions.length - 1 : h - 1);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && colonMatch.suggestions.length > 0)) {
+        e.preventDefault();
+        const suggestion = colonMatch.suggestions[colonHighlight];
+        insertColonEmoji(suggestion.emoji, colonMatch);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setColonMatch(null);
+        return;
+      }
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    } else if (e.key === "Escape" && pickerOpen) {
+      setPickerOpen(false);
+    }
+  };
+
   return (
     <div style={styles.composerWrap}>
+      {colonMatch && colonMatch.suggestions.length > 0 && (
+        <div style={styles.colonPicker}>
+          {colonMatch.suggestions.map((s, i) => (
+            <button
+              key={`${s.alias}-${i}`}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                insertColonEmoji(s.emoji, colonMatch);
+              }}
+              style={{
+                ...styles.colonPickerBtn,
+                background: i === colonHighlight ? `${NEON.cyan}22` : "transparent",
+                borderColor: i === colonHighlight ? `${NEON.cyan}55` : "transparent",
+              }}
+            >
+              <span style={styles.colonPickerEmoji}>{s.emoji}</span>
+              <span style={styles.colonPickerAlias}>:{s.alias}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div style={styles.composer}>
         <input
           ref={inputRef}
           type="text"
           value={draft}
-          placeholder="Type a message…"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            } else if (e.key === "Escape" && pickerOpen) {
-              setPickerOpen(false);
-            }
-          }}
+          placeholder="Type a message... use : for emojis"
+          onChange={onInputChange}
+          onKeyDown={onInputKeyDown}
           style={styles.input}
           spellCheck
         />
@@ -242,11 +400,35 @@ function ChatComposer({ draft, setDraft, onSend }: ChatComposerProps) {
       </div>
       {pickerOpen && (
         <div style={styles.chatPicker} role="menu">
+          <button
+            type="button"
+            onClick={() => setPickerOpen(false)}
+            aria-label="Close emoji picker"
+            style={{
+              position: "absolute",
+              top: 4,
+              right: 6,
+              appearance: "none",
+              background: "transparent",
+              border: 0,
+              color: NEON.textDim,
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 700,
+              lineHeight: 1,
+              padding: "2px 4px",
+              fontFamily: "inherit",
+              zIndex: 1,
+            }}
+          >
+            {"\u2715"}
+          </button>
           {CHAT_EMOJIS.map((e) => (
             <button
               key={e}
               type="button"
               onClick={() => insertEmoji(e)}
+              title={emojiShorthand(e) ? `:${emojiShorthand(e)}` : undefined}
               style={styles.chatPickerBtn}
             >
               {e}
@@ -413,9 +595,10 @@ const styles: Record<string, CSSProperties> = {
     border: `1px solid ${NEON.panelEdge}`,
     borderRadius: 10,
     padding: 6,
+    paddingTop: 20,
     boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 18px ${NEON.purple}33`,
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 4,
     zIndex: 20,
   },
@@ -429,6 +612,46 @@ const styles: Record<string, CSSProperties> = {
     width: 32,
     height: 32,
     fontFamily: "inherit",
+  },
+  colonPicker: {
+    position: "absolute",
+    bottom: "calc(100% + 4px)",
+    left: 0,
+    right: 0,
+    background: NEON.panelBg,
+    border: `1px solid ${NEON.panelEdge}`,
+    borderRadius: 8,
+    padding: 4,
+    boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 12px ${NEON.cyan}22`,
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    zIndex: 20,
+    maxHeight: 200,
+    overflowY: "auto",
+  },
+  colonPickerBtn: {
+    appearance: "none",
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: 6,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "4px 8px",
+    fontFamily: "inherit",
+    textAlign: "left" as const,
+  },
+  colonPickerEmoji: {
+    fontSize: 18,
+    lineHeight: 1,
+    flexShrink: 0,
+  },
+  colonPickerAlias: {
+    fontSize: 11,
+    color: NEON.textDim,
+    fontWeight: 600,
   },
   hiddenIframe: {
     position: "absolute",

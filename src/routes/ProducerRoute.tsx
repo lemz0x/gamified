@@ -161,6 +161,10 @@ function formatEvent(
       return "Calibration updated";
     case "trackerUpdate":
       return `Tracker: ${msg.title}`;
+    case "chatToScreen":
+      return `Chat featured: ${msg.author}`;
+    case "chatToScreenClear":
+      return "Chat cleared from screen";
     default:
       return null;
   }
@@ -318,15 +322,16 @@ function ProducerPanel() {
   }, [send]);
 
   const sendTracker = useCallback(() => {
+    const title = (trackerTitle || "Tracker").toUpperCase();
     send({
       type: "trackerUpdate",
-      title: trackerTitle || "Tracker",
+      title,
       answers: trackerDraft,
       ts: Date.now(),
     });
     setFeed((prev) =>
       [
-        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Answers sent: ${trackerTitle || "Tracker"}` },
+        { id: `f${feedIdRef.current++}`, ts: Date.now(), text: `Answers sent: ${title}` },
         ...prev,
       ].slice(0, FEED_CAP),
     );

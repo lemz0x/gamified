@@ -180,6 +180,29 @@ export function onChat(
       return;
     }
 
+    // Shape C: { gotChat: { msg, ... } } — from official VDO.Ninja docs.
+    // Must go BEFORE Shape B so gotChat messages aren't missed.
+    if ("gotChat" in data) {
+      if (import.meta.env.DEV) {
+        console.log("[vdoninjaChat] matched Shape C (gotChat)");
+      }
+      const gotChat = data["gotChat"] as Record<string, unknown>;
+      const rawMsg =
+        typeof gotChat?.["msg"] === "string"
+          ? (gotChat["msg"] as string)
+          : typeof gotChat?.["message"] === "string"
+            ? (gotChat["message"] as string)
+            : null;
+      const sidecarLabel =
+        typeof gotChat?.["label"] === "string" ? (gotChat["label"] as string) : "";
+      if (rawMsg) {
+        emit(rawMsg, sidecarLabel, callback);
+      } else if (import.meta.env.DEV) {
+        console.warn("[vdoninjaChat] gotChat with no msg:", gotChat);
+      }
+      return;
+    }
+
     // Shape B: top-level `chat` field on the message itself
     const chat = data["chat"];
     if (chat && typeof chat === "object") {
@@ -199,6 +222,7 @@ export function onChat(
         typeof c["label"] === "string" ? (c["label"] as string) : "";
       if (rawMsg) {
         emit(rawMsg, sidecarLabel, callback);
+        return; // prevent fall-through to dev warning
       } else if (import.meta.env.DEV) {
         console.warn("[vdoninjaChat] top-level chat with no msg:", c);
       }

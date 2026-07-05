@@ -21,10 +21,11 @@ import {
 } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
+import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
-/** Map ?seat=1..6 to the seat ids used everywhere else (see CLAUDE.md §5). */
+/** Map ?seat=1..6 to the seat ids used everywhere else (see AGENTS.md). */
 
 function parseSeat(raw: string | null): SeatId | null {
   if (!raw) return null;
@@ -236,7 +237,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [tracker, setTracker] = useState<{
     title: string;
     answers: Record<SeatId, string>;
-  } | null>(null);
+  }>({ title: "", answers: { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" } });
   const [cardUses, setCardUses] = useState<Record<CardId, number>>(() =>
     loadCardUses(identity),
   );
@@ -270,11 +271,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     // Only start if not already running
     if (hostMuteIntervalRef.current !== null) return;
     hostMuteIntervalRef.current = window.setInterval(() => {
-      if (hostMutedRef.current || stfuMutedRef.current) {
-        // Re-assert the mute — guest might have clicked their mic icon
+      if (stfuMutedRef.current) {
+        // STFU is a hard lock — re-assert mute even if guest clicks mic.
+        // Host mutes are advisory: guests can unmute themselves.
         muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
       } else {
-        // Both flags cleared — stop the breaker
+        // STFU cleared — stop the breaker
         if (hostMuteIntervalRef.current !== null) {
           window.clearInterval(hostMuteIntervalRef.current);
           hostMuteIntervalRef.current = null;
@@ -287,7 +289,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const reconcileMicRef = useRef<() => void>(() => {});
   reconcileMicRef.current = () => {
     const muted = hostMutedRef.current || stfuMutedRef.current;
-    muteIframeRef.current?.contentWindow?.postMessage({ mic: !muted }, "*");
+    // Only force-mute for STFU. Host mutes are advisory (guest can unmute).
+    if (stfuMutedRef.current) {
+      muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+    }
     setIsMuted(muted);
   };
 
@@ -387,8 +392,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             hostMutedRef.current = true;
-            reconcileMicRef.current();
-            startCircuitBreaker();
+            // Mute once, but don't start circuit breaker — host mutes are
+            // advisory. Guest can unmute themselves by clicking their mic.
+            muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+            setIsMuted(true);
           }
           if (isTarget || identity.kind === "host") {
             window.dispatchEvent(
@@ -419,6 +426,19 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           // Kept for one release cycle to absorb stale events.
           break;
         }
+        case "guestSelfUnmuted": {
+          // A guest self-unmuted by clicking their mic in VDO.Ninja.
+          // Host and producer: clear the SILENCED badge for that seat.
+          // This doesn't affect STFU mutes (circuit breaker still re-asserts).
+          if (identity.kind === "host" || identity.kind === "editor") {
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", {
+                detail: { seat: msg.seat, muted: false, selfUnmuted: true },
+              }),
+            );
+          }
+          break;
+        }
         case "buzzIn": {
           buzzOn(msg.seat);
           break;
@@ -445,6 +465,51 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   useEffect(() => {
     muteIframeRef.current = iframeRef.current;
   });
+
+  // Detect when a host-muted guest self-unmutes by clicking their mic icon
+  // inside the VDO.Ninja iframe.
+  //
+  // VDO.Ninja's iframe API posts mic-state-change events to the parent via
+  // postMessage. The event is posted by pokeIframeAPI() in lib.js (line ~18454):
+  //   parent.postMessage({ action: "mic-mute-state", value: session.muted }, ...)
+  //
+  // Key behavior confirmed from VDO.Ninja source code:
+  //   - Event fires ONLY when the guest clicks their own mic (toggleMute with !apply)
+  //   - Does NOT fire when we programmatically mute via { mic: false } (apply=true)
+  //   - value: true = muted, value: false = unmuted
+  //   - Requires ?iframetarget=* in the iframe URL (added to GUEST_BROADCAST_PARAMS)
+  //
+  // When we detect unmute (value: false) while the guest is host-muted
+  // (but not STFU-muted), we:
+  //   1. Clear the local hostMutedRef + SILENCED badge
+  //   2. Broadcast guestSelfUnmuted so the host/producer can sync
+  // STFU mutes are NOT affected (circuit breaker still re-asserts those).
+  useEffect(() => {
+    function onVdoMicEvent(e: MessageEvent) {
+      if (!e.data || typeof e.data !== "object") return;
+      const data = e.data as Record<string, unknown>;
+      // VDO.Ninja posts mic state changes as action: "mic-mute-state"
+      if (data.action !== "mic-mute-state") return;
+      // value: false means mic is unmuted
+      if (data.value !== false) return;
+      // Only react if we're a host-muted guest (not STFU-muted)
+      if (!hostMutedRef.current || stfuMutedRef.current) return;
+      if (identity.kind !== "guest") return;
+      // Clear local mute state
+      hostMutedRef.current = false;
+      setIsMuted(false);
+      // Broadcast to host + producer so they clear the SILENCED badge
+      send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
+      // Dispatch local custom event for the host UI mute indicators
+      window.dispatchEvent(
+        new CustomEvent("gamified-mute-state", {
+          detail: { seat: identity.seat, muted: false },
+        }),
+      );
+    }
+    window.addEventListener("message", onVdoMicEvent);
+    return () => window.removeEventListener("message", onVdoMicEvent);
+  }, [identity, send]);
 
   // Unified cleanup: circuit-breaker interval, STFU timeout, cooldown interval, buzz auto-off.
   useEffect(() => {
@@ -528,6 +593,29 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const showCards = identity.kind !== "editor";
   const showEmojis = identity.kind === "guest";
   const showMuteControls = identity.kind === "host";
+  const canFeature = identity.kind === "host";
+
+  // Sanitize for overlay — strip control chars + zero-width + collapse whitespace.
+  const sanitizeForOverlay = useCallback((text: string): string => {
+    return text
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+      .replace(/[\u200B-\u200F\uFEFF]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }, []);
+
+  const featureMessage = useCallback(
+    (msg: ChatMessage) => {
+      const sanitized = sanitizeForOverlay(msg.msg);
+      if (!sanitized) return;
+      send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
+    },
+    [send, sanitizeForOverlay],
+  );
+
+  const clearChatScreen = useCallback(() => {
+    send({ type: "chatToScreenClear", ts: Date.now() });
+  }, [send]);
 
   const fireEmoji = useCallback(
     (emoji: Emoji) => {
@@ -648,73 +736,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           </div>
         )}
 
-        {identity.kind === "host" && tracker && (
-          <div style={{ flex: "0 0 auto", marginTop: 4 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: 1.5,
-              color: "#ffd700",
-              textShadow: "0 0 10px rgba(255,215,0,0.53)",
-              marginBottom: 4,
-            }}>
-              PANELIST ANSWERS — {tracker.title}
-            </div>
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}>
-              {([
-                ["L1", "R1"],
-                ["L2", "R2"],
-                ["L3", "R3"],
-              ] as const).map(([left, right]) => (
-                <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                  {([left, right] as const).map((seat) => {
-                    const answer = tracker.answers[seat] || "";
-                    return (
-                      <div key={seat} style={{
-                        padding: "4px 8px",
-                        borderRadius: 6,
-                        border: "1px solid #1f1f30",
-                        background: "#0e0e16",
-                        minHeight: 42,
-                      }}>
-                        <div style={{
-                          fontSize: 8,
-                          textTransform: "uppercase",
-                          letterSpacing: 0.6,
-                          color: "#8a8aa3",
-                        }}>
-                          {seat} · {roster[seat]}
-                        </div>
-                        <div style={{
-                          fontFamily: '"Orbitron", system-ui, sans-serif',
-                          fontWeight: 900,
-                          fontSize: 12,
-                          color: answer ? "#ffe866" : "#8a8aa3",
-                          textShadow: answer
-                            ? "0 0 8px rgba(255,232,102,0.4)"
-                            : "none",
-                          fontStyle: answer ? "normal" : "italic",
-                          textTransform: answer ? "uppercase" : "none",
-                          opacity: answer ? 1 : 0.35,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}>
-                          {answer || "Waiting…"}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {identity.kind === "guest" && (
           <BuzzPanel
             roster={roster}
@@ -746,27 +767,82 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           />
         )}
 
-        <ChatPanel messages={chatMessages} onSend={sendChatMessage} />
-
-        {isMuted && (
-          <div
-            style={{
-              background: "rgba(255, 46, 107, 0.15)",
-              border: "1px solid #ff2e6b",
-              borderRadius: 8,
-              padding: "8px 12px",
-              color: "#ff2e6b",
+        {tracker && (
+          <div style={{ flex: "0 0 auto", marginTop: 4 }}>
+            <div style={{
+              fontSize: 10,
               fontWeight: 800,
-              fontSize: 12,
-              letterSpacing: 2,
-              textAlign: "center",
-              textTransform: "uppercase",
-              marginTop: 8,
-            }}
-          >
-            {"\u{1F507}"} SILENCED
+              letterSpacing: 1.5,
+              color: "#ffd700",
+              textShadow: "0 0 10px rgba(255,215,0,0.53)",
+              marginBottom: 4,
+            }}>
+              PANELIST ANSWERS — {tracker.title}
+            </div>
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}>
+              {([
+                ["L1", "R1"],
+                ["L2", "R2"],
+                ["L3", "R3"],
+              ] as const).map(([left, right]) => (
+                <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {([left, right] as const).map((seat) => {
+                    const answer = tracker.answers[seat] || "";
+                    return (
+                      <div key={seat} style={{
+                        padding: "5px 8px",
+                        borderRadius: 6,
+                        border: "1px solid #1f1f30",
+                        background: "#0e0e16",
+                        minHeight: 42,
+                      }}>
+                        <div style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          color: "#8a8aa3",
+                          marginBottom: 1,
+                        }}>
+                          {roster[seat]}
+                        </div>
+                        <div style={{
+                          fontFamily: '"Orbitron", system-ui, sans-serif',
+                          fontWeight: 900,
+                          fontSize: 13,
+                          color: answer ? "#ffe866" : "#8a8aa3",
+                          textShadow: answer
+                            ? "0 0 8px rgba(255,232,102,0.4)"
+                            : "none",
+                          fontStyle: answer ? "normal" : "italic",
+                          textTransform: answer ? "uppercase" : "none",
+                          opacity: answer ? 1 : 0.35,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {answer || "Waiting…"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         )}
+
+        <ChatPanel
+          messages={chatMessages}
+          onSend={sendChatMessage}
+          onFeature={canFeature ? featureMessage : undefined}
+          onClearScreen={canFeature ? clearChatScreen : undefined}
+          silenced={isMuted}
+        />
       </aside>
 
       {activeCard && (
@@ -949,11 +1025,16 @@ function EmojiButton({ emoji, pulsing, onClick }: EmojiButtonProps) {
 interface ChatPanelProps {
   messages: readonly ChatMessage[];
   onSend: (text: string) => boolean;
+  onFeature?: (msg: ChatMessage) => void;
+  onClearScreen?: () => void;
+  silenced?: boolean;
 }
 
-function ChatPanel({ messages, onSend }: ChatPanelProps) {
+function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [colonMatch, setColonMatch] = useState<ColonMatch | null>(null);
+  const [colonHighlight, setColonHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -965,22 +1046,24 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
   }, [messages.length]);
 
   const submit = () => {
-    if (!draft.trim()) return;
-    if (onSend(draft)) setDraft("");
+    const processed = replaceAllColonTokens(draft);
+    if (!processed.trim()) return;
+    if (onSend(processed)) {
+      setDraft("");
+      setColonMatch(null);
+    }
   };
 
   const insertEmoji = (e: string) => {
     const input = inputRef.current;
     if (!input) {
       setDraft((d) => d + e);
-      setPickerOpen(false);
       return;
     }
     const start = input.selectionStart ?? draft.length;
     const end = input.selectionEnd ?? draft.length;
     const next = draft.slice(0, start) + e + draft.slice(end);
     setDraft(next);
-    setPickerOpen(false);
     // Restore caret right after the inserted glyph (next tick to let the
     // controlled input re-render with the new value first).
     requestAnimationFrame(() => {
@@ -988,6 +1071,88 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
       const caret = start + e.length;
       input.setSelectionRange(caret, caret);
     });
+  };
+
+  const insertColonEmoji = (emoji: string, match: ColonMatch) => {
+    const input = inputRef.current;
+    const before = draft.slice(0, match.start);
+    const after = draft.slice(match.end);
+    const next = before + emoji + after;
+    setDraft(next);
+    setColonMatch(null);
+    setColonHighlight(0);
+    if (input) {
+      const caret = match.start + emoji.length;
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(caret, caret);
+      });
+    }
+  };
+
+  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target;
+    const newVal = el.value;
+    const cursorPos = el.selectionStart ?? newVal.length;
+
+    // Check for auto-insert: if the character just typed is a non-word
+    // character and there's an exact-match colon token behind it, replace.
+    if (cursorPos > 0 && !/[a-zA-Z0-9]/.test(newVal[cursorPos - 1])) {
+      const result = tryAutoInsert(newVal, cursorPos);
+      if (result) {
+        setDraft(result.text);
+        setColonMatch(null);
+        setColonHighlight(0);
+        if (inputRef.current) {
+          requestAnimationFrame(() => {
+            inputRef.current?.focus();
+            inputRef.current?.setSelectionRange(result.cursorPos, result.cursorPos);
+          });
+        }
+        return;
+      }
+    }
+
+    setDraft(newVal);
+
+    // Check for active colon token
+    const match = findColonToken(newVal, cursorPos);
+    setColonMatch(match && match.suggestions.length > 0 ? match : null);
+    setColonHighlight(0);
+  };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Colon autocomplete navigation
+    if (colonMatch && colonMatch.suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setColonHighlight((h) => (h + 1) % colonMatch.suggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setColonHighlight((h) => h === 0 ? colonMatch.suggestions.length - 1 : h - 1);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && colonMatch.suggestions.length > 0)) {
+        e.preventDefault();
+        const suggestion = colonMatch.suggestions[colonHighlight];
+        insertColonEmoji(suggestion.emoji, colonMatch);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setColonMatch(null);
+        return;
+      }
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    } else if (e.key === "Escape" && pickerOpen) {
+      setPickerOpen(false);
+    }
   };
 
   return (
@@ -1000,7 +1165,7 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} style={styles.chatRow}>
+            <div key={m.id} style={{ ...styles.chatRow, gap: 4 }}>
               <span
                 style={{
                   ...styles.chatLabel,
@@ -1010,26 +1175,82 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
                 {m.source === "local" ? "you" : m.label}
               </span>
               <span style={styles.chatBody}>{m.msg}</span>
+              {onFeature && (
+                <button
+                  type="button"
+                  onClick={() => onFeature(m)}
+                  style={{
+                    background: "transparent",
+                    color: NEON.pink,
+                    border: `1px solid ${NEON.pink}55`,
+                    borderRadius: 4,
+                    padding: "3px 8px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  Feature
+                </button>
+              )}
             </div>
           ))
         )}
       </div>
       <div style={styles.chatComposerWrap}>
+        {colonMatch && colonMatch.suggestions.length > 0 && (
+          <div style={styles.colonPicker}>
+            {colonMatch.suggestions.map((s, i) => (
+              <button
+                key={`${s.alias}-${i}`}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertColonEmoji(s.emoji, colonMatch);
+                }}
+                style={{
+                  ...styles.colonPickerBtn,
+                  background: i === colonHighlight ? `${NEON.cyan}22` : "transparent",
+                  borderColor: i === colonHighlight ? `${NEON.cyan}55` : "transparent",
+                }}
+              >
+                <span style={styles.colonPickerEmoji}>{s.emoji}</span>
+                <span style={styles.colonPickerAlias}>:{s.alias}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {silenced && (
+          <div
+            style={{
+              background: "rgba(255, 46, 107, 0.15)",
+              border: "1px solid #ff2e6b",
+              borderRadius: 8,
+              padding: "6px 12px",
+              color: "#ff2e6b",
+              fontWeight: 800,
+              fontSize: 11,
+              letterSpacing: 2,
+              textAlign: "center",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            {"\u{1F507}"} SILENCED
+          </div>
+        )}
         <div style={styles.chatComposer}>
           <input
             ref={inputRef}
             type="text"
             value={draft}
-            placeholder="Type a message…"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                submit();
-              } else if (e.key === "Escape" && pickerOpen) {
-                setPickerOpen(false);
-              }
-            }}
+            placeholder="Type a message... use : for emojis"
+            onChange={onInputChange}
+            onKeyDown={onInputKeyDown}
             style={styles.chatInput}
             spellCheck
           />
@@ -1059,11 +1280,35 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
         </div>
         {pickerOpen && (
           <div style={styles.chatPicker} role="menu">
+            <button
+              type="button"
+              onClick={() => setPickerOpen(false)}
+              aria-label="Close emoji picker"
+              style={{
+                position: "absolute",
+                top: 4,
+                right: 6,
+                appearance: "none",
+                background: "transparent",
+                border: 0,
+                color: NEON.textDim,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 700,
+                lineHeight: 1,
+                padding: "2px 4px",
+                fontFamily: "inherit",
+                zIndex: 1,
+              }}
+            >
+              {"\u2715"}
+            </button>
             {CHAT_EMOJIS.map((e) => (
               <button
                 key={e}
                 type="button"
                 onClick={() => insertEmoji(e)}
+                title={emojiShorthand(e) ? `:${emojiShorthand(e)}` : undefined}
                 style={styles.chatPickerBtn}
               >
                 {e}
@@ -1072,6 +1317,27 @@ function ChatPanel({ messages, onSend }: ChatPanelProps) {
           </div>
         )}
       </div>
+      {onClearScreen && (
+        <button
+          type="button"
+          onClick={onClearScreen}
+          style={{
+            background: "transparent",
+            color: "#ff5454",
+            border: "1px solid #ff5454",
+            borderRadius: 6,
+            padding: "4px 10px",
+            fontSize: 9,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            cursor: "pointer",
+            width: "100%",
+            marginTop: 4,
+          }}
+        >
+          Clear from Screen
+        </button>
+      )}
     </section>
   );
 }
@@ -1219,10 +1485,10 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
     <section style={styles.mutePanel}>
       <div style={styles.mutePanelHeader}>
         <span style={styles.mutePanelTitle}>GUEST MUTE</span>
-        <button type="button" onClick={unmuteAll} style={styles.unmuteAllBtn}>
+        <button type="button" onClick={(e) => { unmuteAll(); e.currentTarget.blur(); }} style={styles.unmuteAllBtn}>
           UNMUTE ALL
         </button>
-        <button type="button" onClick={muteAll} style={styles.muteAllBtn}>
+        <button type="button" onClick={(e) => { muteAll(); e.currentTarget.blur(); }} style={styles.muteAllBtn}>
           MUTE ALL
         </button>
       </div>
@@ -1233,7 +1499,7 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
             <button
               key={seat}
               type="button"
-              onClick={() => muteSeat(seat)}
+              onClick={(e) => { muteSeat(seat); e.currentTarget.blur(); }}
               style={{
                 ...styles.muteRow,
                 ...(muted ? styles.muteRowMuted : {}),
@@ -1338,39 +1604,39 @@ const styles: Record<string, CSSProperties> = {
   card: {
     appearance: "none",
     border: "1px solid",
-    borderRadius: 12,
-    padding: "14px 8px",
+    borderRadius: 10,
+    padding: "8px 6px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
-    gap: 4,
+    gap: 2,
     alignItems: "center",
     transition:
       "transform 80ms ease-out, box-shadow 120ms ease-out, opacity 120ms ease-out",
     fontFamily: "inherit",
   },
   cardIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 8,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 13,
-    margin: "0 auto 10px",
+    fontSize: 11,
+    margin: "0 auto 4px",
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
   },
   cardSlug: {
     fontFamily: '"Orbitron", system-ui, sans-serif',
     fontWeight: 900,
-    fontSize: 13,
+    fontSize: 12,
     letterSpacing: "0.04em",
     lineHeight: 1.15,
     textAlign: "center" as const,
   },
   cardSubtitle: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 600,
     letterSpacing: "0.18em",
     textTransform: "uppercase" as const,
@@ -1378,7 +1644,7 @@ const styles: Record<string, CSSProperties> = {
     opacity: 0.75,
   },
   cardCounter: {
-    fontSize: 10,
+    fontSize: 9,
     letterSpacing: 0.5,
     color: NEON.textDim,
     textAlign: "center",
@@ -1386,14 +1652,14 @@ const styles: Record<string, CSSProperties> = {
   emojiGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(6, 1fr)",
-    gap: 8,
+    gap: 5,
   },
   emoji: {
     appearance: "none",
     border: 0,
     background: "#13131c",
-    borderRadius: 10,
-    aspectRatio: "1 / 1",
+    borderRadius: 8,
+    height: 34,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
@@ -1401,7 +1667,7 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
   },
   emojiGlyph: {
-    fontSize: 26,
+    fontSize: 20,
     lineHeight: 1,
   },
   // ── chat panel ────────────────────────────────────────────────────────
@@ -1510,9 +1776,10 @@ const styles: Record<string, CSSProperties> = {
     border: `1px solid ${NEON.panelEdge}`,
     borderRadius: 10,
     padding: 6,
+    paddingTop: 20,
     boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 18px ${NEON.purple}33`,
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 4,
     zIndex: 20,
   },
@@ -1526,6 +1793,46 @@ const styles: Record<string, CSSProperties> = {
     width: 32,
     height: 32,
     fontFamily: "inherit",
+  },
+  colonPicker: {
+    position: "absolute",
+    bottom: "calc(100% + 4px)",
+    left: 0,
+    right: 0,
+    background: NEON.panelBg,
+    border: `1px solid ${NEON.panelEdge}`,
+    borderRadius: 8,
+    padding: 4,
+    boxShadow: `0 8px 22px rgba(0,0,0,0.55), 0 0 12px ${NEON.cyan}22`,
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    zIndex: 20,
+    maxHeight: 200,
+    overflowY: "auto",
+  },
+  colonPickerBtn: {
+    appearance: "none",
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: 6,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "4px 8px",
+    fontFamily: "inherit",
+    textAlign: "left" as const,
+  },
+  colonPickerEmoji: {
+    fontSize: 18,
+    lineHeight: 1,
+    flexShrink: 0,
+  },
+  colonPickerAlias: {
+    fontSize: 11,
+    color: NEON.textDim,
+    fontWeight: 600,
   },
   wordmark: {
     fontSize: 13,
@@ -1661,7 +1968,7 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "center",
     gap: 4,
     background: "#14141e",
-    border: `1px solid ${NEON.panelEdge}`,
+    border: "1px solid #5a5a72",
     borderRadius: 8,
     padding: "5px 6px",
     cursor: "pointer",
@@ -1675,6 +1982,7 @@ const styles: Record<string, CSSProperties> = {
     textOverflow: "ellipsis",
     overflow: "hidden",
     whiteSpace: "nowrap",
+    outline: "none",
   },
   muteRowMuted: {
     background: "#2a1018",
