@@ -157,6 +157,8 @@ function formatEvent(
       return `Cards reset (epoch ${msg.resetEpoch})`;
     case "getResetEpoch":
       return "Wrapper requested resetEpoch";
+    case "getRoster":
+      return "Wrapper requested roster sync";
     case "calibration":
       return "Calibration updated";
     case "trackerUpdate":
@@ -168,6 +170,45 @@ function formatEvent(
     default:
       return null;
   }
+}
+
+/** Two-step confirm button for OBS docks where window.confirm() is suppressed. */
+function ConfirmButton({
+  label,
+  confirmLabel = "Click again to confirm",
+  onConfirm,
+  style,
+  armedStyle,
+}: {
+  label: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  style?: CSSProperties;
+  armedStyle?: CSSProperties;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(false), 3000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        if (armed) {
+          setArmed(false);
+          onConfirm();
+        } else {
+          setArmed(true);
+        }
+        e.currentTarget.blur();
+      }}
+      style={{ ...style, ...(armed ? (armedStyle ?? { background: NEON.red, color: "#fff" }) : {}) }}
+    >
+      {armed ? confirmLabel : label}
+    </button>
+  );
 }
 
 // ── visual constants (gamified neon palette, dark theme) ─────────────────
@@ -221,6 +262,8 @@ function ProducerPanel() {
   // Latest reset epoch we've fired (persisted) — re-announced on demand so
   // wrappers that join after a reset still catch up.
   const resetEpochRef = useRef<number>(loadResetEpoch());
+  // Last tracker payload sent — re-announced when a wrapper requests roster sync.
+  const lastTrackerRef = useRef<{ title: string; answers: Record<SeatId, string> } | null>(null);
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const rosterDirty =
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
@@ -278,8 +321,27 @@ function ProducerPanel() {
           ts: Date.now(),
         });
       }
+      // A wrapper just mounted (or refreshed mid-show); re-announce the
+      // current roster and tracker so it doesn't show defaults until the
+      // producer manually re-saves.
+      if (msg.type === "getRoster") {
+        sendRef.current?.({
+          type: "rosterUpdate",
+          names: roster,
+          hostName,
+          ts: Date.now(),
+        });
+        if (lastTrackerRef.current) {
+          sendRef.current?.({
+            type: "trackerUpdate",
+            title: lastTrackerRef.current.title,
+            answers: lastTrackerRef.current.answers,
+            ts: Date.now(),
+          });
+        }
+      }
     },
-    [roster, buzzOn, buzzOff],
+    [roster, hostName, buzzOn, buzzOff],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -308,7 +370,6 @@ function ProducerPanel() {
   }, []);
 
   const fireResetCards = useCallback(() => {
-    if (!window.confirm("Reset all cards for all guests?")) return;
     const epoch = Date.now();
     resetEpochRef.current = epoch;
     saveResetEpoch(epoch);
@@ -323,6 +384,7 @@ function ProducerPanel() {
 
   const sendTracker = useCallback(() => {
     const title = (trackerTitle || "Tracker").toUpperCase();
+    lastTrackerRef.current = { title, answers: trackerDraft };
     send({
       type: "trackerUpdate",
       title,
@@ -384,7 +446,6 @@ function ProducerPanel() {
   );
 
   const resetTiles = useCallback(() => {
-    if (!window.confirm("Reset all tile coordinates to defaults?")) return;
     const fresh: TileMap = { ...TILES };
     setTiles(fresh);
     saveCalibratedTiles(fresh);
@@ -457,18 +518,21 @@ function ProducerPanel() {
           roster={roster}
           buzzingSeats={buzzingSeats}
           variant="producer"
+          onSeatClear={(seat) => {
+            buzzOff(seat);
+            send({ type: "buzzOff", seat, ts: Date.now() });
+          }}
         />
       </Section>
 
       <Section title="Reset cards">
         <div style={styles.row}>
-          <button
-            type="button"
-            onClick={fireResetCards}
+          <ConfirmButton
+            label="Reset all cards"
+            confirmLabel="Click again to confirm"
+            onConfirm={fireResetCards}
             style={{ ...styles.primaryButton, background: NEON.red, color: "#fff" }}
-          >
-            Reset all cards
-          </button>
+          />
           <span style={styles.hint}>
             Zeroes per-guest counters and re-enables both card buttons in every wrapper.
           </span>
@@ -568,13 +632,12 @@ function ProducerPanel() {
         )}
         {calibrate && (
           <div style={styles.row}>
-            <button
-              type="button"
-              onClick={resetTiles}
+            <ConfirmButton
+              label="Reset to defaults"
+              confirmLabel="Click again to confirm"
+              onConfirm={resetTiles}
               style={styles.secondaryButton}
-            >
-              Reset to defaults
-            </button>
+            />
           </div>
         )}
       </Section>

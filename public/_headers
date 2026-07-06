@@ -1,14 +1,19 @@
 # Cache headers for Cloudflare Pages
 #
-# index.html is the SPA entry — must always revalidate so a fresh deploy
-# is picked up on the next page load. Hashed assets in /assets/* never
-# change once published, so let CDNs hold them forever.
+# SPA routes served via _redirects rewrite to index.html. Cloudflare
+# evaluates _headers on the original request path, so /* catches all
+# routes (/play, /underlay, /overlay, /producer, /chat, /editorchat).
+# Hashed assets in /assets/* never change once published, so let CDNs
+# hold them forever.
 
-/index.html
-  Cache-Control: no-cache
-
-/
+/*
   Cache-Control: no-cache
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/sfx/*
+  Cache-Control: public, max-age=604800

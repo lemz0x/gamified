@@ -137,16 +137,15 @@ export function onChat(
     const data = event.data as Record<string, unknown> | null | undefined;
     if (!data || typeof data !== "object") return;
 
-    // Soft source check: if the iframe is present, verify the origin looks
-    // like VDO.Ninja. We skip strict event.source === contentWindow because
-    // VDO.Ninja navigates the iframe after load, invalidating the ref.
+    // Origin allow-list: only accept messages from VDO.Ninja. When the
+    // iframe is mounted, also accept events from its contentWindow (which
+    // may differ during iframe navigation). This closes the unmounted-iframe
+    // gap where any origin could reach the callback.
     const win = iframeRef.current?.contentWindow;
-    if (
-      win &&
-      event.source !== win &&
-      event.origin !== "https://vdo.ninja" &&
-      event.origin !== "https://www.vdo.ninja"
-    ) {
+    const fromNinja =
+      event.origin === "https://vdo.ninja" ||
+      event.origin === "https://www.vdo.ninja";
+    if (!fromNinja && (!win || event.source !== win)) {
       return;
     }
 

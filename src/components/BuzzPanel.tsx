@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import type { SeatId } from "../coords";
 
 // ── seat layout ──────────────────────────────────────────────────────────
@@ -17,50 +17,72 @@ interface BuzzPanelProps {
   isBuzzing?: boolean;
   /** Called when the buzzer button is toggled. Only wired for guests. */
   onBuzzToggle?: () => void;
+  /** Called when producer clicks a buzzing seat to clear it. */
+  onSeatClear?: (seat: SeatId) => void;
   /** "play" for the neon dark wrapper, "producer" for the producer panel. */
   variant: "play" | "producer";
 }
 
 // ── component ────────────────────────────────────────────────────────────
 
-export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, variant }: BuzzPanelProps) {
+export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, onSeatClear, variant }: BuzzPanelProps) {
   const isPlay = variant === "play";
 
   const nameBox = (seat: SeatId) => {
     const buzzing = buzzingSeats.has(seat);
-    return (
-      <div
-        key={seat}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "6px 4px",
-          borderRadius: 8,
-          border: buzzing
-            ? "2px solid #ffbe0b"
-            : `2px solid ${isPlay ? "#1f1f30" : "#252538"}`,
-          background: buzzing
-            ? "rgba(255, 190, 11, 0.15)"
-            : isPlay
-              ? "#0e0e16"
-              : "#11111c",
-          color: buzzing ? "#ffbe0b" : isPlay ? "#8a8aa3" : "#f0f0f8",
-          fontWeight: 700,
-          fontSize: 12,
-          letterSpacing: 0.5,
-          textOverflow: "ellipsis",
-          overflow: "hidden",
-          whiteSpace: "nowrap",
-          textAlign: "center",
-          boxShadow: buzzing
-            ? "0 0 14px rgba(255, 190, 11, 0.5), 0 0 28px rgba(255, 190, 11, 0.25), inset 0 0 8px rgba(255, 190, 11, 0.1)"
-            : "none",
-          transition: "border-color 120ms, background 120ms, color 120ms, box-shadow 120ms",
-          cursor: "default",
-        }}
-      >
+    const canClear = buzzing && !!onSeatClear;
+    const content = (
+      <>
         {roster[seat] || seat}
+        {canClear && (
+          <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.7 }}>✕</span>
+        )}
+      </>
+    );
+    const baseStyle: CSSProperties = {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "6px 4px",
+      borderRadius: 8,
+      border: buzzing
+        ? "2px solid #ffbe0b"
+        : `2px solid ${isPlay ? "#1f1f30" : "#252538"}`,
+      background: buzzing
+        ? "rgba(255, 190, 11, 0.15)"
+        : isPlay
+          ? "#0e0e16"
+          : "#11111c",
+      color: buzzing ? "#ffbe0b" : isPlay ? "#8a8aa3" : "#f0f0f8",
+      fontWeight: 700,
+      fontSize: 12,
+      letterSpacing: 0.5,
+      textOverflow: "ellipsis",
+      overflow: "hidden",
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxShadow: buzzing
+        ? "0 0 14px rgba(255, 190, 11, 0.5), 0 0 28px rgba(255, 190, 11, 0.25), inset 0 0 8px rgba(255, 190, 11, 0.1)"
+        : "none",
+      transition: "border-color 120ms, background 120ms, color 120ms, box-shadow 120ms",
+    };
+
+    if (canClear) {
+      return (
+        <button
+          key={seat}
+          type="button"
+          onClick={(e) => { onSeatClear!(seat); e.currentTarget.blur(); }}
+          style={{ ...baseStyle, cursor: "pointer", appearance: "none", fontFamily: "inherit" }}
+        >
+          {content}
+        </button>
+      );
+    }
+
+    return (
+      <div key={seat} style={{ ...baseStyle, cursor: "default" }}>
+        {content}
       </div>
     );
   };

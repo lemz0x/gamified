@@ -46,12 +46,12 @@ npm run typecheck  # tsc only, no bundle
 
 ## Cards
 
-Three cards, 1 use per topic per guest, reset by producer between rounds:
+Three cards, 1 use per topic per guest, reset by producer between rounds. STFU and WRAP IT UP share a 10s global cooldown:
 
 | Card | Effect |
 |------|--------|
-| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Global 10s lockout prevents retaliation. SILENCED overlay on muted tiles. |
-| WRAP IT UP! | Orange-themed "time's up" nudge |
+| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Global 10s lockout (shared with WRAP IT UP). SILENCED overlay on muted tiles. |
+| WRAP IT UP! | Orange-themed "time's up" nudge. Shares 10s global cooldown with STFU. |
 | MIC DROP | Gold-themed "crown the speaker" celebration |
 
 ## Branches and deployment
@@ -143,7 +143,7 @@ https://gamified-2e9.pages.dev/producer
 The panel ships six sections:
 
 1. **Roster names** — set Guest 1-6 names; Save broadcasts to all wrappers
-2. **Buzz board** — buzzer controls for each seat
+2. **Buzz board** — buzzer controls for each seat. Click a buzzing seat to clear it (useful when a guest's tab crashes mid-buzz).
 3. **Reset cards** — clears per-card use counters across all wrappers
 4. **Host tracker** — per-seat text inputs, send to host display via P2P
 5. **Activity feed** — last 20 events on the data channel
