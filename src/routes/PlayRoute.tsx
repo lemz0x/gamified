@@ -22,6 +22,7 @@ import {
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
+import { sanitizeForOverlay } from "../lib/sanitize";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -314,6 +315,15 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           if (msg.hostName !== undefined) {
             try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
           }
+          // Push the guest's roster name into VDO.Ninja as their label.
+          // This keeps chat labels in sync with producer-set names, so
+          // featured chat shows the right name even after a refresh.
+          if (identity.kind === "guest") {
+            const newName = msg.names[identity.seat];
+            if (newName && newName !== identity.label) {
+              muteIframeRef.current?.contentWindow?.postMessage({ label: newName }, "*");
+            }
+          }
           break;
         case "cardReset": {
           // Idempotent: only act when the producer's epoch is strictly newer
@@ -379,9 +389,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             }, 10_000);
           }
 
-          // STFU/WRAP IT UP cooldown: when either card is played (including
-          // by this guest), lock both cards for 10s to prevent stacking.
-          if ((msg.cardId === "stfu" || msg.cardId === "wrapitup") && identity.kind === "guest") {
+          // STFU cooldown: when STFU is played, lock both STFU and
+          // WRAP IT UP for 10s so the target can't counter with WRAP.
+          // MIC DROP stays open. WRAP IT UP itself doesn't trigger this.
+          if (msg.cardId === "stfu" && identity.kind === "guest") {
             // Clear any existing cooldown interval
             if (stfuCooldownIntervalRef.current !== null) {
               window.clearInterval(stfuCooldownIntervalRef.current);
@@ -607,15 +618,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const showEmojis = identity.kind === "guest";
   const showMuteControls = identity.kind === "host";
   const canFeature = identity.kind === "host";
-
-  // Sanitize for overlay — strip control chars + zero-width + collapse whitespace.
-  const sanitizeForOverlay = useCallback((text: string): string => {
-    return text
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-      .replace(/[\u200B-\u200F\uFEFF]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }, []);
 
   const featureMessage = useCallback(
     (msg: ChatMessage) => {
@@ -1059,11 +1061,13 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll the message list to the bottom whenever a new message
-  // arrives. Direct scrollTop write — no animation, just stick to bottom.
+  // Smart auto-scroll: only scroll to bottom when the user is already
+  // near the bottom. If they've scrolled up to re-read, don't yank them.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   const submit = () => {
