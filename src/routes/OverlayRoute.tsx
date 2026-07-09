@@ -169,7 +169,7 @@ const glowWrapStyle: CSSProperties = {
   position: "relative",
   display: "inline-flex",
   verticalAlign: "bottom",
-  animation: "cardIn 15s cubic-bezier(0.2,1.5,0.4,1) forwards",
+  animation: `cardIn ${CHAT_SCREEN_MS}ms cubic-bezier(0.2,1.5,0.4,1) forwards`,
 };
 
 const glowRingStyle: CSSProperties = {

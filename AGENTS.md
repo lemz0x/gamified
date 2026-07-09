@@ -35,7 +35,7 @@ src/
   index.css                  # Global styles + all CSS keyframes
   vite-env.d.ts
   cards.ts                   # Card definitions (STFU, WRAP IT UP, MIC DROP)
-  emojis.ts                  # Reaction emojis (12), chat emojis (15), EMOJI_COLOURS
+  emojis.ts                  # Reaction emojis (12), chat emojis (24), EMOJI_COLOURS
   coords.ts                  # Tile coordinates (1920x1080) + SEAT_ORDER
   components/
     BuzzPanel.tsx            # Buzz-in button component
@@ -94,13 +94,13 @@ src/
 
 ## Cards
 
-Three cards, 1 use per topic per guest, reset by producer between rounds. STFU and WRAP IT UP share a 10s global cooldown to prevent stacking:
+Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses), MIC DROP (3 uses) per topic per guest. STFU and WRAP IT UP share a 10s global cooldown to prevent stacking:
 
 | Card | ID | Color | Effect |
 |------|----|-------|--------|
 | SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. 10s global lockout (shared with WRAP IT UP). SILENCED overlay. |
 | WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge. Shares 10s global cooldown with STFU. |
-| MIC DROP | `micdrop` | Amber #ffd700 | Crown the speaker |
+| MIC DROP | `micdrop` | Green #00d96b | Crown the speaker |
 
 ## Key systems
 

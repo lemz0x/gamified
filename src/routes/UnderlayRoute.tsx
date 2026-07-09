@@ -128,7 +128,17 @@ export function UnderlayRoute() {
   const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
 
   // Roster names synced from producer — used for card announcements.
-  const rosterRef = useRef<Record<SeatId, string>>({ L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" });
+  // Load from localStorage for instant display before getRoster reply arrives.
+  function loadCachedRoster(): Record<SeatId, string> {
+    try {
+      const raw = typeof window !== "undefined"
+        ? window.localStorage.getItem("gamified.roster.v1")
+        : null;
+      if (raw) return JSON.parse(raw) as Record<SeatId, string>;
+    } catch {}
+    return { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" };
+  }
+  const rosterRef = useRef<Record<SeatId, string>>(loadCachedRoster());
   const hostNameRef = useRef<string>(
     typeof window !== "undefined"
       ? (window.localStorage.getItem("gamified.hostName.v1") ?? "HOST")
@@ -329,7 +339,7 @@ export function UnderlayRoute() {
               stfuVisualTimeoutRef.current = null;
             }, 10_000);
           }
-          fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce);
+          fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce, nextId);
           playCardSfx(msg.cardId);
           break;
         case "calibration":
@@ -338,6 +348,7 @@ export function UnderlayRoute() {
           break;
         case "rosterUpdate":
           rosterRef.current = { ...msg.names };
+          try { window.localStorage.setItem("gamified.roster.v1", JSON.stringify(msg.names)); } catch {}
           if (msg.hostName !== undefined) {
             hostNameRef.current = msg.hostName;
             try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
@@ -371,8 +382,18 @@ export function UnderlayRoute() {
     [tiles, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
   );
 
-  const { iframeRef } = useVdoNinja({ onMessage });
+  const { iframeRef, send } = useVdoNinja({ onMessage });
   const overlayUrl = useMemo(() => buildOverlayDataOnlyUrl(), []);
+
+  // On mount, ask the producer for the current roster + tracker state so
+  // a refreshed underlay doesn't show empty names in card announcements.
+  // Same pattern PlayRoute uses on mount.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      send({ type: "getRoster", ts: Date.now() });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [send]);
 
   return (
     <div style={styles.root}>
@@ -439,6 +460,7 @@ function fireCardAnnounce(
   roster: Record<SeatId, string>,
   hostName: string,
   setAnnounce: React.Dispatch<React.SetStateAction<CardAnnounce | null>>,
+  nextId: () => string,
 ) {
   const cardDef = CARDS.find((c) => c.id === msg.cardId);
   const cardName = cardDef?.shortName ?? cardDef?.name ?? msg.cardId.toUpperCase();
@@ -447,7 +469,7 @@ function fireCardAnnounce(
       ? hostName
       : roster[msg.from.seat] || msg.from.label || "?";
   const targetName = roster[msg.targetSeat] || msg.targetLabel || msg.targetSeat;
-  const id = `ca-${Date.now()}`;
+  const id = nextId();
   setAnnounce({
     id,
     cardId: msg.cardId,

@@ -1,6 +1,6 @@
 /**
- * The fixed set of 10 reaction emojis available to every guest in the
- * /play wrapper. Order is the on-screen order (2 rows of 5, top-left to
+ * The fixed set of 12 reaction emojis available to every guest in the
+ * /play wrapper. Order is the on-screen order (2 rows of 6, top-left to
  * bottom-right). Treated as content, not code: change the set here, do
  * not hard-code emojis in components.
  *

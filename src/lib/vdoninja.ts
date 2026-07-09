@@ -395,7 +395,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "cardPlay":
       if (!VALID_CARD_IDS.has(p.cardId as CardId)) return null;
-      if (typeof p.targetSeat === "string" && !isValidSeatId(p.targetSeat)) return null;
+      if (!isValidSeatId(p.targetSeat)) return null;
       break;
     case "muteGuest":
     case "unmuteGuest":
@@ -403,7 +403,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "buzzIn":
     case "buzzOff":
-      if (!isValidSeatId(p.seat ?? p.target)) return null;
+      if (!isValidSeatId(p.seat)) return null;
       break;
     case "guestSelfUnmuted":
       if (!isValidSeatId(p.seat)) return null;

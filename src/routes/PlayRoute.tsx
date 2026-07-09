@@ -237,7 +237,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [tracker, setTracker] = useState<{
     title: string;
     answers: Record<SeatId, string>;
-  }>({ title: "", answers: { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" } });
+  } | null>(null);
   const [cardUses, setCardUses] = useState<Record<CardId, number>>(() =>
     loadCardUses(identity),
   );
@@ -293,6 +293,11 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     // Only force-mute for STFU. Host mutes are advisory (guest can unmute).
     if (stfuMutedRef.current) {
       muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+    } else if (!hostMutedRef.current) {
+      // STFU cleared and not host-muted: actively unmute the iframe.
+      // Without this, the VDO.Ninja mic stays muted after STFU expires
+      // because nothing else sends { mic: true }.
+      muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
     }
     setIsMuted(muted);
   };
@@ -304,6 +309,11 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         case "rosterUpdate":
           setRoster(msg.names);
           saveRoster(msg.names);
+          // Persist hostName too so the underlay can load it on refresh
+          // before the getRoster reply arrives.
+          if (msg.hostName !== undefined) {
+            try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
+          }
           break;
         case "cardReset": {
           // Idempotent: only act when the producer's epoch is strictly newer
@@ -331,7 +341,13 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           break;
         }
         case "trackerUpdate":
-          setTracker({ title: msg.title, answers: msg.answers });
+          // Hide tracker section entirely if producer cleared it
+          // (title empty AND all answers empty). Otherwise show it.
+          if (msg.title === "" && Object.values(msg.answers).every((v) => !v)) {
+            setTracker(null);
+          } else {
+            setTracker({ title: msg.title, answers: msg.answers });
+          }
           break;
         // Other event types (emoji, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
@@ -363,9 +379,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             }, 10_000);
           }
 
-          // STFU cooldown: when ANY STFU is played (including by this guest),
-          // lock the STFU card for 10s to prevent retaliation stacking.
-          if (msg.cardId === "stfu" && identity.kind === "guest") {
+          // STFU/WRAP IT UP cooldown: when either card is played (including
+          // by this guest), lock both cards for 10s to prevent stacking.
+          if ((msg.cardId === "stfu" || msg.cardId === "wrapitup") && identity.kind === "guest") {
             // Clear any existing cooldown interval
             if (stfuCooldownIntervalRef.current !== null) {
               window.clearInterval(stfuCooldownIntervalRef.current);
@@ -605,9 +621,14 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     (msg: ChatMessage) => {
       const sanitized = sanitizeForOverlay(msg.msg);
       if (!sanitized) return;
-      send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
+      // Try to resolve the VDO.Ninja label to a roster name so refreshed
+      // hosts don't see "Guest3" on featured chat. If the label matches a
+      // roster entry, use the roster name; otherwise fall back to label.
+      const rosterEntry = SEAT_ORDER.find((s) => roster[s] === msg.label);
+      const author = rosterEntry ? roster[rosterEntry] : msg.label;
+      send({ type: "chatToScreen", author, message: sanitized, ts: Date.now() });
     },
-    [send, sanitizeForOverlay],
+    [send, sanitizeForOverlay, roster],
   );
 
   const clearChatScreen = useCallback(() => {
