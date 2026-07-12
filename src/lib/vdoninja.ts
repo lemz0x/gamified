@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { CardId } from "../cards";
-import type { Emoji } from "../emojis";
+import { EMOJIS, type Emoji } from "../emojis";
 import { SEAT_ORDER, type SeatId, type TileMap } from "../coords";
 
 // ── URL builders ────────────────────────────────────────────────────────
@@ -371,6 +371,9 @@ const VALID_TYPES = new Set([
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
 const VALID_CARD_IDS = new Set<CardId>(["stfu", "micdrop", "wrapitup"]);
+const VALID_EMOJIS = new Set<string>(EMOJIS);
+/** Max length for chat-to-screen author display name. */
+const MAX_AUTHOR_LEN = 64;
 
 function isValidSeatId(v: unknown): v is SeatId {
   return typeof v === "string" && VALID_SEAT_IDS.has(v as SeatId);
@@ -400,7 +403,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
   // We're defensive, not exhaustive — just enough to prevent crashes.
   switch (p.type) {
     case "emoji":
-      if (typeof p.emoji !== "string") return null;
+      if (typeof p.emoji !== "string" || !VALID_EMOJIS.has(p.emoji)) return null;
       if (!isValidSender(p.from)) return null;
       break;
     case "cardPlay":
@@ -428,6 +431,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "chatToScreen":
       if (typeof p.author !== "string" || p.author.trim() === "") return null;
+      if (p.author.length > MAX_AUTHOR_LEN) return null;
       if (typeof p.message !== "string" || p.message.trim() === "") return null;
       break;
     case "chatToScreenClear":

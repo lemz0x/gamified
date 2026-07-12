@@ -26,7 +26,10 @@ const NEON = {
 } as const;
 
 // ── known labels we treat as self (don't re-show our own sent messages) ───
-
+// Tradeoff: this drops any remote message whose label matches ours
+// case-insensitively. If a guest shares the producer's label (e.g. "Lemz"
+// or "Phil" on /editorchat), their messages are invisible in that panel.
+// Acceptable given the small participant count and controlled label assignment.
 function isOwnLabel(localLabel: string, candidate: string): boolean {
   return candidate.trim().toLowerCase() === localLabel.trim().toLowerCase();
 }

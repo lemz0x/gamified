@@ -50,8 +50,8 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 
 | Card | Effect |
 |------|--------|
-| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Global 10s lockout (shared with WRAP IT UP). SILENCED overlay on muted tiles. |
-| WRAP IT UP! | Orange-themed "time's up" nudge. Shares 10s global cooldown with STFU. |
+| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Locks STFU + WRAP IT UP buttons for 10s. SILENCED overlay on muted tiles. |
+| WRAP IT UP! | Orange-themed "time's up" nudge. Locked when STFU is played, but playing it does not start a cooldown. |
 | MIC DROP | Gold-themed "crown the speaker" celebration |
 
 ## Branches and deployment

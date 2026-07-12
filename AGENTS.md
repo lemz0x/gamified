@@ -98,8 +98,8 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 
 | Card | ID | Color | Effect |
 |------|----|-------|--------|
-| SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. 10s global lockout (shared with WRAP IT UP). SILENCED overlay. |
-| WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge. Shares 10s global cooldown with STFU. |
+| SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. Locks STFU + WRAP IT UP buttons for 10s. SILENCED overlay. |
+| WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge. Locked when STFU is played, but playing it does not start a cooldown. |
 | MIC DROP | `micdrop` | Green #00d96b | Crown the speaker |
 
 ## Key systems

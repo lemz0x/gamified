@@ -375,14 +375,33 @@ export function UnderlayRoute() {
           break;
         }
         case "unmuteGuest": {
-          // Remove mute reason for target seats
+          // Remove mute reason for target seats.
+          // Individual unmute after mute-all must clear "muteall" too,
+          // otherwise the SILENCED overlay stays on after the guest's
+          // mic is actually live.
           const targets: SeatId[] = msg.target === "all"
             ? (Object.keys(tiles) as SeatId[])
             : [msg.target as SeatId];
-          removeMuteReasons(targets, msg.target === "all" ? "muteall" : "host");
+          if (msg.target === "all") {
+            removeMuteReasons(targets, "muteall");
+          } else {
+            // Individual unmute: clear both "host" and "muteall" so
+            // a mute-all + selective-unmute flow doesn't leave stale SILENCED.
+            removeMuteReasons(targets, "host");
+            removeMuteReasons(targets, "muteall");
+          }
           break;
         }
         // cardReset, getResetEpoch → not needed by overlay.
+        case "guestSelfUnmuted": {
+          // A guest self-unmuted by clicking their mic in VDO.Ninja.
+          // Clear "host" and "muteall" reasons so the SILENCED overlay
+          // removes for that seat. Never clear "stfu" — the force-mute
+          // window must keep its visual until the 10s timer expires.
+          removeMuteReasons([msg.seat], "host");
+          removeMuteReasons([msg.seat], "muteall");
+          break;
+        }
         default:
           break;
       }

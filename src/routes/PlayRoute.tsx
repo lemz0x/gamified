@@ -325,8 +325,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           if (msg.hostName !== undefined) {
             try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
           }
-          // Push the guest's roster name into VDO.Ninja as their label.
-          // This keeps chat labels in sync with producer-set names, so
+          // Push the guest's or host's roster name into VDO.Ninja as their
+          // label. This keeps chat labels in sync with producer-set names, so
           // featured chat shows the right name even after a refresh.
           // Guard with lastPushedLabelRef to avoid re-posting on every
           // rosterUpdate (idempotent but produces redundant VDO.Ninja peer
@@ -337,6 +337,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             if (newName && newName !== lastPushed) {
               muteIframeRef.current?.contentWindow?.postMessage({ label: newName }, "*");
               lastPushedLabelRef.current = newName;
+            }
+          } else if (identity.kind === "host" && msg.hostName !== undefined) {
+            const lastPushed = lastPushedLabelRef.current ?? identity.label;
+            if (msg.hostName !== lastPushed) {
+              muteIframeRef.current?.contentWindow?.postMessage({ label: msg.hostName }, "*");
+              lastPushedLabelRef.current = msg.hostName;
             }
           }
           break;
