@@ -43,7 +43,7 @@ The project forked from Chris Heatherly's Socket.IO + Fly.io prototype. The genu
 ### Animation primitives
 - All animations use CSS transforms, opacity, filter, box-shadow
 - NEVER animate layout properties (top, left, width, height) — performance disaster in OBS
-- Keyframes in `src/index.css`: `slamIn`, `shake`, `stfuDim`, `sourceAuraGlow`, `cooldownPulse`, `silencedLabelIn`, `silencedRingPulse`, `wrapGlowRing`
+- Keyframes in `src/index.css`: `stfuDim`, `sourceAuraGlow`, `cooldownPulse`, `silencedLabelIn`, `wrapGlowRing`, `flow`, `flowPulse`, `cardIn`, `floatUpOverlay`, `stfuTileShake`, `wrapTileShake`, and card-specific keyframes
 
 ### Chat infrastructure
 - Chat uses VDO.Ninja's native chat (websocket, `sendChat` / `incoming-chat` via iframe postMessage)
@@ -92,7 +92,7 @@ Tile coordinates define square 280x280 bounds. Camera windows have rounded corne
 
 ### Circuit-breaker overengineering
 - v1.2 had two separate circuit-breakers (one for host mute, one for STFU), each posting `mic: false` every 500ms
-- Consolidated to single interval checking `hostMutedRef || stfuMutedRef`. Simpler, fewer timers, no race conditions. Self-stops when both flags clear.
+- Consolidated to single interval re-asserting `mic: false` only while `stfuMutedRef` is set. Host mutes are advisory (single-shot, guest can self-unmute). Self-stops when STFU clears.
 
 ## What was in the original build spec that is now built
 
@@ -115,8 +115,8 @@ The wrapper preserves all existing URL params and adds itself as a layer:
 
 - Room-wide constants: `room`, `hash`, `q`, `tips`, `roombitrate=0`
 - Per-guest variables: `push` (stream id), `label` (display name)
-- Guests do NOT get `view=` — they view the producer's Virtual Camera
-- Host gets `view=` to receive the composited feed
+- Guests do NOT get `view=` — `&broadcast` auto-discovers the director's stream
+- Host shares the same URL shape as guests (no explicit `view=`)
 - Overlay joins as data-only peer (no video, no audio)
 - Producer joins as dataonly codirector for bidirectional data flow
 

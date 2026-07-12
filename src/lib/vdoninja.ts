@@ -376,6 +376,15 @@ function isValidSeatId(v: unknown): v is SeatId {
   return typeof v === "string" && VALID_SEAT_IDS.has(v as SeatId);
 }
 
+/** Validate the `from` sender field on emoji and cardPlay events. */
+function isValidSender(v: unknown): v is EventSender {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  if (s.kind === "host") return typeof s.label === "string";
+  if (s.kind === "guest") return isValidSeatId(s.seat) && typeof s.label === "string";
+  return false;
+}
+
 /** Narrow an unknown value to a valid EventPayload. Rejects malformed or
  *  unexpected payloads so downstream switch statements never crash on
  *  undefined access. Logs a warn in DEV mode so bugs surface fast. */
@@ -392,10 +401,12 @@ export function validatePayload(raw: unknown): EventPayload | null {
   switch (p.type) {
     case "emoji":
       if (typeof p.emoji !== "string") return null;
+      if (!isValidSender(p.from)) return null;
       break;
     case "cardPlay":
       if (!VALID_CARD_IDS.has(p.cardId as CardId)) return null;
       if (!isValidSeatId(p.targetSeat)) return null;
+      if (!isValidSender(p.from)) return null;
       break;
     case "muteGuest":
     case "unmuteGuest":
@@ -412,6 +423,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
       if (!p.tiles || typeof p.tiles !== "object") return null;
       break;
     case "trackerUpdate":
+      if (typeof p.title !== "string") return null;
       if (!p.answers || typeof p.answers !== "object") return null;
       break;
     case "chatToScreen":
@@ -421,7 +433,13 @@ export function validatePayload(raw: unknown): EventPayload | null {
     case "chatToScreenClear":
       // No fields beyond type + ts
       break;
-    // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
+    case "rosterUpdate":
+      if (!p.names || typeof p.names !== "object") return null;
+      break;
+    case "cardReset":
+      if (typeof p.resetEpoch !== "number") return null;
+      break;
+    // getResetEpoch, getRoster: no fields beyond type + ts
   }
   return p as unknown as EventPayload;
 }

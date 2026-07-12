@@ -11,6 +11,7 @@ import {
   TILES_STORAGE_KEY,
   loadCalibratedTiles,
   saveCalibratedTiles,
+  SEAT_ORDER,
   type SeatId,
   type Tile,
   type TileMap,
@@ -130,13 +131,22 @@ export function UnderlayRoute() {
   // Roster names synced from producer — used for card announcements.
   // Load from localStorage for instant display before getRoster reply arrives.
   function loadCachedRoster(): Record<SeatId, string> {
+    const defaults: Record<SeatId, string> = { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" };
     try {
       const raw = typeof window !== "undefined"
         ? window.localStorage.getItem("gamified.roster.v1")
         : null;
-      if (raw) return JSON.parse(raw) as Record<SeatId, string>;
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        // Merge: only keep string values for known seats
+        for (const seat of SEAT_ORDER) {
+          if (typeof parsed[seat] === "string") {
+            defaults[seat] = parsed[seat] as string;
+          }
+        }
+      }
     } catch {}
-    return { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" };
+    return defaults;
   }
   const rosterRef = useRef<Record<SeatId, string>>(loadCachedRoster());
   const hostNameRef = useRef<string>(

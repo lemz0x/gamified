@@ -403,7 +403,8 @@ function ProducerPanel() {
     const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
     setTrackerDraft(empty);
     setTrackerTitle("");
-    send({ type: "trackerUpdate", title: "Tracker", answers: empty, ts: Date.now() });
+    lastTrackerRef.current = null;
+    send({ type: "trackerUpdate", title: "", answers: empty, ts: Date.now() });
     setFeed((prev) =>
       [
         { id: `f${feedIdRef.current++}`, ts: Date.now(), text: "Answers cleared" },

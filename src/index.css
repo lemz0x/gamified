@@ -84,24 +84,6 @@ body.overlay-route #root {
   background: transparent;
 }
 
-@keyframes shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  20% {
-    transform: translateX(-6px);
-  }
-  40% {
-    transform: translateX(5px);
-  }
-  60% {
-    transform: translateX(-4px);
-  }
-  80% {
-    transform: translateX(3px);
-  }
-}
 /* Overlay route — emoji float. Spawns at the tile bottom edge and drifts
    up + a touch sideways with a soft scale pulse. Pure transform/opacity
    so the compositor can run it on the GPU without per-frame layout. */
@@ -335,6 +317,18 @@ body.overlay-route #root {
 @keyframes silencedLabelIn {
   0% { opacity: 0; transform: translateX(-50%) scale(1.2); }
   100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+/* Flowing neon perimeter glow — animated background-position. */
+@keyframes flow {
+  0%   { background-position: 0% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Fallback pulse for @supports not mask-composite */
+@keyframes flowPulse {
+  0%   { border-color: rgba(34,226,255,0.5); box-shadow: 0 0 12px rgba(34,226,255,0.3); }
+  100% { border-color: rgba(255,46,159,0.5); box-shadow: 0 0 12px rgba(255,46,159,0.3); }
 }
 
 /* ── Chat-to-screen overlay (top-layer /overlay route) ──────────────── */

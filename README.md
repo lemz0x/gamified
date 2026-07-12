@@ -46,7 +46,7 @@ npm run typecheck  # tsc only, no bundle
 
 ## Cards
 
-Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses), MIC DROP (3 uses) per topic per guest. STFU and WRAP IT UP share a 10s global cooldown:
+Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses), MIC DROP (3 uses) per topic per guest. Playing STFU locks both the STFU and WRAP IT UP buttons for 10s. Playing WRAP IT UP does not start any cooldown. MIC DROP is never affected:
 
 | Card | Effect |
 |------|--------|
@@ -90,8 +90,9 @@ https://gamified-2e9.pages.dev/play?seat=<1-6>&push=<pushID>&label=<GuestName>
 https://gamified-2e9.pages.dev/play?role=host&push=<pushID>&label=Host
 ```
 
-Host wrapper includes `&view=` to receive the producer's composited Virtual
-Camera feed. Host is excluded from guest card target pickers.
+Host and guest wrappers share the same URL shape — `&broadcast` auto-discovers
+the producer's composited Virtual Camera feed. Host is excluded from guest
+card target pickers.
 
 ### Editor URL
 
