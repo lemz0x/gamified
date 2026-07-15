@@ -35,7 +35,7 @@ src/
   index.css                  # Global styles + all CSS keyframes
   vite-env.d.ts
   cards.ts                   # Card definitions (STFU, WRAP IT UP, MIC DROP)
-  emojis.ts                  # Reaction emojis (12), chat emojis (15), EMOJI_COLOURS
+  emojis.ts                  # Reaction emojis (12), chat emojis (24), EMOJI_COLOURS
   coords.ts                  # Tile coordinates (1920x1080) + SEAT_ORDER
   components/
     BuzzPanel.tsx            # Buzz-in button component
@@ -57,7 +57,7 @@ src/
 | Route | Purpose |
 |-------|---------|
 | `/play` | Guest/host/editor wrapper: VDO.Ninja iframe + cards + emoji + chat + buzz + mute |
-| `/underlay` | OBS browser source beneath camera layers: emoji floats, card animations, STFU overlays, host tracker, calibration |
+| `/underlay` | OBS browser source beneath camera layers: emoji floats, card animations, STFU overlays, mute indicators, calibration |
 | `/overlay` | OBS browser source above all sources: chat-to-screen, future top-layer graphics |
 | `/producer` | Dockable producer panel: roster, buzz board, reset cards, host tracker, activity feed, calibration |
 | `/chat` | Standalone chat UI |
@@ -94,13 +94,13 @@ src/
 
 ## Cards
 
-Three cards, 1 use per topic per guest, reset by producer between rounds. STFU and WRAP IT UP share a 10s global cooldown to prevent stacking:
+Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses), MIC DROP (3 uses) per topic per guest. Playing STFU locks both the STFU and WRAP IT UP buttons for 10s. Playing WRAP IT UP does not start any cooldown. MIC DROP is never affected:
 
 | Card | ID | Color | Effect |
 |------|----|-------|--------|
-| SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. 10s global lockout (shared with WRAP IT UP). SILENCED overlay. |
-| WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge. Shares 10s global cooldown with STFU. |
-| MIC DROP | `micdrop` | Amber #ffd700 | Crown the speaker |
+| SHUT THE !@#$ UP | `stfu` | Red #ff2e6b | Mutes all guests except player for 10s. Locks STFU + WRAP IT UP buttons for 10s. SILENCED overlay. |
+| WRAP IT UP! | `wrapitup` | Orange #ff7700 | Time's up nudge. Locked when STFU is played, but playing it does not start a cooldown. |
+| MIC DROP | `micdrop` | Green #00d96b | Crown the speaker |
 
 ## Key systems
 
@@ -130,7 +130,7 @@ Three cards, 1 use per topic per guest, reset by producer between rounds. STFU a
 
 **Payload validation:** Runtime guard on data-channel events. Validates event types, seat IDs, strings, numbers.
 
-**Debug HUD:** `?calibrate=1` or `?debug=1` shows connection status chip on underlay/overlay.
+**Debug HUD:** `?calibrate=1` shows calibration grid, `?debug=1` shows connection status chip. Both on `/underlay` only.
 
 **Cache headers:** `/*` serves `no-cache` so SPA routes always pick up fresh deploys. `/assets/*` and `/fonts/*` are immutable (content-hashed). `/sfx/*` has 7-day TTL with `SFX_VERSION` query param as cache-buster.
 

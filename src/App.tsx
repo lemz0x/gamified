@@ -34,7 +34,8 @@ function PanelFallback() {
 // Tailwind v4 preflight + utilities like min-h-screen / w-full can plant
 // background-color initial values that swallow the transparent body.
 export default function App() {
-  const isOverlay = useLocation().pathname === "/overlay" || useLocation().pathname === "/underlay";
+  const { pathname } = useLocation();
+  const isOverlay = pathname === "/overlay" || pathname === "/underlay";
   return (
     <div className={isOverlay ? undefined : "min-h-screen w-full"}>
       <Suspense fallback={isOverlay ? <OverlayFallback /> : <PanelFallback />}>

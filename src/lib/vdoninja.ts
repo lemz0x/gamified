@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { CardId } from "../cards";
-import type { Emoji } from "../emojis";
+import { EMOJIS, type Emoji } from "../emojis";
 import { SEAT_ORDER, type SeatId, type TileMap } from "../coords";
 
 // ── URL builders ────────────────────────────────────────────────────────
@@ -371,9 +371,21 @@ const VALID_TYPES = new Set([
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
 const VALID_CARD_IDS = new Set<CardId>(["stfu", "micdrop", "wrapitup"]);
+const VALID_EMOJIS = new Set<string>(EMOJIS);
+/** Max length for chat-to-screen author display name. */
+const MAX_AUTHOR_LEN = 64;
 
 function isValidSeatId(v: unknown): v is SeatId {
   return typeof v === "string" && VALID_SEAT_IDS.has(v as SeatId);
+}
+
+/** Validate the `from` sender field on emoji and cardPlay events. */
+function isValidSender(v: unknown): v is EventSender {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  if (s.kind === "host") return typeof s.label === "string";
+  if (s.kind === "guest") return isValidSeatId(s.seat) && typeof s.label === "string";
+  return false;
 }
 
 /** Narrow an unknown value to a valid EventPayload. Rejects malformed or
@@ -391,11 +403,13 @@ export function validatePayload(raw: unknown): EventPayload | null {
   // We're defensive, not exhaustive — just enough to prevent crashes.
   switch (p.type) {
     case "emoji":
-      if (typeof p.emoji !== "string") return null;
+      if (typeof p.emoji !== "string" || !VALID_EMOJIS.has(p.emoji)) return null;
+      if (!isValidSender(p.from)) return null;
       break;
     case "cardPlay":
       if (!VALID_CARD_IDS.has(p.cardId as CardId)) return null;
-      if (typeof p.targetSeat === "string" && !isValidSeatId(p.targetSeat)) return null;
+      if (!isValidSeatId(p.targetSeat)) return null;
+      if (!isValidSender(p.from)) return null;
       break;
     case "muteGuest":
     case "unmuteGuest":
@@ -403,7 +417,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "buzzIn":
     case "buzzOff":
-      if (!isValidSeatId(p.seat ?? p.target)) return null;
+      if (!isValidSeatId(p.seat)) return null;
       break;
     case "guestSelfUnmuted":
       if (!isValidSeatId(p.seat)) return null;
@@ -412,16 +426,24 @@ export function validatePayload(raw: unknown): EventPayload | null {
       if (!p.tiles || typeof p.tiles !== "object") return null;
       break;
     case "trackerUpdate":
+      if (typeof p.title !== "string") return null;
       if (!p.answers || typeof p.answers !== "object") return null;
       break;
     case "chatToScreen":
       if (typeof p.author !== "string" || p.author.trim() === "") return null;
+      if (p.author.length > MAX_AUTHOR_LEN) return null;
       if (typeof p.message !== "string" || p.message.trim() === "") return null;
       break;
     case "chatToScreenClear":
       // No fields beyond type + ts
       break;
-    // rosterUpdate, cardReset, getResetEpoch: no seat/card fields to check
+    case "rosterUpdate":
+      if (!p.names || typeof p.names !== "object") return null;
+      break;
+    case "cardReset":
+      if (typeof p.resetEpoch !== "number") return null;
+      break;
+    // getResetEpoch, getRoster: no fields beyond type + ts
   }
   return p as unknown as EventPayload;
 }

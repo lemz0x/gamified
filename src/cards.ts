@@ -11,8 +11,6 @@
 
 export type CardId = "stfu" | "micdrop" | "wrapitup";
 
-export type CardColor = "red" | "amber" | "orange";
-
 export interface Card {
   /** Stable identifier used in event payloads — never re-use across cards. */
   id: CardId;
@@ -24,8 +22,6 @@ export interface Card {
   icon: string;
   /** Subtitle below the slug on the card face. */
   subtitle: string;
-  /** Theme color the wrapper + overlay use to style this card. */
-  color: CardColor;
   /** How many times each guest can play this card before the producer resets. */
   usesPerTopic: number;
   /** Short, human-readable purpose; surfaces in tooltips / target picker. */
@@ -40,7 +36,6 @@ export const CARDS: readonly Card[] = [
     shortName: "STFU",
     icon: "\u{1F910}",
     subtitle: "Shut the !@#$ Up",
-    color: "red",
     usesPerTopic: 1,
     description: "Cut off the current speaker",
   },
@@ -50,7 +45,6 @@ export const CARDS: readonly Card[] = [
     shortName: "WRAP IT UP",
     icon: "\u{23F0}",
     subtitle: "Time's Up",
-    color: "orange",
     usesPerTopic: 3,
     description: "Nudge the speaker to finish",
   },
@@ -60,7 +54,6 @@ export const CARDS: readonly Card[] = [
     shortName: "MIC DROP",
     icon: "\u{1F3A4}",
     subtitle: "Crown the Speaker",
-    color: "amber",
     usesPerTopic: 3,
     description: "Crown the current speaker",
   },

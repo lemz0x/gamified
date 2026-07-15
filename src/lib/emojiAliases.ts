@@ -20,7 +20,7 @@ export const EMOJI_ALIASES: readonly EmojiAliasEntry[] = [
   { emoji: "\u{1F4AF}", aliases: ["100", "hundred"] },                        // 💯
   { emoji: "\u{1F44F}", aliases: ["clap", "applause"] },                      // 👏
   { emoji: "\u{1F44D}", aliases: ["thumbsup", "up", "yes"] },                 // 👍
-  { emoji: "\u{1F602}", aliases: ["laugh", "cry", "lol", "lmao"] },           // 😂
+  { emoji: "\u{1F602}", aliases: ["laugh", "lol", "lmao"] },             // 😂
   { emoji: "\u{1F480}", aliases: ["skull", "dead", "rip"] },                  // 💀
   { emoji: "\u{1F440}", aliases: ["eyes", "look", "see"] },                   // 👀
   { emoji: "\u{1F921}", aliases: ["clown", "fool"] },                         // 🤡
@@ -29,12 +29,12 @@ export const EMOJI_ALIASES: readonly EmojiAliasEntry[] = [
   // Chat-only emojis (not in reaction set)
   { emoji: "\u{1F642}", aliases: ["smile"] },               // 🙂
   { emoji: "\u{1F603}", aliases: ["grin", "happy"] },                        // 😃
-  { emoji: "\u{1F923}", aliases: ["rofl", "lmao"] },                         // 🤣
+  { emoji: "\u{1F923}", aliases: ["rofl"] },                              // 🤣
   { emoji: "\u{1F605}", aliases: ["sweat", "nervous"] },                     // 😅
   { emoji: "\u{1F62D}", aliases: ["sob", "cry"] },                           // 😭
-  { emoji: "\u{1F622}", aliases: ["sad", "cry"] },                           // 😢
+  { emoji: "\u{1F622}", aliases: ["sad"] },                                // 😢
   { emoji: "\u{1F973}", aliases: ["party", "celebrate"] },                   // 🥳
-  { emoji: "\u{1F60D}", aliases: ["love", "hearteyes"] },                     // 😍
+  { emoji: "\u{1F60D}", aliases: ["hearteyes"] },                            // 😍
   { emoji: "\u{1F914}", aliases: ["think", "hmm"] },                         // 🤔
   { emoji: "\u{1F621}", aliases: ["angry", "mad"] },                         // 😡
   { emoji: "\u{1F634}", aliases: ["sleep", "tired"] },                       // 😴

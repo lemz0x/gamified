@@ -10,6 +10,7 @@ import { buildChatOnlyUrl, useVdoNinja } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { CHAT_EMOJIS } from "../emojis";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
+import { sanitizeForOverlay } from "../lib/sanitize";
 
 // ── neon palette (sync with PlayRoute) ──────────────────────────────────
 
@@ -25,7 +26,10 @@ const NEON = {
 } as const;
 
 // ── known labels we treat as self (don't re-show our own sent messages) ───
-
+// Tradeoff: this drops any remote message whose label matches ours
+// case-insensitively. If a guest shares the producer's label (e.g. "Lemz"
+// or "Phil" on /editorchat), their messages are invisible in that panel.
+// Acceptable given the small participant count and controlled label assignment.
 function isOwnLabel(localLabel: string, candidate: string): boolean {
   return candidate.trim().toLowerCase() === localLabel.trim().toLowerCase();
 }
@@ -88,11 +92,7 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
 
   const featureMessage = useCallback(
     (msg: ChatMessage) => {
-      const sanitized = msg.msg
-        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-        .replace(/[\u200B-\u200F\uFEFF]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+      const sanitized = sanitizeForOverlay(msg.msg);
       if (!sanitized) return;
       send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
     },
@@ -174,9 +174,13 @@ interface ChatFeedProps {
 function ChatFeed({ messages, onFeature }: ChatFeedProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
+  // Smart auto-scroll: only scroll to bottom when the user is already
+  // near the bottom. If they've scrolled up to re-read, don't yank them.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   return (

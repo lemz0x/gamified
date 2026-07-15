@@ -22,6 +22,7 @@ import {
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
+import { sanitizeForOverlay } from "../lib/sanitize";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -237,7 +238,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [tracker, setTracker] = useState<{
     title: string;
     answers: Record<SeatId, string>;
-  }>({ title: "", answers: { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" } });
+  } | null>(null);
   const [cardUses, setCardUses] = useState<Record<CardId, number>>(() =>
     loadCardUses(identity),
   );
@@ -264,9 +265,16 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
 
   const hostMutedRef = useRef(false);
   const stfuMutedRef = useRef(false);
+  // Tracks whether the guest manually muted themselves via the VDO.Ninja
+  // mic button. Prevents reconcileMic from force-unmuting a guest who
+  // muted themselves (dog barking, cough) when STFU or host-mute clears.
+  const selfMutedRef = useRef(false);
   const stfuMuteTimeoutRef = useRef<number | null>(null);
   const hostMuteIntervalRef = useRef<number | null>(null);
   const lastEmojiTsRef = useRef(0);
+  // Tracks the last label we pushed to the VDO.Ninja iframe so we
+  // don't re-post { label } on every rosterUpdate (idempotent but wasteful).
+  const lastPushedLabelRef = useRef<string | null>(null);
 
   function startCircuitBreaker() {
     // Only start if not already running
@@ -293,6 +301,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     // Only force-mute for STFU. Host mutes are advisory (guest can unmute).
     if (stfuMutedRef.current) {
       muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+    } else if (!hostMutedRef.current && !selfMutedRef.current) {
+      // STFU cleared and not host-muted and not self-muted: actively unmute.
+      // Without this, the VDO.Ninja mic stays muted after STFU expires
+      // because nothing else sends { mic: true }.
+      // If the guest self-muted (dog, cough), we DON'T force-unmute them.
+      muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
     }
     setIsMuted(muted);
   };
@@ -304,6 +318,33 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         case "rosterUpdate":
           setRoster(msg.names);
           saveRoster(msg.names);
+          // Note: the underlay persists its own hostName/roster in its own
+          // localStorage (different OBS browser source). The writes here
+          // only cache for this /play browser, which reads hostName from
+          // roster state, not localStorage.
+          if (msg.hostName !== undefined) {
+            try { window.localStorage.setItem("gamified.hostName.v1", msg.hostName); } catch {}
+          }
+          // Push the guest's or host's roster name into VDO.Ninja as their
+          // label. This keeps chat labels in sync with producer-set names, so
+          // featured chat shows the right name even after a refresh.
+          // Guard with lastPushedLabelRef to avoid re-posting on every
+          // rosterUpdate (idempotent but produces redundant VDO.Ninja peer
+          // announcements if left unchecked).
+          if (identity.kind === "guest") {
+            const newName = msg.names[identity.seat];
+            const lastPushed = lastPushedLabelRef.current ?? identity.label;
+            if (newName && newName !== lastPushed) {
+              muteIframeRef.current?.contentWindow?.postMessage({ label: newName }, "*");
+              lastPushedLabelRef.current = newName;
+            }
+          } else if (identity.kind === "host" && msg.hostName !== undefined) {
+            const lastPushed = lastPushedLabelRef.current ?? identity.label;
+            if (msg.hostName !== lastPushed) {
+              muteIframeRef.current?.contentWindow?.postMessage({ label: msg.hostName }, "*");
+              lastPushedLabelRef.current = msg.hostName;
+            }
+          }
           break;
         case "cardReset": {
           // Idempotent: only act when the producer's epoch is strictly newer
@@ -331,7 +372,13 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           break;
         }
         case "trackerUpdate":
-          setTracker({ title: msg.title, answers: msg.answers });
+          // Hide tracker section entirely if producer cleared it
+          // (title empty AND all answers empty). Otherwise show it.
+          if (msg.title === "" && Object.values(msg.answers).every((v) => !v)) {
+            setTracker(null);
+          } else {
+            setTracker({ title: msg.title, answers: msg.answers });
+          }
           break;
         // Other event types (emoji, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
@@ -363,8 +410,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             }, 10_000);
           }
 
-          // STFU cooldown: when ANY STFU is played (including by this guest),
-          // lock the STFU card for 10s to prevent retaliation stacking.
+          // STFU cooldown: when STFU is played, lock both STFU and
+          // WRAP IT UP for 10s so the target can't counter with WRAP.
+          // MIC DROP stays open. WRAP IT UP itself doesn't trigger this.
           if (msg.cardId === "stfu" && identity.kind === "guest") {
             // Clear any existing cooldown interval
             if (stfuCooldownIntervalRef.current !== null) {
@@ -470,38 +518,43 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   //   parent.postMessage({ action: "mic-mute-state", value: session.muted }, ...)
   //
   // Key behavior confirmed from VDO.Ninja source code:
-  //   - Event fires ONLY when the guest clicks their own mic (toggleMute with !apply)
-  //   - Does NOT fire when we programmatically mute via { mic: false } (apply=true)
-  //   - value: true = muted, value: false = unmuted
-  //   - Requires ?iframetarget=* in the iframe URL (added to GUEST_BROADCAST_PARAMS)
+  // VDO.Ninja posts mic state changes as action: "mic-mute-state"
+  // via the iframe API (requires ?iframetarget=* in the URL).
   //
-  // When we detect unmute (value: false) while the guest is host-muted
-  // (but not STFU-muted), we:
-  //   1. Clear the local hostMutedRef + SILENCED badge
-  //   2. Broadcast guestSelfUnmuted so the host/producer can sync
-  // STFU mutes are NOT affected (circuit breaker still re-asserts those).
+  // Event fires ONLY when the guest clicks their own mic (toggleMute with !apply).
+  // Does NOT fire when we programmatically mute via { mic: false } (apply=true).
+  // value: true = muted, value: false = unmuted
+  //
+  // We track both directions in selfMutedRef so reconcileMic knows whether
+  // the guest manually muted themselves — if so, we don't force-unmute
+  // when STFU or host-mute clears (guest autonomy over their own mic).
   useEffect(() => {
     function onVdoMicEvent(e: MessageEvent) {
+      // Origin check: only accept from VDO.Ninja domains
+      if (e.origin !== "https://vdo.ninja" && e.origin !== "https://www.vdo.ninja") return;
       if (!e.data || typeof e.data !== "object") return;
       const data = e.data as Record<string, unknown>;
-      // VDO.Ninja posts mic state changes as action: "mic-mute-state"
       if (data.action !== "mic-mute-state") return;
-      // value: false means mic is unmuted
-      if (data.value !== false) return;
-      // Only react if we're a host-muted guest (not STFU-muted)
-      if (!hostMutedRef.current || stfuMutedRef.current) return;
-      if (identity.kind !== "guest") return;
-      // Clear local mute state
-      hostMutedRef.current = false;
-      setIsMuted(false);
-      // Broadcast to host + producer so they clear the SILENCED badge
-      send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
-      // Dispatch local custom event for the host UI mute indicators
-      window.dispatchEvent(
-        new CustomEvent("gamified-mute-state", {
-          detail: { seat: identity.seat, muted: false },
-        }),
-      );
+      if (typeof data.value !== "boolean") return;
+      // Track self-mute state (both directions)
+      selfMutedRef.current = data.value === true;
+      // value: false means the user clicked unmute
+      if (data.value === false) {
+        // Only react if we're a host-muted guest (not STFU-muted)
+        if (!hostMutedRef.current || stfuMutedRef.current) return;
+        if (identity.kind !== "guest") return;
+        // Clear local mute state
+        hostMutedRef.current = false;
+        setIsMuted(false);
+        // Broadcast to host + producer so they clear the SILENCED badge
+        send({ type: "guestSelfUnmuted", seat: identity.seat, ts: Date.now() });
+        // Dispatch local custom event for the host UI mute indicators
+        window.dispatchEvent(
+          new CustomEvent("gamified-mute-state", {
+            detail: { seat: identity.seat, muted: false },
+          }),
+        );
+      }
     }
     window.addEventListener("message", onVdoMicEvent);
     return () => window.removeEventListener("message", onVdoMicEvent);
@@ -592,22 +645,16 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const showMuteControls = identity.kind === "host";
   const canFeature = identity.kind === "host";
 
-  // Sanitize for overlay — strip control chars + zero-width + collapse whitespace.
-  const sanitizeForOverlay = useCallback((text: string): string => {
-    return text
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-      .replace(/[\u200B-\u200F\uFEFF]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }, []);
-
   const featureMessage = useCallback(
     (msg: ChatMessage) => {
       const sanitized = sanitizeForOverlay(msg.msg);
       if (!sanitized) return;
+      // Use the VDO.Ninja label as the author. The roster label sync
+      // (on rosterUpdate) keeps this label in sync with producer-set names.
+      // ChatMessage carries only the label — no seat/UUID to resolve through.
       send({ type: "chatToScreen", author: msg.label, message: sanitized, ts: Date.now() });
     },
-    [send, sanitizeForOverlay],
+    [send],
   );
 
   const clearChatScreen = useCallback(() => {
@@ -777,7 +824,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               textShadow: "0 0 10px rgba(255,215,0,0.53)",
               marginBottom: 4,
             }}>
-              PANELIST ANSWERS — {tracker.title}
+              PANELIST ANSWERS{tracker.title ? ` - ${tracker.title}` : ""}
             </div>
             <div style={{
               display: "flex",
@@ -1038,11 +1085,13 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll the message list to the bottom whenever a new message
-  // arrives. Direct scrollTop write — no animation, just stick to bottom.
+  // Smart auto-scroll: only scroll to bottom when the user is already
+  // near the bottom. If they've scrolled up to re-read, don't yank them.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   const submit = () => {

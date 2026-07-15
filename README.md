@@ -13,8 +13,8 @@ for version history.
 - **Guest wrapper** (`/play`) — iframes VDO.Ninja, adds reaction buttons, cards,
   emoji picker, chat, and buzz-in
 - **OBS underlay** (`/underlay`) — transparent browser source beneath camera
-  layers. Renders emoji floats, card animations, STFU silenced overlays, host
-  tracker, and calibration grid
+  layers. Renders emoji floats, card animations, STFU silenced overlays, mute
+  indicators, and calibration grid
 - **OBS overlay** (`/overlay`) — transparent browser source above all OBS
   sources. Renders chat-to-screen and future top-layer graphics
 - **Producer panel** (`/producer`) — dockable OBS panel for roster, buzz board,
@@ -38,7 +38,7 @@ npm run typecheck  # tsc only, no bundle
 | Route | Purpose |
 |-------|---------|
 | `/play` | Guest/host/editor wrapper: VDO.Ninja iframe + cards + emoji + chat + buzz + mute |
-| `/underlay` | OBS browser source (beneath camera layers): emoji floats, card animations, STFU overlays, host tracker, calibration |
+| `/underlay` | OBS browser source (beneath camera layers): emoji floats, card animations, STFU overlays, mute indicators, calibration |
 | `/overlay` | OBS browser source (top layer): chat-to-screen card, future top-layer elements |
 | `/producer` | Dockable producer panel: roster, buzz board, reset cards, host tracker, activity feed, calibration |
 | `/chat` | Standalone chat UI |
@@ -46,12 +46,12 @@ npm run typecheck  # tsc only, no bundle
 
 ## Cards
 
-Three cards, 1 use per topic per guest, reset by producer between rounds. STFU and WRAP IT UP share a 10s global cooldown:
+Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses), MIC DROP (3 uses) per topic per guest. Playing STFU locks both the STFU and WRAP IT UP buttons for 10s. Playing WRAP IT UP does not start any cooldown. MIC DROP is never affected:
 
 | Card | Effect |
 |------|--------|
-| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Global 10s lockout (shared with WRAP IT UP). SILENCED overlay on muted tiles. |
-| WRAP IT UP! | Orange-themed "time's up" nudge. Shares 10s global cooldown with STFU. |
+| SHUT THE !@#$ UP (STFU) | Mutes all guests except player for 10s. Locks STFU + WRAP IT UP buttons for 10s. SILENCED overlay on muted tiles. |
+| WRAP IT UP! | Orange-themed "time's up" nudge. Locked when STFU is played, but playing it does not start a cooldown. |
 | MIC DROP | Gold-themed "crown the speaker" celebration |
 
 ## Branches and deployment
@@ -90,8 +90,9 @@ https://gamified-2e9.pages.dev/play?seat=<1-6>&push=<pushID>&label=<GuestName>
 https://gamified-2e9.pages.dev/play?role=host&push=<pushID>&label=Host
 ```
 
-Host wrapper includes `&view=` to receive the producer's composited Virtual
-Camera feed. Host is excluded from guest card target pickers.
+Host and guest wrappers share the same URL shape — `&broadcast` auto-discovers
+the producer's composited Virtual Camera feed. Host is excluded from guest
+card target pickers.
 
 ### Editor URL
 
