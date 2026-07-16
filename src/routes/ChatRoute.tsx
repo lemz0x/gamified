@@ -6,9 +6,10 @@ import React, {
   type CSSProperties,
 } from "react";
 import { useSearchParams } from "react-router-dom";
-import { buildChatOnlyUrl, useVdoNinja } from "../lib/vdoninja";
+import { buildChatOnlyUrl, useVdoNinja, type EventPayload } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { CHAT_EMOJIS } from "../emojis";
+import { SEAT_ORDER, type SeatId } from "../coords";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 import { sanitizeForOverlay } from "../lib/sanitize";
 
@@ -40,6 +41,10 @@ interface ChatRouteProps {
   defaultLabel?: string;
 }
 
+function defaultRoster(): Record<SeatId, string> {
+  return { L1: "Guest 1", L2: "Guest 2", L3: "Guest 3", R1: "Guest 4", R2: "Guest 5", R3: "Guest 6" };
+}
+
 export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
   const [search] = useSearchParams();
   const push = search.get("push") ?? "";
@@ -47,6 +52,11 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
 
   const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [roster, setRoster] = useState<Record<SeatId, string>>(defaultRoster);
+  const [tracker, setTracker] = useState<{
+    title: string;
+    answers: Record<SeatId, string>;
+  }>({ title: "", answers: Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string> });
   const chatIdRef = useRef(0);
   const nextChatId = () => `c${chatIdRef.current++}`;
 
@@ -62,9 +72,32 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
     [label],
   );
 
-  const { iframeRef, send } = useVdoNinja({
-    onMessage: (/* ignored — chat-only route, no card/emoji/roster events */) => { },
-  });
+  const onMessage = useCallback(
+    (msg: EventPayload) => {
+      switch (msg.type) {
+        case "rosterUpdate":
+          setRoster(msg.names);
+          break;
+        case "trackerUpdate":
+          setTracker({ title: msg.title, answers: msg.answers });
+          break;
+        default:
+          break;
+      }
+    },
+    [],
+  );
+
+  const { iframeRef, send } = useVdoNinja({ onMessage });
+
+  // On mount, ask the producer for the current roster + tracker state
+  // so a refreshed chat isn't blank until the next producer action.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      send({ type: "getRoster", ts: Date.now() });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [send]);
 
   const { send: sendChat } = useVdoNinjaChat(iframeRef, onChatIncoming);
 
@@ -114,6 +147,9 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
         <LiveIndicator />
       </header>
 
+      {/* ── tracker ─── */}
+      <TrackerBar tracker={tracker} roster={roster} />
+
       {/* ── chat feed ─── */}
       <ChatFeed messages={messages} onFeature={featureMessage} />
 
@@ -155,6 +191,86 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
   );
 }
 
+// ── tracker bar ───────────────────────────────────────────────────────────
+
+interface TrackerBarProps {
+  tracker: { title: string; answers: Record<SeatId, string> };
+  roster: Record<SeatId, string>;
+}
+
+function TrackerBar({ tracker, roster }: TrackerBarProps) {
+  return (
+    <div style={{
+      flex: "0 0 auto",
+      padding: "6px 14px 8px",
+      borderBottom: `1px solid ${NEON.panelEdge}`,
+    }}>
+      <div style={{
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: 1.5,
+        color: "#ffd700",
+        textShadow: "0 0 10px rgba(255,215,0,0.53)",
+        marginBottom: 4,
+      }}>
+        PANELIST ANSWERS{tracker.title ? ` - ${tracker.title}` : " - WAITING"}
+      </div>
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+      }}>
+        {([
+          ["L1", "R1"],
+          ["L2", "R2"],
+          ["L3", "R3"],
+        ] as const).map(([left, right]) => (
+          <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+            {([left, right] as const).map((seat) => {
+              const answer = tracker.answers[seat] || "";
+              return (
+                <div key={seat} style={{
+                  padding: "4px 6px",
+                  borderRadius: 4,
+                  border: "1px solid #1f1f30",
+                  background: "#0e0e16",
+                  minHeight: 36,
+                }}>
+                  <div style={{
+                    fontSize: 9,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    color: "#8a8aa3",
+                    marginBottom: 1,
+                  }}>
+                    {roster[seat]}
+                  </div>
+                  <div style={{
+                    fontFamily: '"Orbitron", system-ui, sans-serif',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    color: answer ? "#ffe866" : "#8a8aa3",
+                    textShadow: answer ? "0 0 8px rgba(255,232,102,0.4)" : "none",
+                    fontStyle: answer ? "normal" : "italic",
+                    textTransform: answer ? "uppercase" : "none",
+                    opacity: answer ? 1 : 0.35,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {answer || "Waiting…"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── pieces ─────────────────────────────────────────────────────────────────
 
 function LiveIndicator() {
@@ -174,13 +290,11 @@ interface ChatFeedProps {
 function ChatFeed({ messages, onFeature }: ChatFeedProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Smart auto-scroll: only scroll to bottom when the user is already
-  // near the bottom. If they've scrolled up to re-read, don't yank them.
+  // Always pin to newest message. No smart scroll - producer and guests
+  // need to see every new message immediately, regardless of scroll position.
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   return (
