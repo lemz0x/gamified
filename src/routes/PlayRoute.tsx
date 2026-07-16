@@ -238,7 +238,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [tracker, setTracker] = useState<{
     title: string;
     answers: Record<SeatId, string>;
-  } | null>(null);
+  }>({ title: "", answers: { L1: "", L2: "", L3: "", R1: "", R2: "", R3: "" } });
   const [cardUses, setCardUses] = useState<Record<CardId, number>>(() =>
     loadCardUses(identity),
   );
@@ -372,13 +372,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           break;
         }
         case "trackerUpdate":
-          // Hide tracker section entirely if producer cleared it
-          // (title empty AND all answers empty). Otherwise show it.
-          if (msg.title === "" && Object.values(msg.answers).every((v) => !v)) {
-            setTracker(null);
-          } else {
-            setTracker({ title: msg.title, answers: msg.answers });
-          }
+          // Always show the tracker section. Empty title = "Waiting..." placeholder.
+          setTracker({ title: msg.title, answers: msg.answers });
           break;
         // Other event types (emoji, calibration, getResetEpoch)
         // are for the overlay/producer — the wrapper itself doesn't react.
@@ -814,8 +809,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           />
         )}
 
-        {tracker && (
-          <div style={{ flex: "0 0 auto", marginTop: 4 }}>
+        <div style={{ flex: "0 0 auto", marginTop: 4 }}>
             <div style={{
               fontSize: 10,
               fontWeight: 800,
@@ -824,7 +818,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               textShadow: "0 0 10px rgba(255,215,0,0.53)",
               marginBottom: 4,
             }}>
-              PANELIST ANSWERS{tracker.title ? ` - ${tracker.title}` : ""}
+              PANELIST ANSWERS{tracker.title ? ` - ${tracker.title}` : " - WAITING"}
             </div>
             <div style={{
               display: "flex",
@@ -881,7 +875,6 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               ))}
             </div>
           </div>
-        )}
 
         <ChatPanel
           messages={chatMessages}
@@ -1085,13 +1078,11 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Smart auto-scroll: only scroll to bottom when the user is already
-  // near the bottom. If they've scrolled up to re-read, don't yank them.
+  // Always pin to newest message. No smart scroll - producer and guests
+  // need to see every new message immediately, regardless of scroll position.
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   const submit = () => {

@@ -263,7 +263,12 @@ function ProducerPanel() {
   // wrappers that join after a reset still catch up.
   const resetEpochRef = useRef<number>(loadResetEpoch());
   // Last tracker payload sent — re-announced when a wrapper requests roster sync.
-  const lastTrackerRef = useRef<{ title: string; answers: Record<SeatId, string> } | null>(null);
+  // Initialized to empty so late joiners always get a tracker (shows "Waiting..."
+  // on the guest side) rather than no tracker at all until the producer sends one.
+  const lastTrackerRef = useRef<{ title: string; answers: Record<SeatId, string> }>({
+    title: "",
+    answers: Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
+  });
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const rosterDirty =
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
@@ -331,14 +336,14 @@ function ProducerPanel() {
           hostName,
           ts: Date.now(),
         });
-        if (lastTrackerRef.current) {
-          sendRef.current?.({
-            type: "trackerUpdate",
-            title: lastTrackerRef.current.title,
-            answers: lastTrackerRef.current.answers,
-            ts: Date.now(),
-          });
-        }
+        // Always re-broadcast the last tracker state so late joiners
+        // see the tracker section immediately (even if it's empty/"Waiting...").
+        sendRef.current?.({
+          type: "trackerUpdate",
+          title: lastTrackerRef.current.title,
+          answers: lastTrackerRef.current.answers,
+          ts: Date.now(),
+        });
       }
     },
     [roster, hostName, buzzOn, buzzOff],
@@ -403,7 +408,9 @@ function ProducerPanel() {
     const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
     setTrackerDraft(empty);
     setTrackerTitle("");
-    lastTrackerRef.current = null;
+    // Store the cleared state so late joiners get the empty tracker
+    // (which shows "Waiting..." on guest side) rather than no tracker at all.
+    lastTrackerRef.current = { title: "", answers: empty };
     send({ type: "trackerUpdate", title: "", answers: empty, ts: Date.now() });
     setFeed((prev) =>
       [
