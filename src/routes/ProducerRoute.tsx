@@ -35,6 +35,8 @@ import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 // Same key used by /play so both surfaces stay in sync via localStorage.
 const ROSTER_STORAGE_KEY = "gamified.roster.v1";
 const HOST_NAME_STORAGE_KEY = "gamified.hostName.v1";
+/** Producer-side persistence of the last committed tracker payload. */
+const TRACKER_STORAGE_KEY = "gamified.tracker.v1";
 /**
  * Producer-side persistence of the latest reset epoch. We re-announce
  * this on every wrapper getResetEpoch request so a wrapper that joined
@@ -113,6 +115,44 @@ function saveHostName(name: string): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(HOST_NAME_STORAGE_KEY, name);
+  } catch {
+    // ignore
+  }
+}
+
+function emptyTrackerState(): { title: string; answers: Record<SeatId, string> } {
+  return {
+    title: "",
+    answers: Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
+  };
+}
+
+/** Load the last committed tracker from localStorage. Falls back to empty. */
+function loadCommittedTracker(): { title: string; answers: Record<SeatId, string> } {
+  if (typeof window === "undefined") return emptyTrackerState();
+  try {
+    const raw = window.localStorage.getItem(TRACKER_STORAGE_KEY);
+    if (!raw) return emptyTrackerState();
+    const parsed = JSON.parse(raw) as Partial<{ title: unknown; answers: unknown }> | null;
+    if (!parsed || typeof parsed !== "object") return emptyTrackerState();
+    const title = typeof parsed.title === "string" ? parsed.title : "";
+    const answers = emptyTrackerState().answers;
+    if (parsed.answers && typeof parsed.answers === "object") {
+      for (const seat of SEAT_ORDER) {
+        const v = (parsed.answers as Record<string, unknown>)[seat];
+        if (typeof v === "string") answers[seat] = v;
+      }
+    }
+    return { title, answers };
+  } catch {
+    return emptyTrackerState();
+  }
+}
+
+function saveCommittedTracker(tracker: { title: string; answers: Record<SeatId, string> }): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TRACKER_STORAGE_KEY, JSON.stringify(tracker));
   } catch {
     // ignore
   }
@@ -254,21 +294,20 @@ function ProducerPanel() {
   const [calibrate, setCalibrate] = useState(false);
   const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
   const [feed, setFeed] = useState<readonly FeedEntry[]>([]);
-  const [trackerTitle, setTrackerTitle] = useState("");
+  const [trackerTitle, setTrackerTitle] = useState<string>(() => loadCommittedTracker().title);
   const [trackerDraft, setTrackerDraft] = useState<Record<SeatId, string>>(
-    () => Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
+    () => loadCommittedTracker().answers,
   );
   const feedIdRef = useRef(0);
   // Latest reset epoch we've fired (persisted) — re-announced on demand so
   // wrappers that join after a reset still catch up.
   const resetEpochRef = useRef<number>(loadResetEpoch());
   // Last tracker payload sent — re-announced when a wrapper requests roster sync.
-  // Initialized to empty so late joiners always get a tracker (shows "Waiting..."
-  // on the guest side) rather than no tracker at all until the producer sends one.
-  const lastTrackerRef = useRef<{ title: string; answers: Record<SeatId, string> }>({
-    title: "",
-    answers: Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
-  });
+  // Initialized from localStorage so a producer refresh restores the committed
+  // tracker, and a subsequent guest refresh receives it instead of an empty one.
+  const lastTrackerRef = useRef<{ title: string; answers: Record<SeatId, string> }>(
+    loadCommittedTracker(),
+  );
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const rosterDirty =
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
@@ -389,7 +428,9 @@ function ProducerPanel() {
 
   const sendTracker = useCallback(() => {
     const title = (trackerTitle || "Tracker").toUpperCase();
-    lastTrackerRef.current = { title, answers: trackerDraft };
+    const payload = { title, answers: trackerDraft };
+    lastTrackerRef.current = payload;
+    saveCommittedTracker(payload);
     send({
       type: "trackerUpdate",
       title,
@@ -406,11 +447,13 @@ function ProducerPanel() {
 
   const clearTracker = useCallback(() => {
     const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
+    const payload = { title: "", answers: empty };
     setTrackerDraft(empty);
     setTrackerTitle("");
     // Store the cleared state so late joiners get the empty tracker
     // (which shows "Waiting..." on guest side) rather than no tracker at all.
-    lastTrackerRef.current = { title: "", answers: empty };
+    lastTrackerRef.current = payload;
+    saveCommittedTracker(payload);
     send({ type: "trackerUpdate", title: "", answers: empty, ts: Date.now() });
     setFeed((prev) =>
       [

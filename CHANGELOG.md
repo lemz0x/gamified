@@ -4,22 +4,43 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 
 ---
 
-## [Unreleased] — feat/chat-to-screen branch
+## [Unreleased] — staging
 
 ### Added
 - **Two-layer OBS architecture:** overlay system split into `/underlay` (beneath camera layers) and `/overlay` (top-layer, above all sources)
-- **Chat-to-screen feature (in progress):** producer can select chat messages and push them to the top-layer overlay as styled on-screen text graphics with neon glow ring and Gamified branding
+- **Chat-to-screen feature:** producer can select chat messages and push them to the top-layer overlay as styled on-screen text graphics with neon glow ring and Gamified branding
 - New `OverlayRoute.tsx` for top-layer overlay (chat-to-screen card)
 - New `UnderlayRoute.tsx` (renamed from old `OverlayRoute.tsx`)
 - Two-iframe architecture on producer panel: existing data-only codirector iframe + new chat-only iframe for VDO.Ninja chat reception
 - `ChatToScreenEvent` and `ChatToScreenClearEvent` on P2P data channel
-- Full v3 implementation plan (704 lines, 3 subagent audit passes, Aria design locked)
 - Underlay/overlay route split in `App.tsx` with `React.lazy`
+- **Tracker always visible:** tracker section renders on `/play` and `/chat` at all times. Empty state shows "WAITING" header with "Waiting..." placeholders. Never hides.
+- **Tracker on chat routes:** `ChatRoute` now listens for `rosterUpdate` and `trackerUpdate` events and renders a `TrackerBar` component. Sends `getRoster` on mount for late joiner sync.
+- **Tracker persistence:** committed tracker stored to `gamified.tracker.v1` in localStorage. Producer refresh restores the last sent tracker. Late joiners after a producer refresh receive the correct state.
+- **Effective label sync:** `PlayRoute` maintains `effectiveLabel` state updated from `rosterUpdate`. Local chat messages, card sender, emoji sender, header display, and featured chat attribution all use the producer-set name instead of the stale URL param.
+- **Chat-to-screen on `/chat`:** `ChatRoute` can feature messages to the overlay.
+- **Sanitize module:** shared `sanitizeForOverlay` extracted to `src/lib/sanitize.ts` for PlayRoute and ChatRoute.
+- **Payload validation hardening:** emoji events validated against `EMOJIS` set, `from` sender field validated on emoji and cardPlay, `rosterUpdate` and `cardReset` field validation, `trackerUpdate` title type check, `chatToScreen` author length cap (64 chars).
+
+### Fixed
+- **STFU sender cooldown:** the guest who plays STFU now gets the 10s cooldown locally. Previously, VDO.Ninja doesn't echo P2P events back to the sender, so the sender's WRAP IT UP button stayed available while all other guests were locked. Extracted `startStfuCooldown` helper called from both `onMessage` and `playCard`.
+- **STFU cooldown timer accuracy:** cooldown now uses absolute expiry time (`cooldownEndsAtRef`) instead of decrementing state. Delayed interval callbacks in OBS CEF no longer extend the cooldown past 10 real seconds.
+- **STFU auto-unmute:** after STFU expires, `reconcileMic` now actively sends `mic: true` to unmute the guest, unless the guest self-muted (dog barking, cough). Previously guests stayed muted after STFU because nothing sent the unmute command.
+- **Self-mute tracking:** `selfMutedRef` tracks manual mic mutes via VDO.Ninja's `mic-mute-state` event (both directions). Prevents force-unmuting a guest who muted themselves when STFU or host-mute clears.
+- **SILENCED overlay bookkeeping:** individual unmute after mute-all now clears both "host" and "muteall" reasons. `guestSelfUnmuted` clears "host" and "muteall" but never "stfu". Prevents stale SILENCED overlays.
+- **Late joiner tracker sync:** `lastTrackerRef` initialized from localStorage (not null). `getRoster` handler always re-broadcasts tracker state. `clearTracker` stores empty state (not null).
+- **Chat scroll:** removed smart auto-scroll (nearBottom check) from PlayRoute ChatPanel and ChatRoute ChatFeed. Always pin to newest message.
+- **Label dedup aliases:** removed duplicate "cry" and "lmao" aliases that mapped to two different emojis.
+- **Underlay roster cache:** underlay loads cached roster from localStorage for instant display before `getRoster` reply.
+- **Underlay getRoster on mount:** underlay sends `getRoster` on mount (1.5s delay) so refreshed underlay shows correct names in card announcements.
 
 ### Changed
 - `/overlay` route now points to the NEW top-layer overlay, not the original underlay
 - Existing OBS browser source should be renamed from `/overlay` to `/underlay`
 - New OBS browser source pointing to `/overlay` should be added at top of source stack
+- Page title changed from "Game Show Control Deck" to "Gamified"
+- `CardColor` type removed from `cards.ts` (unused, colors are inline in cardThemes)
+- Dead CSS keyframes removed from `index.css` (~400 lines: `slamIn`, `shake`, `flashOnce`, `flashRed`, `floatUp`, `pulseGlow`, `spin`, `buzzPulse`, `buzzRing`, `arrowUp`, `arrowDown`, `bannerSwap`, intro keyframes, MVP keyframes, `timerPulse`, `sentimentNumberFly`, `sentimentDialHide`, `silencedRingPulse`)
 
 ---
 
