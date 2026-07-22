@@ -106,9 +106,15 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 
 **STFU mute:** Dual-flag system (`hostMutedRef` + `stfuMutedRef`) with single circuit-breaker (500ms interval re-asserting `mic: false`). Per-seat mute reasons prevent stacking orphans. SILENCED overlay uses Aria's layered approach (base wash, vignette, pink border ring, label animation). No `mix-blend-mode`.
 
+**STFU sender cooldown:** VDO.Ninja does not echo P2P events back to the sender. Without a local cooldown, the guest who plays STFU could immediately play WRAP IT UP while all other guests were locked. Fix: `startStfuCooldown()` helper is called from both the inbound `onMessage` handler and the local `playCard` function. Cooldown uses absolute expiry time (`cooldownEndsAtRef`) instead of decrementing state, so delayed interval callbacks in OBS CEF can't extend it past 10 real seconds.
+
+**Self-mute tracking:** `selfMutedRef` tracks manual mic mutes via VDO.Ninja's `mic-mute-state` event (both directions). When STFU or host-mute clears, `reconcileMic` checks this ref and does NOT force-unmute a guest who muted themselves.
+
 **Late joiner sync:** Wrappers send `getRoster` on mount (1.5s delay for channel setup). Producer re-broadcasts current roster, host name, and last tracker payload. Mirrors the `getResetEpoch` handshake pattern.
 
-**Host tracker:** Producer types per-seat answers, sends via `trackerUpdate` P2P event. Host display shows 2x3 grid below buzzers. Dark cards (#0e0e16), Orbitron font, gold accent.
+**Host tracker:** Producer types per-seat answers, sends via `trackerUpdate` P2P event. Host display shows 2x3 grid below buzzers. Dark cards (#0e0e16), Orbitron font, gold accent. Committed tracker persists to `localStorage` (`gamified.tracker.v1`) via `saveCommittedTracker()`. On producer mount, state initializes from `loadCommittedTracker()`. `sendTracker` and `clearTracker` both persist. `lastTrackerRef` initializes from localStorage (not null), so a producer refresh still serves the correct tracker to late joiners.
+
+**Effective label sync:** `PlayRoute` maintains `effectiveLabel` state + `effectiveLabelRef`, updated on `rosterUpdate`. Local chat messages, card sender identity, emoji sender identity, header display, and featured chat attribution all use `effectiveLabel` instead of the stale URL parameter `identity.label`. This ensures display names update live when the producer changes roster names mid-show.
 
 **SFX:** Card sounds preloaded, cached, cloned per playback. Source files pre-attenuated at 50%. HTML5 volume 0.4. Cache-busting via `SFX_VERSION` (currently `v7`). Plays on underlay, wrapper, and producer. Clone cleanup on both `ended` and `error` events. DEV-only console logging.
 

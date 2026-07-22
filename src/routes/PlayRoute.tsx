@@ -246,6 +246,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   const [emojiPulse, setEmojiPulse] = useState<Emoji | null>(null);
   // Tracked in a ref so the listener can compare without a re-render loop.
   const lastResetSeenRef = useRef<number>(loadLastResetSeen());
+  // Effective label tracks the current display name for this identity.
+  // Updated from rosterUpdate so local chat messages, featured chat attribution,
+  // and card sender labels use the producer-set name, not the stale URL param.
+  const [effectiveLabel, setEffectiveLabel] = useState(identity.label);
+  const effectiveLabelRef = useRef(effectiveLabel);
+  effectiveLabelRef.current = effectiveLabel;
   const [chatMessages, setChatMessages] = useState<readonly ChatMessage[]>([]);
   const chatIdRef = useRef(0);
   const nextChatId = () => `c${chatIdRef.current++}`;
@@ -262,6 +268,43 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // immediate retaliation. Tracked as seconds remaining; null = not on cooldown.
   const [stfuCooldown, setStfuCooldown] = useState<number | null>(null);
   const stfuCooldownIntervalRef = useRef<number | null>(null);
+  // Absolute expiry time so delayed interval ticks don't extend the cooldown
+  // (OBS CEF or backgrounded tabs can delay setInterval callbacks).
+  const cooldownEndsAtRef = useRef<number | null>(null);
+
+  // Shared cooldown helper used by both inbound cardPlay handler and local
+  // playCard. VDO.Ninja doesn't echo P2P events back to the sender, so the
+  // sender must start the cooldown locally or WRAP IT UP stays available.
+  function startStfuCooldown(durationMs: number = 10_000): void {
+    if (stfuCooldownIntervalRef.current !== null) {
+      window.clearInterval(stfuCooldownIntervalRef.current);
+    }
+    cooldownEndsAtRef.current = Date.now() + durationMs;
+    const remainingSec = Math.ceil(durationMs / 1000);
+    setStfuCooldown(remainingSec);
+    stfuCooldownIntervalRef.current = window.setInterval(() => {
+      const ends = cooldownEndsAtRef.current;
+      if (ends === null) {
+        if (stfuCooldownIntervalRef.current !== null) {
+          window.clearInterval(stfuCooldownIntervalRef.current);
+          stfuCooldownIntervalRef.current = null;
+        }
+        setStfuCooldown(null);
+        return;
+      }
+      const remaining = Math.ceil((ends - Date.now()) / 1000);
+      if (remaining <= 0) {
+        if (stfuCooldownIntervalRef.current !== null) {
+          window.clearInterval(stfuCooldownIntervalRef.current);
+          stfuCooldownIntervalRef.current = null;
+        }
+        cooldownEndsAtRef.current = null;
+        setStfuCooldown(null);
+      } else {
+        setStfuCooldown(remaining);
+      }
+    }, 1000);
+  }
 
   const hostMutedRef = useRef(false);
   const stfuMutedRef = useRef(false);
@@ -338,11 +381,19 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               muteIframeRef.current?.contentWindow?.postMessage({ label: newName }, "*");
               lastPushedLabelRef.current = newName;
             }
+            // Update effective label so local chat, card sender, and header
+            // use the producer-set name instead of the stale URL param.
+            if (newName && newName !== effectiveLabelRef.current) {
+              setEffectiveLabel(newName);
+            }
           } else if (identity.kind === "host" && msg.hostName !== undefined) {
             const lastPushed = lastPushedLabelRef.current ?? identity.label;
             if (msg.hostName !== lastPushed) {
               muteIframeRef.current?.contentWindow?.postMessage({ label: msg.hostName }, "*");
               lastPushedLabelRef.current = msg.hostName;
+            }
+            if (msg.hostName !== effectiveLabelRef.current) {
+              setEffectiveLabel(msg.hostName);
             }
           }
           break;
@@ -409,23 +460,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           // WRAP IT UP for 10s so the target can't counter with WRAP.
           // MIC DROP stays open. WRAP IT UP itself doesn't trigger this.
           if (msg.cardId === "stfu" && identity.kind === "guest") {
-            // Clear any existing cooldown interval
-            if (stfuCooldownIntervalRef.current !== null) {
-              window.clearInterval(stfuCooldownIntervalRef.current);
-            }
-            setStfuCooldown(10);
-            stfuCooldownIntervalRef.current = window.setInterval(() => {
-              setStfuCooldown((prev) => {
-                if (prev === null || prev <= 1) {
-                  if (stfuCooldownIntervalRef.current !== null) {
-                    window.clearInterval(stfuCooldownIntervalRef.current);
-                    stfuCooldownIntervalRef.current = null;
-                  }
-                  return null;
-                }
-                return prev - 1;
-              });
-            }, 1000);
+            startStfuCooldown();
           }
           break;
         }
@@ -609,7 +644,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           const next = [...prev, {
             id: nextChatId(),
             source: "local" as const,
-            label: identity.label,
+            label: effectiveLabelRef.current,
             msg: trimmed,
             ts: Date.now(),
           }];
@@ -618,7 +653,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       }
       return ok;
     },
-    [identity.label, sendChat],
+    [sendChat],
   );
 
   const iframeSrc = useMemo(() => {
@@ -663,7 +698,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       lastEmojiTsRef.current = now;
       send({
         type: "emoji",
-        from: senderFromIdentity(identity),
+        from: { ...senderFromIdentity(identity), label: effectiveLabelRef.current },
         emoji,
         ts: Date.now(),
       });
@@ -680,7 +715,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     (card: Card, target: { seat: SeatId; label: string }) => {
       send({
         type: "cardPlay",
-        from: senderFromIdentity(identity),
+        from: { ...senderFromIdentity(identity), label: effectiveLabelRef.current },
         cardId: card.id,
         targetSeat: target.seat,
         targetLabel: target.label,
@@ -688,6 +723,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       });
       // Play SFX locally so the guest who played the card hears it immediately.
       playCardSfx(card.id);
+      // Start cooldown locally for STFU. VDO.Ninja doesn't echo P2P events
+      // back to the sender, so without this the sender's WRAP IT UP stays
+      // available while everyone else is locked.
+      if (card.id === "stfu" && identity.kind === "guest") {
+        startStfuCooldown();
+      }
       setCardUses((prev) => {
         const next = { ...prev, [card.id]: prev[card.id] + 1 };
         saveCardUses(identity, next);
@@ -722,7 +763,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
 
       <aside style={styles.panel}>
         <header style={styles.header}>
-          <span style={styles.headerLabel}>{identity.label.toUpperCase()}</span>
+          <span style={styles.headerLabel}>{effectiveLabel.toUpperCase()}</span>
           <span style={styles.wordmark}>GAMIFIED</span>
           <LiveIndicator />
         </header>
