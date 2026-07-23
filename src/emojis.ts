@@ -46,6 +46,7 @@ export const CHAT_EMOJIS = [
   "\u{1F621}", // 😡 pouting face (red angry)
   "\u{1F634}", // 😴 sleepy
   "\u{1F937}", // 🤷 shrug
+  "\u{1F921}", // 🤡 clown (row 3 first for balance)
   "\u{1F44F}", // 👏 clap
   "\u{1F64F}", // 🙏 pray
   "\u{270A}", // ✊ fist
@@ -54,7 +55,6 @@ export const CHAT_EMOJIS = [
   "\u{1F44D}", // 👍 thumbs up
   "\u{1F44E}", // 👎 thumbs down
   "\u{1F4A9}", // 💩 poop
-  "\u{1F921}", // 🤡 clown
   "\u{1F440}", // 👀 eyes
   "\u{1F480}", // 💀 skull
   "\u{1F37F}", // 🍿 popcorn
