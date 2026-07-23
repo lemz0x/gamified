@@ -1,6 +1,6 @@
 /**
- * The fixed set of 13 reaction emojis available to every guest in the
- * /play wrapper. Order is the on-screen order (2 rows of 6 + 1, top-left to
+ * The fixed set of 12 reaction emojis available to every guest in the
+ * /play wrapper. Order is the on-screen order (2 rows of 6, top-left to
  * bottom-right). Treated as content, not code: change the set here, do
  * not hard-code emojis in components.
  *
@@ -19,15 +19,13 @@ export const EMOJIS = [
   "\u{1F4AF}", // 💯
   "\u{1F44F}", // 👏
   "\u{1F44D}", // 👍
-  // row 2: 😂 💀 👀 💩 👎 🍿
+  // row 2: 😂 💀 👀 🤡 💩 👎
   "\u{1F602}", // 😂
   "\u{1F480}", // 💀
   "\u{1F440}", // 👀
+  "\u{1F921}", // 🤡
   "\u{1F4A9}", // 💩
   "\u{1F44E}", // 👎
-  "\u{1F37F}", // 🍿
-  // row 3: 🤡
-  "\u{1F921}", // 🤡
 ] as const;
 
 /**
@@ -44,7 +42,6 @@ export const CHAT_EMOJIS = [
   "\u{1F622}", // 😢 sad
   "\u{1F62D}", // 😭 sob
   "\u{1F973}", // 🥳 party face
-  "\u{1F60D}", // 😍 heart eyes
   "\u{1F914}", // 🤔 think
   "\u{1F621}", // 😡 pouting face (red angry)
   "\u{1F634}", // 😴 sleepy
@@ -60,6 +57,7 @@ export const CHAT_EMOJIS = [
   "\u{1F921}", // 🤡 clown
   "\u{1F440}", // 👀 eyes
   "\u{1F480}", // 💀 skull
+  "\u{1F37F}", // 🍿 popcorn
 ] as const;
 
 /** Per-emoji brand colour + hover glow params. Single source of truth for
@@ -77,5 +75,4 @@ export const EMOJI_COLOURS: Record<string, { hex: string; core: number; spread: 
   "\u{1F921}": { hex: "#ffd700", core: 0.70, spread: 26 },   // 🤡
   "\u{1F4A9}": { hex: "#66ffcc", core: 0.60, spread: 24 },   // 💩
   "\u{1F44E}": { hex: "#ff2a6d", core: 0.55, spread: 22 },   // 👎
-  "\u{1F37F}": { hex: "#ffd700", core: 0.60, spread: 22 },   // 🍿
 };
