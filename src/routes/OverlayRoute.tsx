@@ -226,10 +226,9 @@ const ambientFeatherStyle: CSSProperties = {
 
 const cardPillStyle: CSSProperties = {
   position: "absolute",
-  inset: -16,
-  borderRadius: 24,
-  background:
-    "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.12) 90%, transparent 100%)",
+  inset: -8,
+  borderRadius: 20,
+  background: "rgba(0,0,0,0.82)",
   pointerEvents: "none",
   zIndex: -1,
 };
