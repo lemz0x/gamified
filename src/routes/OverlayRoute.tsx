@@ -93,11 +93,10 @@ export function OverlayRoute() {
         title="data-channel"
       />
       {chatScreenSprite && (
-        <>
+        <div style={fadeWrapStyle}>
           <div style={ambientFeatherStyle} />
-          <div style={cardPillStyle} />
           <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
-        </>
+        </div>
       )}
     </>
   );
@@ -106,10 +105,10 @@ export function OverlayRoute() {
 // ── ChatScreenCard ──────────────────────────────────────────────────────
 
 const ChatScreenCard = React.memo(function ChatScreenCard({ sprite }: { sprite: ChatScreenSprite }) {
-  // Grapheme-aware truncation (200 grapheme safety cap).
+  // Grapheme-aware truncation (300 grapheme safety cap).
   const graphemes = Array.from(sprite.message);
-  const display = graphemes.length > 200
-    ? graphemes.slice(0, 200).join("") + "\u2026"
+  const display = graphemes.length > 300
+    ? graphemes.slice(0, 300).join("\u2026")
     : sprite.message;
 
   return (
@@ -118,6 +117,9 @@ const ChatScreenCard = React.memo(function ChatScreenCard({ sprite }: { sprite: 
         className="glow-wrap"
         style={glowWrapStyle}
       >
+        {/* Tight dark backdrop behind the card. Tracks the card's actual
+            dimensions (absolute inset) instead of fixed width/height. */}
+        <div style={cardPillStyle} />
         <div className="glow-ring" style={glowRingStyle} />
         <div style={chatCardStyle}>
           <div style={logoLeftStyle}>
@@ -165,11 +167,18 @@ const cardPosStyle: CSSProperties = {
   padding: "0 14px",
 };
 
+const fadeWrapStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  zIndex: 54,
+  pointerEvents: "none",
+  animation: `fadeInOut ${CHAT_SCREEN_MS}ms ease-in-out forwards`,
+};
+
 const glowWrapStyle: CSSProperties = {
   position: "relative",
   display: "inline-flex",
   verticalAlign: "bottom",
-  animation: `cardIn ${CHAT_SCREEN_MS}ms cubic-bezier(0.2,1.5,0.4,1) forwards`,
 };
 
 const glowRingStyle: CSSProperties = {
@@ -213,21 +222,16 @@ const ambientFeatherStyle: CSSProperties = {
   background:
     "radial-gradient(ellipse 1400px 240px at 50% 100%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.22) 50%, transparent 80%)",
   pointerEvents: "none",
-  zIndex: 54,
 };
 
 const cardPillStyle: CSSProperties = {
-  position: "fixed",
-  left: "50%",
-  transform: "translateX(-50%)",
-  bottom: 0,
-  width: 1180,
-  height: 120,
+  position: "absolute",
+  inset: -16,
   borderRadius: 24,
   background:
     "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.12) 90%, transparent 100%)",
   pointerEvents: "none",
-  zIndex: 55,
+  zIndex: -1,
 };
 
 const logoLeftStyle: CSSProperties = {
@@ -263,7 +267,7 @@ const messageStyle: CSSProperties = {
   lineHeight: 1.3,
   wordBreak: "break-word",
   display: "-webkit-box",
-  WebkitLineClamp: 2,
+  WebkitLineClamp: 3,
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
 };
