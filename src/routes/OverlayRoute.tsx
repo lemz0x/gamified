@@ -117,9 +117,6 @@ const ChatScreenCard = React.memo(function ChatScreenCard({ sprite }: { sprite: 
         className="glow-wrap"
         style={glowWrapStyle}
       >
-        {/* Tight dark backdrop behind the card. Tracks the card's actual
-            dimensions (absolute inset) instead of fixed width/height. */}
-        <div style={cardPillStyle} />
         <div className="glow-ring" style={glowRingStyle} />
         <div style={chatCardStyle}>
           <div style={logoLeftStyle}>
@@ -201,17 +198,9 @@ const chatCardStyle: CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 80px rgba(0,0,0,0.5)",
 };
 
-/** Dual-Layer Focus (Approach 3): Two stacked elements behind the card.
- *
- *  Layer 1 (ambientFeatherStyle): Wide, low-opacity gradient across the full
- *  bottom. Feathered edges, very subtle. Creates an ambient darkening without
- *  a visible "bar" — the camera feed shows through faintly.
- *
- *  Layer 2 (cardPillStyle): Tight, rounded dark rectangle positioned directly
- *  behind the card area. Higher opacity than the feather for maximum text
- *  readability, but constrained to the card's footprint so it doesn't look like
- *  a broadcast lower-third bar.
- */
+/** Ambient backdrop: wide, low-opacity gradient across the full bottom.
+ *  Feathered edges. The card itself (rgba(6,4,12,0.97) + box-shadow)
+ *  handles its own readability. No separate pill layer needed. */
 
 const ambientFeatherStyle: CSSProperties = {
   position: "fixed",
@@ -222,15 +211,6 @@ const ambientFeatherStyle: CSSProperties = {
   background:
     "radial-gradient(ellipse 1400px 240px at 50% 100%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.22) 50%, transparent 80%)",
   pointerEvents: "none",
-};
-
-const cardPillStyle: CSSProperties = {
-  position: "absolute",
-  inset: -8,
-  borderRadius: 20,
-  background: "rgba(0,0,0,0.82)",
-  pointerEvents: "none",
-  zIndex: -1,
 };
 
 const logoLeftStyle: CSSProperties = {
