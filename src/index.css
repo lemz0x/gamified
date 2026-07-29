@@ -333,14 +333,13 @@ body.overlay-route #root {
 
 /* ── Chat-to-screen overlay (top-layer /overlay route) ──────────────── */
 
-/* Chat card entrance + hold + exit. 15s total.
-   Applied to .glow-wrap so glow ring and card stay aligned. */
-@keyframes cardIn {
-  0%   { opacity: 0; transform: translateY(12px) scale(0.97); }
-  3%   { opacity: 1; transform: translateY(0) scale(1.01); }
-  5%   { transform: translateY(0) scale(1); }
+/* Full-stack fade (card + backdrop + ambient). 15s total.
+   Applied to .fadeWrap so all layers fade in/out together. */
+@keyframes fadeInOut {
+  0%   { opacity: 0; }
+  3%   { opacity: 1; }
   93%  { opacity: 1; }
-  100% { opacity: 0; transform: translateY(5px) scale(0.99); }
+  100% { opacity: 0; }
 }
 
 /* Glow ring: masked border strip (preferred). */

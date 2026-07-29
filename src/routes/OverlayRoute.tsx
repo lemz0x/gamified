@@ -93,11 +93,10 @@ export function OverlayRoute() {
         title="data-channel"
       />
       {chatScreenSprite && (
-        <>
+        <div style={fadeWrapStyle}>
           <div style={ambientFeatherStyle} />
-          <div style={cardPillStyle} />
           <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
-        </>
+        </div>
       )}
     </>
   );
@@ -106,10 +105,10 @@ export function OverlayRoute() {
 // ── ChatScreenCard ──────────────────────────────────────────────────────
 
 const ChatScreenCard = React.memo(function ChatScreenCard({ sprite }: { sprite: ChatScreenSprite }) {
-  // Grapheme-aware truncation (200 grapheme safety cap).
+  // Grapheme-aware truncation (300 grapheme safety cap).
   const graphemes = Array.from(sprite.message);
-  const display = graphemes.length > 200
-    ? graphemes.slice(0, 200).join("") + "\u2026"
+  const display = graphemes.length > 300
+    ? graphemes.slice(0, 300).join("\u2026")
     : sprite.message;
 
   return (
@@ -165,11 +164,18 @@ const cardPosStyle: CSSProperties = {
   padding: "0 14px",
 };
 
+const fadeWrapStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  zIndex: 54,
+  pointerEvents: "none",
+  animation: `fadeInOut ${CHAT_SCREEN_MS}ms ease-in-out forwards`,
+};
+
 const glowWrapStyle: CSSProperties = {
   position: "relative",
   display: "inline-flex",
   verticalAlign: "bottom",
-  animation: `cardIn ${CHAT_SCREEN_MS}ms cubic-bezier(0.2,1.5,0.4,1) forwards`,
 };
 
 const glowRingStyle: CSSProperties = {
@@ -192,17 +198,9 @@ const chatCardStyle: CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 80px rgba(0,0,0,0.5)",
 };
 
-/** Dual-Layer Focus (Approach 3): Two stacked elements behind the card.
- *
- *  Layer 1 (ambientFeatherStyle): Wide, low-opacity gradient across the full
- *  bottom. Feathered edges, very subtle. Creates an ambient darkening without
- *  a visible "bar" — the camera feed shows through faintly.
- *
- *  Layer 2 (cardPillStyle): Tight, rounded dark rectangle positioned directly
- *  behind the card area. Higher opacity than the feather for maximum text
- *  readability, but constrained to the card's footprint so it doesn't look like
- *  a broadcast lower-third bar.
- */
+/** Ambient backdrop: wide, low-opacity gradient across the full bottom.
+ *  Feathered edges. The card itself (rgba(6,4,12,0.97) + box-shadow)
+ *  handles its own readability. No separate pill layer needed. */
 
 const ambientFeatherStyle: CSSProperties = {
   position: "fixed",
@@ -213,21 +211,6 @@ const ambientFeatherStyle: CSSProperties = {
   background:
     "radial-gradient(ellipse 1400px 240px at 50% 100%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.22) 50%, transparent 80%)",
   pointerEvents: "none",
-  zIndex: 54,
-};
-
-const cardPillStyle: CSSProperties = {
-  position: "fixed",
-  left: "50%",
-  transform: "translateX(-50%)",
-  bottom: 0,
-  width: 1180,
-  height: 120,
-  borderRadius: 24,
-  background:
-    "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.12) 90%, transparent 100%)",
-  pointerEvents: "none",
-  zIndex: 55,
 };
 
 const logoLeftStyle: CSSProperties = {
@@ -263,7 +246,7 @@ const messageStyle: CSSProperties = {
   lineHeight: 1.3,
   wordBreak: "break-word",
   display: "-webkit-box",
-  WebkitLineClamp: 2,
+  WebkitLineClamp: 3,
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
 };
