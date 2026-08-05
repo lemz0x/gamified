@@ -23,6 +23,7 @@ import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 import { sanitizeForOverlay } from "../lib/sanitize";
+import { renderLinks } from "../lib/linkify";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -1255,7 +1256,7 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
               >
                 {m.source === "local" ? "you" : m.label}
               </span>
-              <span style={styles.chatBody}>{m.msg}</span>
+              <span style={styles.chatBody}>{renderLinks(m.msg)}</span>
               {onFeature && (
                 <button
                   type="button"

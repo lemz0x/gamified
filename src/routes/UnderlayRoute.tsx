@@ -395,11 +395,16 @@ export function UnderlayRoute() {
         // cardReset, getResetEpoch → not needed by overlay.
         case "guestSelfUnmuted": {
           // A guest self-unmuted by clicking their mic in VDO.Ninja.
-          // Clear "host" and "muteall" reasons so the SILENCED overlay
-          // removes for that seat. Never clear "stfu" — the force-mute
-          // window must keep its visual until the 10s timer expires.
+          // Only clear the individual "host" reason — NOT "muteall".
+          // This prevents a spurious mic-mute-state event from clearing
+          // the SILENCED overlay during a mute-all. If a guest unmutes
+          // themselves during mute-all, their mic goes live but the
+          // SILENCED overlay stays on (signals to producer that someone
+          // went around the mute). Only an explicit unmute-all or
+          // individual unmute from the host/producer clears "muteall".
+          // Never clear "stfu" — the force-mute window must keep its
+          // visual until the 10s timer expires.
           removeMuteReasons([msg.seat], "host");
-          removeMuteReasons([msg.seat], "muteall");
           break;
         }
         default:
