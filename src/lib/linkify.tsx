@@ -54,6 +54,12 @@ export function linkify(text: string): LinkSegment[] {
  */
 import React from "react";
 
+const DEFAULT_LINK_STYLE: React.CSSProperties = {
+  color: "#22e2ff",
+  textDecoration: "underline",
+  textUnderlineOffset: 2,
+};
+
 export function renderLinks(
   text: string,
   linkStyle?: React.CSSProperties,
@@ -66,7 +72,7 @@ export function renderLinks(
           href={seg.value}
           target="_blank"
           rel="noopener noreferrer"
-          style={linkStyle}
+          style={linkStyle ?? DEFAULT_LINK_STYLE}
         >
           {seg.value}
         </a>
