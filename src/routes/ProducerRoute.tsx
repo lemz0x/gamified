@@ -351,6 +351,30 @@ function ProducerPanel() {
       if (msg.type === "cardPlay") {
         playCardSfx(msg.cardId);
       }
+      // Sync mute state from host: when host mutes/unmutes, update
+      // producer panel indicators so both panels stay in sync.
+      if (msg.type === "muteGuest") {
+        setMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (msg.target === "all") {
+            SEAT_ORDER.forEach((s) => next.add(s));
+          } else {
+            next.add(msg.target as SeatId);
+          }
+          return next;
+        });
+      }
+      if (msg.type === "unmuteGuest") {
+        setMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (msg.target === "all") {
+            next.clear();
+          } else {
+            next.delete(msg.target as SeatId);
+          }
+          return next;
+        });
+      }
       // Guest self-unmuted: remove from muted set so the UI updates.
       if (msg.type === "guestSelfUnmuted") {
         setMutedSeats((prev) => {
