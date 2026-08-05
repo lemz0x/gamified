@@ -473,8 +473,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         }
         case "muteGuest": {
           if (identity.kind === "editor") break;
+          // Mute-all targets guests only, not the host.
+          // Individual mutes target specific seats (also guests only).
           const isTarget =
-            msg.target === "all" ||
+            (msg.target === "all" && identity.kind === "guest") ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             hostMutedRef.current = true;
@@ -488,6 +490,8 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             setIsMuted(true);
           }
+          // Host/producer need the custom event for their UI indicators
+          // regardless of whether they were the target.
           if (isTarget || identity.kind === "host") {
             window.dispatchEvent(
               new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: true } }),
@@ -497,8 +501,9 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         }
         case "unmuteGuest": {
           if (identity.kind === "editor") break;
+          // Unmute-all targets guests only, not the host.
           const isTarget =
-            msg.target === "all" ||
+            (msg.target === "all" && identity.kind === "guest") ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             hostMutedRef.current = false;
