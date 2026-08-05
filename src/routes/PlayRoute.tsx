@@ -23,6 +23,7 @@ import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 import { sanitizeForOverlay } from "../lib/sanitize";
+import { renderLinks } from "../lib/linkify";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
@@ -308,6 +309,10 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
 
   const hostMutedRef = useRef(false);
   const stfuMutedRef = useRef(false);
+  // Mute-all is a FORCE mute (circuit breaker re-asserts mic: false).
+  // Separate from hostMutedRef so individual mutes stay advisory
+  // (guest can self-unmute) while mute-all locks everyone down.
+  const muteAllRef = useRef(false);
   // Tracks whether the guest manually muted themselves via the VDO.Ninja
   // mic button. Prevents reconcileMic from force-unmuting a guest who
   // muted themselves (dog barking, cough) when STFU or host-mute clears.
@@ -323,12 +328,12 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     // Only start if not already running
     if (hostMuteIntervalRef.current !== null) return;
     hostMuteIntervalRef.current = window.setInterval(() => {
-      if (stfuMutedRef.current) {
-        // STFU is a hard lock — re-assert mute even if guest clicks mic.
-        // Host mutes are advisory: guests can unmute themselves.
+      // Re-assert mute while STFU or mute-all is active.
+      // Both are force mutes — guest cannot self-unmute.
+      if (stfuMutedRef.current || muteAllRef.current) {
         muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
       } else {
-        // STFU cleared — stop the breaker
+        // All force mutes cleared — stop the breaker
         if (hostMuteIntervalRef.current !== null) {
           window.clearInterval(hostMuteIntervalRef.current);
           hostMuteIntervalRef.current = null;
@@ -340,13 +345,15 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
   // Ref-based so onMessage can call it without deps
   const reconcileMicRef = useRef<() => void>(() => {});
   reconcileMicRef.current = () => {
-    const muted = hostMutedRef.current || stfuMutedRef.current;
-    // Only force-mute for STFU. Host mutes are advisory (guest can unmute).
-    if (stfuMutedRef.current) {
+    const muted = hostMutedRef.current || stfuMutedRef.current || muteAllRef.current;
+    // Force-mute for STFU and mute-all (circuit breaker re-asserts).
+    // Individual host mutes are advisory (guest can self-unmute).
+    if (stfuMutedRef.current || muteAllRef.current) {
       muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
+      startCircuitBreaker();
     } else if (!hostMutedRef.current && !selfMutedRef.current) {
-      // STFU cleared and not host-muted and not self-muted: actively unmute.
-      // Without this, the VDO.Ninja mic stays muted after STFU expires
+      // All force mutes cleared, not host-muted, not self-muted: actively unmute.
+      // Without this, the VDO.Ninja mic stays muted after STFU/mute-all expires
       // because nothing else sends { mic: true }.
       // If the guest self-muted (dog, cough), we DON'T force-unmute them.
       muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
@@ -466,16 +473,25 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         }
         case "muteGuest": {
           if (identity.kind === "editor") break;
+          // Mute-all targets guests only, not the host.
+          // Individual mutes target specific seats (also guests only).
           const isTarget =
-            msg.target === "all" ||
+            (msg.target === "all" && identity.kind === "guest") ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             hostMutedRef.current = true;
-            // Mute once, but don't start circuit breaker — host mutes are
-            // advisory. Guest can unmute themselves by clicking their mic.
+            if (msg.target === "all") {
+              // Mute-all is a FORCE mute — start circuit breaker so guests
+              // can't self-unmute. Unlike individual host mutes (advisory),
+              // only an explicit "unmute all" from the host releases it.
+              muteAllRef.current = true;
+              startCircuitBreaker();
+            }
             muteIframeRef.current?.contentWindow?.postMessage({ mic: false }, "*");
             setIsMuted(true);
           }
+          // Host/producer need the custom event for their UI indicators
+          // regardless of whether they were the target.
           if (isTarget || identity.kind === "host") {
             window.dispatchEvent(
               new CustomEvent("gamified-mute-state", { detail: { seat: msg.target, muted: true } }),
@@ -485,13 +501,19 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         }
         case "unmuteGuest": {
           if (identity.kind === "editor") break;
+          // Unmute-all targets guests only, not the host.
           const isTarget =
-            msg.target === "all" ||
+            (msg.target === "all" && identity.kind === "guest") ||
             (identity.kind === "guest" && identity.seat === msg.target);
           if (isTarget) {
             hostMutedRef.current = false;
+            if (msg.target === "all") {
+              // Clear mute-all force mute. reconcileMic will unmute the
+              // guest (unless they self-muted). Circuit breaker stops
+              // on next tick when it sees both stfuMuted and muteAll are false.
+              muteAllRef.current = false;
+            }
             reconcileMicRef.current();
-            // Circuit-breaker will stop on next tick when it sees both flags are false
           }
           if (isTarget || identity.kind === "host") {
             window.dispatchEvent(
@@ -570,8 +592,11 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
       selfMutedRef.current = data.value === true;
       // value: false means the user clicked unmute
       if (data.value === false) {
-        // Only react if we're a host-muted guest (not STFU-muted)
-        if (!hostMutedRef.current || stfuMutedRef.current) return;
+        // If mute-all or STFU is active, ignore the self-unmute.
+        // These are force mutes — guest cannot release them.
+        if (muteAllRef.current || stfuMutedRef.current) return;
+        // Only react if we're a host-muted guest (individual advisory mute)
+        if (!hostMutedRef.current) return;
         if (identity.kind !== "guest") return;
         // Clear local mute state
         hostMutedRef.current = false;
@@ -1255,7 +1280,7 @@ function ChatPanel({ messages, onSend, onFeature, onClearScreen, silenced }: Cha
               >
                 {m.source === "local" ? "you" : m.label}
               </span>
-              <span style={styles.chatBody}>{m.msg}</span>
+              <span style={styles.chatBody}>{renderLinks(m.msg)}</span>
               {onFeature && (
                 <button
                   type="button"

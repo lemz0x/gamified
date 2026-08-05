@@ -8,6 +8,7 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import { buildChatOnlyUrl, useVdoNinja, type EventPayload } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
+import { renderLinks } from "../lib/linkify";
 import { CHAT_EMOJIS } from "../emojis";
 import { SEAT_ORDER, type SeatId } from "../coords";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
@@ -312,7 +313,7 @@ function ChatFeed({ messages, onFeature }: ChatFeedProps) {
             >
               {m.source === "local" ? "you" : m.label}
             </span>
-            <span style={styles.chatBody}>{m.msg}</span>
+            <span style={styles.chatBody}>{renderLinks(m.msg)}</span>
             {onFeature && (
               <button
                 type="button"

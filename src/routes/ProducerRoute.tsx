@@ -309,6 +309,7 @@ function ProducerPanel() {
     loadCommittedTracker(),
   );
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
+  const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
   const rosterDirty =
     SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
     draftHostName !== hostName;
@@ -349,6 +350,39 @@ function ProducerPanel() {
       }
       if (msg.type === "cardPlay") {
         playCardSfx(msg.cardId);
+      }
+      // Sync mute state from host: when host mutes/unmutes, update
+      // producer panel indicators so both panels stay in sync.
+      if (msg.type === "muteGuest") {
+        setMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (msg.target === "all") {
+            SEAT_ORDER.forEach((s) => next.add(s));
+          } else {
+            next.add(msg.target as SeatId);
+          }
+          return next;
+        });
+      }
+      if (msg.type === "unmuteGuest") {
+        setMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (msg.target === "all") {
+            next.clear();
+          } else {
+            next.delete(msg.target as SeatId);
+          }
+          return next;
+        });
+      }
+      // Guest self-unmuted: remove from muted set so the UI updates.
+      if (msg.type === "guestSelfUnmuted") {
+        setMutedSeats((prev) => {
+          if (!prev.has(msg.seat)) return prev;
+          const next = new Set(prev);
+          next.delete(msg.seat);
+          return next;
+        });
       }
       // A wrapper just mounted; re-announce the latest reset epoch so it
       // can catch up on any reset that fired before it was open.
@@ -424,6 +458,36 @@ function ProducerPanel() {
         ...prev,
       ].slice(0, FEED_CAP),
     );
+  }, [send]);
+
+  // ── mute controls ────────────────────────────────────────────────────
+  // Producer can mute/unmute individual guests or all at once.
+  // These send the same muteGuest/unmuteGuest events the host uses.
+  // No SILENCED overlay is triggered for individual mutes (only mute-all
+  // shows the visual on the underlay). Producer mutes are mic control only.
+  const toggleMute = useCallback((seat: SeatId) => {
+    const isMuted = mutedSeats.has(seat);
+    if (isMuted) {
+      send({ type: "unmuteGuest", target: seat, ts: Date.now() });
+      setMutedSeats((prev) => {
+        const next = new Set(prev);
+        next.delete(seat);
+        return next;
+      });
+    } else {
+      send({ type: "muteGuest", target: seat, ts: Date.now() });
+      setMutedSeats((prev) => new Set(prev).add(seat));
+    }
+  }, [mutedSeats, send]);
+
+  const muteAll = useCallback(() => {
+    send({ type: "muteGuest", target: "all", ts: Date.now() });
+    setMutedSeats(new Set(SEAT_ORDER));
+  }, [send]);
+
+  const unmuteAll = useCallback(() => {
+    send({ type: "unmuteGuest", target: "all", ts: Date.now() });
+    setMutedSeats(new Set());
   }, [send]);
 
   const sendTracker = useCallback(() => {
@@ -561,6 +625,46 @@ function ProducerPanel() {
           {!rosterDirty && (
             <span style={styles.hint}>No unsaved changes.</span>
           )}
+        </div>
+      </Section>
+
+      <Section title="Mute controls">
+        <div style={styles.row}>
+          <button
+            type="button"
+            onClick={(e) => { muteAll(); e.currentTarget.blur(); }}
+            style={{ ...styles.primaryButton, background: NEON.red, color: "#fff" }}
+          >
+            Mute all
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { unmuteAll(); e.currentTarget.blur(); }}
+            style={styles.secondaryButton}
+          >
+            Unmute all
+          </button>
+        </div>
+        <div style={styles.rosterGrid}>
+          {SEAT_ORDER.map((seat) => {
+            const isMuted = mutedSeats.has(seat);
+            return (
+              <button
+                key={seat}
+                type="button"
+                onClick={(e) => { toggleMute(seat); e.currentTarget.blur(); }}
+                style={{
+                  ...styles.muteSeatBtn,
+                  ...(isMuted ? styles.muteSeatActive : {}),
+                }}
+              >
+                <span style={styles.muteSeatName}>{roster[seat] || seat}</span>
+                <span style={styles.muteSeatStatus}>
+                  {isMuted ? "MUTED" : "LIVE"}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </Section>
 
@@ -1007,6 +1111,36 @@ const styles: Record<string, CSSProperties> = {
   hint: {
     fontSize: 11,
     color: NEON.textDim,
+  },
+  muteSeatBtn: {
+    appearance: "none",
+    background: NEON.surfaceAlt,
+    color: NEON.text,
+    border: `1px solid ${NEON.panelEdge}`,
+    borderRadius: 6,
+    padding: "8px 10px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 2,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  muteSeatActive: {
+    borderColor: NEON.red,
+    background: `rgba(255, 46, 107, 0.08)`,
+  },
+  muteSeatName: {
+    fontSize: 13,
+    fontWeight: 800,
+    letterSpacing: 0.5,
+  },
+  muteSeatStatus: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 1.5,
+    color: NEON.textDim,
+    textTransform: "uppercase",
   },
   toggle: {
     display: "flex",
