@@ -17,6 +17,9 @@ import {
 /** How long the chat card stays on screen before auto-dismissing. */
 const CHAT_SCREEN_MS = 15_000;
 
+/** Duration of the fade-out animation when a message is cleared early. */
+const CLEAR_FADE_MS = 400;
+
 /** Sweep interval for pruning expired sprites. */
 const SWEEP_INTERVAL_MS = 250;
 
@@ -28,6 +31,8 @@ interface ChatScreenSprite {
   message: string;
   /** Timestamp after which the sprite auto-dismisses. */
   expiresAt: number;
+  /** When true, a fade-out animation plays before removal. */
+  cleared?: boolean;
 }
 
 // ── component ──────────────────────────────────────────────────────────
@@ -58,10 +63,22 @@ export function OverlayRoute() {
   useEffect(() => {
     const id = window.setInterval(() => {
       const now = Date.now();
-      setChatScreenSprite((prev) => (prev && prev.expiresAt <= now ? null : prev));
+      setChatScreenSprite((prev) =>
+        prev && prev.expiresAt <= now ? null : prev,
+      );
     }, SWEEP_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, []);
+
+  // When a message is cleared early, remove it after the fade-out completes.
+  useEffect(() => {
+    if (!chatScreenSprite?.cleared) return;
+    const id = window.setTimeout(
+      () => setChatScreenSprite(null),
+      CLEAR_FADE_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [chatScreenSprite]);
 
   const onMessage = useCallback((msg: EventPayload) => {
     switch (msg.type) {
@@ -74,7 +91,10 @@ export function OverlayRoute() {
         });
         break;
       case "chatToScreenClear":
-        setChatScreenSprite(null);
+        // Mark for fade-out instead of yanking instantly.
+        setChatScreenSprite((prev) =>
+          prev ? { ...prev, cleared: true } : null,
+        );
         break;
     }
   }, []);
@@ -93,7 +113,13 @@ export function OverlayRoute() {
         title="data-channel"
       />
       {chatScreenSprite && (
-        <div style={fadeWrapStyle}>
+        <div
+          style={
+            chatScreenSprite.cleared
+              ? { ...fadeWrapStyle, animation: `fadeOut ${CLEAR_FADE_MS}ms ease-out forwards` }
+              : fadeWrapStyle
+          }
+        >
           <div style={ambientFeatherStyle} />
           <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
         </div>
@@ -108,7 +134,7 @@ const ChatScreenCard = React.memo(function ChatScreenCard({ sprite }: { sprite: 
   // Grapheme-aware truncation (300 grapheme safety cap).
   const graphemes = Array.from(sprite.message);
   const display = graphemes.length > 300
-    ? graphemes.slice(0, 300).join("\u2026")
+    ? graphemes.slice(0, 300).join("") + "\u2026"
     : sprite.message;
 
   return (

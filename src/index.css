@@ -342,6 +342,12 @@ body.overlay-route #root {
   100% { opacity: 0; }
 }
 
+/* Quick fade-out for manual clear of featured messages. */
+@keyframes fadeOut {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Glow ring: masked border strip (preferred). */
 @supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
   .glow-ring::before {

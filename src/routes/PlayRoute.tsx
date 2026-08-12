@@ -339,7 +339,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
           hostMuteIntervalRef.current = null;
         }
       }
-    }, 500);
+    }, 150);
   }
 
   // Ref-based so onMessage can call it without deps
