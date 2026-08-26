@@ -125,10 +125,39 @@ const GUEST_BROADCAST_PARAMS: Array<readonly [string, string | null]> = [
 ];
 
 /**
- * Builds the iframe `src` for a guest's or host's wrapper. Uses
+ * Publisher-side video quality params for guest cameras only.
+ * The host stays 16:9 (different framing), so these are NOT included
+ * in the host URL builder.
+ *
+ *   aspectratio=square  → publisher crops to 1:1 (1080x1080 with &q=0).
+ *                         ~44% pixel reduction vs 16:9. OBS overlay uses
+ *                         square cutouts, so 16:9 publishes wasted bandwidth
+ *                         on pixels that get cropped.
+ *   contenthint=detail   → tell the browser to prioritize resolution over
+ *                         frame rate under CPU/network stress. Camera sources
+ *                         default to "motion"; this overrides to hold res.
+ *   maxframerate=30      → cap at 30fps. Prevents wasted 60fps encode on
+ *                         cameras/displays that support it. Falls back to
+ *                         lower framerate gracefully if 30 isn't supported.
+ *
+ * All three are sender-side options (require &push).
+ * Reference: https://docs.vdo.ninja/advanced-settings/video-parameters
+ */
+const GUEST_PUBLISH_PARAMS: Array<readonly [string, string | null]> = [
+  ["aspectratio", "square"],
+  ["contenthint", "detail"],
+  ["maxframerate", "30"],
+];
+
+/**
+ * Builds the iframe `src` for a guest's wrapper. Uses
  * broadcast-mode flags so the browser source shows only the producer's
  * composited stream (auto-discovered) — and other guests joining doesn't
  * shrink that view.
+ *
+ * Includes publisher-side video quality params ({@link GUEST_PUBLISH_PARAMS})
+ * that only affect guests: square aspect ratio, detail content hint, and
+ * 30fps cap. The host uses {@link buildHostIframeUrl} which omits these.
  *
  * Does **not** add an explicit `view=` — `&broadcast` auto-targets the
  * director's stream. Guests and host share the same URL shape.
@@ -137,14 +166,27 @@ export function buildIframeUrl(params: GuestIframeParams): string {
   const all = [
     ...GUEST_ROOM_PARAMS,
     ...GUEST_BROADCAST_PARAMS,
+    ...GUEST_PUBLISH_PARAMS,
     ["push", params.push] as const,
     ["label", params.label] as const,
   ];
   return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
 }
 
-/** @deprecated Use buildIframeUrl — host and guest URLs are identical. */
-export const buildHostIframeUrl = buildIframeUrl;
+/**
+ * Builds the iframe `src` for the host's wrapper. Same broadcast-mode
+ * flags as {@link buildIframeUrl} but WITHOUT the guest-only publisher
+ * video quality params — the host stays 16:9.
+ */
+export function buildHostIframeUrl(params: GuestIframeParams): string {
+  const all = [
+    ...GUEST_ROOM_PARAMS,
+    ...GUEST_BROADCAST_PARAMS,
+    ["push", params.push] as const,
+    ["label", params.label] as const,
+  ];
+  return `${VDO_NINJA_BASE}?${toQueryString(all)}`;
+}
 
 /**
  * Builds the iframe `src` for the editor's wrapper. The editor is
