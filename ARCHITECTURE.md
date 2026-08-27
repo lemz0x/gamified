@@ -106,10 +106,18 @@ The original build spec listed many items as "out of scope for MVP" or "v2". Mos
 | Chat extraction from iframe (Option B) | Built (chat in wrapper panel) |
 | Sound effects on cards | Built (v1.4 SFX system) |
 | More cards (GOAT, FACTS) | WRAP IT UP added in v1.4 |
+| Square camera publish | Built (v1.6, `aspectratio=square` + `contenthint=detail` + 30fps cap) |
 | Vote tallies, MVP picker, scoreboards | Not built (requires server) |
 | Mobile guest support | Never (desktop only) |
 
-## Original VDO.Ninja URL handling
+### Square camera publish (v1.6)
+- Guest iframes publish with `aspectratio=square` (1:1, 1080x1080) instead of 16:9
+- `contenthint=detail` tells the browser to prioritize resolution over smoothness
+- 30fps cap reduces upload bandwidth
+- Only applies to guest iframes. Host publishes normally. Overlay/underlay are data-only.
+- Rationale: OBS uses square cutouts for the 6-guest grid. Publishing 16:9 wasted bandwidth on pixels that were never shown.
+
+### Original VDO.Ninja URL handling
 
 The wrapper preserves all existing URL params and adds itself as a layer:
 
@@ -120,9 +128,54 @@ The wrapper preserves all existing URL params and adds itself as a layer:
 - Overlay joins as data-only peer (no video, no audio)
 - Producer joins as dataonly codirector for bidirectional data flow
 
+## Mute sync architecture
+
+Full document: [docs/vdo-ninja-integration.md](./docs/vdo-ninja-integration.md)
+(advisory vs force mute, `reconcileMic` bidirectional bug, `mic-mute-state`
+event firing rules, `iframetarget` requirement, codirector topology).
+
+### Three mute refs, three behaviors
+
+| Ref | Lock Type | Can Guest Self-Unmute? | Circuit Breaker? |
+|-----|-----------|------------------------|-------------------|
+| `hostMutedRef` | advisory | Yes — clicking VDO.Ninja mic clears it | No |
+| `stfuMutedRef` | hard lock | No | Yes (150ms) |
+| `muteAllRef` | hard lock | No | Yes (150ms) |
+
+Individual host mutes are advisory — guest can self-unmute via VDO.Ninja mic.
+Mute-all is a hard lock (circuit breaker re-asserts `mic: false` every 150ms).
+STFU is also a hard lock with a 10s timeout.
+
+### Host mute flow (host → guest)
+
+1. Host clicks mute in `HostMutePanel`
+2. `send({ type: "muteGuest", target: seat })` broadcasts via VDO.Ninja data channel
+3. Guest sets `hostMutedRef = true`, sends `{ mic: false }` to iframe, shows SILENCED badge
+4. Host dispatches `gamified-mute-state` custom event, `HostMutePanel` updates
+
+### Guest self-unmute flow (guest → host)
+
+1. Guest clicks VDO.Ninja mic icon inside the iframe
+2. VDO.Ninja posts `{ action: "mic-mute-state", value: false }` to parent (requires `iframetarget` URL param)
+3. `onVdoMicEvent` in PlayRoute checks: `hostMutedRef === true`, `stfuMutedRef === false`
+4. Clears `hostMutedRef`, removes SILENCED badge
+5. Broadcasts `guestSelfUnmuted` via P2P data channel
+6. Host receives event, dispatches `gamified-mute-state`, `HostMutePanel` clears indicator
+
+### `reconcileMic` bidirectional bug (fixed July 8 2026, commit 2072871)
+
+Original `reconcileMic` only had a `mic: false` branch. When STFU's 10s timer
+expired and cleared `stfuMutedRef`, the mic stayed stuck muted because nothing
+sent `{ mic: true }` to unmute the iframe. Fix: added the unmute path with a
+`selfMutedRef` guard so self-muted guests don't get force-unmuted by a timer.
+
 ## Reference documents
 
 - [`AGENTS.md`](./AGENTS.md) — current state, rules, source files
 - [`CHANGELOG.md`](./CHANGELOG.md) — version history
+- [`docs/vdo-ninja-integration.md`](./docs/vdo-ninja-integration.md) — VDO.Ninja iframe API, data channels, event types, mute sync architecture
+- [`docs/vdo-ninja-quality-params.md`](./docs/vdo-ninja-quality-params.md) — URL parameter research, rationale, OBS encoder settings
+- [`docs/obs-cef-gotchas.md`](./docs/obs-cef-gotchas.md) — OBS/Chromium Embedded Framework quirks and fixes
+- [`docs/obs-source-record-setup.md`](./docs/obs-source-record-setup.md) — guest ISO recording via OBS Source Record plugin
 
 Internal planning docs (Aria briefs, execution plans, chat-to-screen plans, mockups) live in `_planning/` on local disk only. They are gitignored and not part of the repo.

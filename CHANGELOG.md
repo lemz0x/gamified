@@ -7,6 +7,20 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 ## [Unreleased] — staging
 
 ### Added
+- **VDO.Ninja integration deep dive** (`docs/vdo-ninja-integration.md`): iframe API transports, `mic-mute-state` event firing rules, `iframetarget` requirement, codirector topology, postMessage security, advisory vs force mute architecture, `reconcileMic` bidirectional bug history, full event type reference.
+- **OBS/CEF gotchas** (`docs/obs-cef-gotchas.md`): Source Record encoder defaults, audio crackling diagnosis, emoji codepoint compatibility, focus ring fix, chat auto-scroll rule, dual-OBS bandwidth math.
+- **VDO.Ninja quality parameters** (`docs/vdo-ninja-quality-params.md`): full URL parameter research with rationale, rejected alternatives, OBS encoder settings, verification steps.
+- **Mute sync architecture** section added to `ARCHITECTURE.md` with flow diagrams and the three-ref system.
+
+---
+
+## [v1.6] — 2026-08-12
+
+### Added
+- **Square camera publish:** guest cameras now publish 1:1 square (`aspectratio=square`) with `contenthint=detail` and 30fps cap. Saves upload bandwidth vs 16:9 since OBS uses square cutouts. Only affects guest iframes, not host or overlay.
+- **OBS Source Record setup guide:** `docs/obs-source-record-setup.md` documents guest ISO recording via OBS Source Record plugin.
+
+### Added
 - **Two-layer OBS architecture:** overlay system split into `/underlay` (beneath camera layers) and `/overlay` (top-layer, above all sources)
 - **Chat-to-screen feature:** producer can select chat messages and push them to the top-layer overlay as styled on-screen text graphics with neon glow ring and Gamified branding
 - New `OverlayRoute.tsx` for top-layer overlay (chat-to-screen card)
@@ -19,6 +33,9 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 - **Tracker persistence:** committed tracker stored to `gamified.tracker.v1` in localStorage. Producer refresh restores the last sent tracker. Late joiners after a producer refresh receive the correct state.
 - **Effective label sync:** `PlayRoute` maintains `effectiveLabel` state updated from `rosterUpdate`. Local chat messages, card sender, emoji sender, header display, and featured chat attribution all use the producer-set name instead of the stale URL param.
 - **Chat-to-screen on `/chat`:** `ChatRoute` can feature messages to the overlay.
+- **Producer mute controls:** mute/unmute buttons for individual guests plus mute-all/unmute-all in the producer panel. Uses existing `muteGuest`/`unmuteGuest` events. Producer mutes are mic-control only (no SILENCED overlay for individual mutes; mute-all shows the visual on the underlay).
+- **Popcorn emoji:** added to chat emoji picker (24 total). Heart eyes removed. Clown moved to row 3 first for visual balance.
+- **Clickable chat links:** URLs in chat are now cyan and underlined, rendered via `src/lib/linkify.tsx`.
 - **Sanitize module:** shared `sanitizeForOverlay` extracted to `src/lib/sanitize.ts` for PlayRoute and ChatRoute.
 - **Payload validation hardening:** emoji events validated against `EMOJIS` set, `from` sender field validated on emoji and cardPlay, `rosterUpdate` and `cardReset` field validation, `trackerUpdate` title type check, `chatToScreen` author length cap (64 chars).
 
@@ -26,10 +43,16 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 - **STFU sender cooldown:** the guest who plays STFU now gets the 10s cooldown locally. Previously, VDO.Ninja doesn't echo P2P events back to the sender, so the sender's WRAP IT UP button stayed available while all other guests were locked. Extracted `startStfuCooldown` helper called from both `onMessage` and `playCard`.
 - **STFU cooldown timer accuracy:** cooldown now uses absolute expiry time (`cooldownEndsAtRef`) instead of decrementing state. Delayed interval callbacks in OBS CEF no longer extend the cooldown past 10 real seconds.
 - **STFU auto-unmute:** after STFU expires, `reconcileMic` now actively sends `mic: true` to unmute the guest, unless the guest self-muted (dog barking, cough). Previously guests stayed muted after STFU because nothing sent the unmute command.
+- **STFU circuit breaker speed:** re-assert interval reduced from 500ms to 150ms. Tightens the gap between STFU card play and actual mic silence.
 - **Self-mute tracking:** `selfMutedRef` tracks manual mic mutes via VDO.Ninja's `mic-mute-state` event (both directions). Prevents force-unmuting a guest who muted themselves when STFU or host-mute clears.
 - **SILENCED overlay bookkeeping:** individual unmute after mute-all now clears both "host" and "muteall" reasons. `guestSelfUnmuted` clears "host" and "muteall" but never "stfu". Prevents stale SILENCED overlays.
+- **Mute-all no longer affects host:** mute-all and unmute-all skip the host seat. Host mic is controlled independently.
+- **Mute state sync:** producer and host mute states now stay in sync. Previously they could drift if one panel muted and the other didn't reflect it.
 - **Late joiner tracker sync:** `lastTrackerRef` initialized from localStorage (not null). `getRoster` handler always re-broadcasts tracker state. `clearTracker` stores empty state (not null).
 - **Chat scroll:** removed smart auto-scroll (nearBottom check) from PlayRoute ChatPanel and ChatRoute ChatFeed. Always pin to newest message.
+- **Chat-to-screen backdrop:** ambient backdrop now fades in/out in sync with the card. No more visual pop on entry or exit. CardPill backdrop removed entirely; card self-handles readability.
+- **Featured message truncation:** `join("…")` was inserting the ellipsis between every character, producing H…e…l…l…o. Fixed to join with empty string and append … at the end.
+- **Featured message clear:** clearing a featured message now fades out over 400ms instead of vanishing instantly. Uses `fadeOut` keyframe + `cleared` flag on the sprite.
 - **Label dedup aliases:** removed duplicate "cry" and "lmao" aliases that mapped to two different emojis.
 - **Underlay roster cache:** underlay loads cached roster from localStorage for instant display before `getRoster` reply.
 - **Underlay getRoster on mount:** underlay sends `getRoster` on mount (1.5s delay) so refreshed underlay shows correct names in card announcements.

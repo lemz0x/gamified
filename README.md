@@ -83,6 +83,7 @@ https://gamified-2e9.pages.dev/play?seat=<1-6>&push=<pushID>&label=<GuestName>
 - `push` is the guest's existing VDO.Ninja stream id. The wrapper iframes their
   existing publish URL; it does not create a new peer connection.
 - `label` is what shows in the wrapper header and VDO.Ninja chat.
+- Guest cameras publish 1:1 square automatically (`aspectratio=square` + 30fps cap). This saves upload bandwidth since OBS uses square cutouts. No action needed — the wrapper handles it.
 
 ### Host URL
 
@@ -151,3 +152,19 @@ The panel ships six sections:
 6. **Calibration** — enable coordinate editors, adjust X/Y/W/H per tile, broadcasts live to underlay
 
 The dock is also viewable as a regular browser tab.
+
+### Guest ISO recording (optional)
+
+For recording each guest's camera as a separate ISO feed, see
+[`docs/obs-source-record-setup.md`](./docs/obs-source-record-setup.md).
+Uses the OBS Source Record plugin to capture individual guest streams
+before they're composited into the show output.
+
+### VDO.Ninja integration and OBS gotchas
+
+If you're forking this repo or modifying the VDO.Ninja integration, these
+docs will save you a lot of trial and error:
+
+- [`docs/vdo-ninja-integration.md`](./docs/vdo-ninja-integration.md) — iframe API, data channels, event types, mute sync architecture, postMessage security
+- [`docs/vdo-ninja-quality-params.md`](./docs/vdo-ninja-quality-params.md) — URL parameter research, rationale, OBS encoder settings
+- [`docs/obs-cef-gotchas.md`](./docs/obs-cef-gotchas.md) — OBS/CEF quirks: emoji rendering, focus rings, Source Record encoder defaults, audio crackling diagnosis
