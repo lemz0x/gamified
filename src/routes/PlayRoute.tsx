@@ -784,6 +784,17 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       .map((s) => ({ seat: s, label: roster[s] }));
   }, [identity, roster, seats]);
 
+  // Tracker grid rows: pair left/right seats by row position
+  // (L1+R1, L2+R2, [L3+R3]) — 4-guest shows get a 2-row grid.
+  const trackerRows = useMemo(() => {
+    const left = seats.filter((s) => s[0] === "L");
+    const right = seats.filter((s) => s[0] === "R");
+    return Array.from(
+      { length: Math.max(left.length, right.length) },
+      (_, row) => [left[row], right[row]] as const,
+    ).filter(([l, r]) => !!l && !!r);
+  }, [seats]);
+
   return (
     <div style={styles.shell}>
       <div style={styles.iframeWrap}>
@@ -903,11 +914,7 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
               flexDirection: "column",
               gap: 4,
             }}>
-              {([
-                ["L1", "R1"],
-                ["L2", "R2"],
-                ["L3", "R3"],
-              ] as const).map(([left, right]) => (
+              {trackerRows.map(([left, right]) => (
                 <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                   {([left, right] as const).map((seat) => {
                     const answer = tracker.answers[seat] || "";
@@ -1529,9 +1536,13 @@ function MissingParamsHelp() {
         <h1 style={{ color: NEON.pink, marginBottom: 8 }}>Missing URL params</h1>
         <p style={{ color: NEON.textDim, maxWidth: 520, lineHeight: 1.5 }}>
           The /play wrapper needs <code>?seat=1..6&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code>{" "}
-          for guests, <code>?role=host&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for the
+          for guests (<code>?layout=4&amp;seat=1..4</code> on a 4-guest show),{" "}
+          <code>?role=host&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for the
           host, or <code>?role=editor&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for
-          the editor (chat-only, audio publish).
+          the editor (chat-only, audio publish). A seat number outside the
+          active layout's range also lands here — use the guest-links
+          generator in the producer panel or check the URL against the
+          show's guest-link doc section.
         </p>
       </div>
     </div>

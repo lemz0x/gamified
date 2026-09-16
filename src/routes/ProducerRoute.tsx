@@ -641,14 +641,19 @@ function ProducerPanel() {
       return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
     });
     const text = lines.join("\n\n");
-    void navigator.clipboard?.writeText(text).then(() => {
-      setLinksCopied(true);
-      window.setTimeout(() => setLinksCopied(false), 2500);
-    }).catch(() => {
-      // Clipboard blocked (OBS CEF or non-secure context) — select the
-      // textarea fallback so the user can Ctrl+C manually.
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text).then(() => {
+        setLinksCopied(true);
+        window.setTimeout(() => setLinksCopied(false), 2500);
+      }).catch(() => {
+        // Clipboard permission refused (some OBS CEF builds) — fall back to
+        // selecting the textarea below for a manual Ctrl+C.
+        linksTextareaRef.current?.select();
+      });
+    } else {
+      // No clipboard API at all — select the textarea for manual copy.
       linksTextareaRef.current?.select();
-    });
+    }
   }, [seats, roster, layout, pushIds]);
   const linksTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const guestLinksText = useMemo(() => {

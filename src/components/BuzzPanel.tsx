@@ -115,7 +115,9 @@ export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, onSea
           onClick={onBuzzToggle}
           style={{
             gridRow: "1 / 3",
-            gridColumn: 4,
+            // Column after the seat boxes; grid columns are maxPerRow wide
+            // (plus the 'auto' track when this button exists).
+            gridColumn: maxPerRow + 1,
             background: active
               ? "linear-gradient(135deg, #00e676 0%, #00c853 100%)"
               : "linear-gradient(135deg, #ff2e6b 0%, #cc1a4a 100%)",
