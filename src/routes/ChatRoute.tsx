@@ -10,7 +10,7 @@ import { buildChatOnlyUrl, useVdoNinja, type EventPayload } from "../lib/vdoninj
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { renderLinks } from "../lib/linkify";
 import { CHAT_EMOJIS } from "../emojis";
-import { SEAT_ORDER, type SeatId } from "../coords";
+import { LAYOUT_SEATS, SEAT_ORDER, resolveLayout, type SeatId } from "../coords";
 import { findColonToken, tryAutoInsert, replaceAllColonTokens, emojiShorthand, type ColonMatch } from "../lib/emojiAliases";
 import { sanitizeForOverlay } from "../lib/sanitize";
 
@@ -50,6 +50,9 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
   const [search] = useSearchParams();
   const push = search.get("push") ?? "";
   const label = search.get("label") ?? defaultLabel;
+  // Layout gating for the tracker grid (same resolution as the other routes).
+  const layout = resolveLayout(search.get("layout"));
+  const seats: readonly SeatId[] = LAYOUT_SEATS[layout];
 
   const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -149,7 +152,7 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
       </header>
 
       {/* ── tracker ─── */}
-      <TrackerBar tracker={tracker} roster={roster} />
+      <TrackerBar tracker={tracker} roster={roster} seats={seats} />
 
       {/* ── chat feed ─── */}
       <ChatFeed messages={messages} onFeature={featureMessage} />
@@ -197,9 +200,15 @@ export function ChatRoute({ defaultLabel = "Lemz" }: ChatRouteProps) {
 interface TrackerBarProps {
   tracker: { title: string; answers: Record<SeatId, string> };
   roster: Record<SeatId, string>;
+  /** Seats in the active layout — 4-guest shows render a 2-row grid. */
+  seats: readonly SeatId[];
 }
 
-function TrackerBar({ tracker, roster }: TrackerBarProps) {
+function TrackerBar({ tracker, roster, seats }: TrackerBarProps) {
+  // Pair left/right seats by row position (L1+R1, L2+R2, [L3+R3]).
+  const leftSeats = seats.filter((s) => s[0] === "L");
+  const rightSeats = seats.filter((s) => s[0] === "R");
+  const rows = Math.max(leftSeats.length, rightSeats.length);
   return (
     <div style={{
       flex: "0 0 auto",
@@ -221,11 +230,10 @@ function TrackerBar({ tracker, roster }: TrackerBarProps) {
         flexDirection: "column",
         gap: 3,
       }}>
-        {([
-          ["L1", "R1"],
-          ["L2", "R2"],
-          ["L3", "R3"],
-        ] as const).map(([left, right]) => (
+        {(Array.from({ length: rows }, (_, row) => [
+          leftSeats[row],
+          rightSeats[row],
+        ] as const)).filter(([l, r]) => !!l && !!r).map(([left, right]) => (
           <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
             {([left, right] as const).map((seat) => {
               const answer = tracker.answers[seat] || "";

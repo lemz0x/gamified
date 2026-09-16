@@ -75,15 +75,22 @@ URLs (underlay + overlay), one producer dock URL.
 ### Guest URLs (one per seat)
 
 ```
-https://gamified-2e9.pages.dev/play?seat=<1-6>&push=<pushID>&label=<GuestName>
+https://gamified-2e9.pages.dev/play?seat=<1-6>&push=<pushID>&label=<GuestName>       (six-guest show)
+https://gamified-2e9.pages.dev/play?layout=4&seat=<1-4>&push=<pushID>&label=<GuestName>  (four-guest show)
 ```
 
 - `seat=1..6` maps to tiles `L1, L2, L3, R1, R2, R3` (top-left, middle-left,
   bottom-left, top-right, middle-right, bottom-right).
+- For 4-guest shows, add `layout=4`. `seat=1..4` then maps to `L1, L2, R1, R2`
+  (top-left, bottom-left, top-right, bottom-right — the 2×2 OBS scene
+  collection "Gamified (4 guests)"). Seat 5/6 links are rejected in this layout.
 - `push` is the guest's existing VDO.Ninja stream id. The wrapper iframes their
   existing publish URL; it does not create a new peer connection.
 - `label` is what shows in the wrapper header and VDO.Ninja chat.
 - Guest cameras publish 1:1 square automatically (`aspectratio=square` + 30fps cap). This saves upload bandwidth since OBS uses square cutouts. No action needed — the wrapper handles it.
+- The producer panel has a **Guest links** section: enter each slot's push ID
+  once (persisted), and it generates DM-ready links from the saved roster for
+  whichever layout the panel URL carries.
 
 ### Host URL
 
