@@ -7,11 +7,15 @@ import {
   type CSSProperties,
 } from "react";
 import { CARDS, type CardId } from "../cards";
+import { useSearchParams } from "react-router-dom";
 import {
   SEAT_ORDER,
-  TILES,
+  LAYOUT_SEATS,
+  LAYOUT_TILES,
   loadCalibratedTiles,
   saveCalibratedTiles,
+  resolveLayout,
+  type GuestLayout,
   type SeatId,
   type Tile,
   type TileMap,
@@ -125,6 +129,58 @@ function emptyTrackerState(): { title: string; answers: Record<SeatId, string> }
     title: "",
     answers: Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
   };
+}
+
+// ── guest link generator ──────────────────────────────────────────────────
+
+/**
+ * Per-seat VDO.Ninja push stream IDs for the guest link generator. These are
+ * stable per slot (the OBS cam sources watch these stream IDs), so they're
+ * entered once per machine and persisted. Mirrors the producer's Google-doc
+ * link sheet: seat = slot, push = stream id, label comes from the roster.
+ */
+const PUSH_IDS_STORAGE_KEY = "gamified.links.pushIds.v1";
+
+function loadPushIds(): Record<SeatId, string> {
+  const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
+  if (typeof window === "undefined") return empty;
+  try {
+    const raw = window.localStorage.getItem(PUSH_IDS_STORAGE_KEY);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<Record<SeatId, string>> | null;
+    if (!parsed || typeof parsed !== "object") return empty;
+    for (const seat of SEAT_ORDER) {
+      if (typeof parsed[seat] === "string") empty[seat] = parsed[seat] ?? "";
+    }
+    return empty;
+  } catch {
+    return empty;
+  }
+}
+
+function savePushIds(ids: Record<SeatId, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PUSH_IDS_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore quota / disabled storage
+  }
+}
+
+/** Builds the /play URL for one guest slot on this layout. */
+function buildGuestLink(
+  origin: string,
+  layout: GuestLayout,
+  seatIndex: number,
+  pushId: string,
+  label: string,
+): string {
+  const params = new URLSearchParams();
+  if (layout !== "6") params.set("layout", layout);
+  params.set("seat", String(seatIndex));
+  params.set("push", pushId);
+  params.set("label", label);
+  return `${origin}/play?${params.toString()}`;
 }
 
 /** Load the last committed tracker from localStorage. Falls back to empty. */
@@ -286,13 +342,19 @@ export function ProducerRoute() {
 }
 
 function ProducerPanel() {
+  const [search] = useSearchParams();
+  // Layout: `?layout=4|6` — the producer URL is baked into each OBS scene
+  // collection, so the panel automatically matches the loaded show format.
+  const layout: GuestLayout = resolveLayout(search.get("layout"));
+  const seats: readonly SeatId[] = LAYOUT_SEATS[layout];
+  const defaultTiles = LAYOUT_TILES[layout];
   const [roster, setRoster] = useState<Record<SeatId, string>>(loadRoster);
   // Form state — separate from `roster` so the user can edit then Save.
   const [draftRoster, setDraftRoster] = useState<Record<SeatId, string>>(roster);
   const [hostName, setHostName] = useState<string>(loadHostName);
   const [draftHostName, setDraftHostName] = useState<string>(hostName);
   const [calibrate, setCalibrate] = useState(false);
-  const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
+  const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout));
   const [feed, setFeed] = useState<readonly FeedEntry[]>([]);
   const [trackerTitle, setTrackerTitle] = useState<string>(() => loadCommittedTracker().title);
   const [trackerDraft, setTrackerDraft] = useState<Record<SeatId, string>>(
@@ -310,8 +372,11 @@ function ProducerPanel() {
   );
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+  // Guest link generator state — push IDs entered once, persisted per machine.
+  const [pushIds, setPushIds] = useState<Record<SeatId, string>>(loadPushIds);
+  const [linksCopied, setLinksCopied] = useState(false);
   const rosterDirty =
-    SEAT_ORDER.some((s) => draftRoster[s] !== roster[s]) ||
+    seats.some((s) => draftRoster[s] !== roster[s]) ||
     draftHostName !== hostName;
 
   // Forward-declared sender so the message handler can re-broadcast on
@@ -357,7 +422,7 @@ function ProducerPanel() {
         setMutedSeats((prev) => {
           const next = new Set(prev);
           if (msg.target === "all") {
-            SEAT_ORDER.forEach((s) => next.add(s));
+            seats.forEach((s) => next.add(s));
           } else {
             next.add(msg.target as SeatId);
           }
@@ -419,7 +484,7 @@ function ProducerPanel() {
         });
       }
     },
-    [roster, hostName, buzzOn, buzzOff],
+    [roster, hostName, seats, buzzOn, buzzOff],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -482,8 +547,8 @@ function ProducerPanel() {
 
   const muteAll = useCallback(() => {
     send({ type: "muteGuest", target: "all", ts: Date.now() });
-    setMutedSeats(new Set(SEAT_ORDER));
-  }, [send]);
+    setMutedSeats(new Set(seats));
+  }, [send, seats]);
 
   const unmuteAll = useCallback(() => {
     send({ type: "unmuteGuest", target: "all", ts: Date.now() });
@@ -534,12 +599,12 @@ function ProducerPanel() {
           ...prev,
           [seat]: { ...prev[seat], [axis]: Math.max(0, prev[seat][axis] + delta) },
         };
-        saveCalibratedTiles(next);
+        saveCalibratedTiles(next, layout);
         send({ type: "calibration", tiles: next, ts: Date.now() });
         return next;
       });
     },
-    [send],
+    [send, layout],
   );
 
   const setTileValue = useCallback(
@@ -552,20 +617,54 @@ function ProducerPanel() {
           ...prev,
           [seat]: { ...prev[seat], [axis]: value },
         };
-        saveCalibratedTiles(next);
+        saveCalibratedTiles(next, layout);
         send({ type: "calibration", tiles: next, ts: Date.now() });
         return next;
       });
     },
-    [send],
+    [send, layout],
   );
 
   const resetTiles = useCallback(() => {
-    const fresh: TileMap = { ...TILES };
+    const fresh: TileMap = { ...LAYOUT_TILES[layout] };
     setTiles(fresh);
-    saveCalibratedTiles(fresh);
+    saveCalibratedTiles(fresh, layout);
     send({ type: "calibration", tiles: fresh, ts: Date.now() });
-  }, [send]);
+  }, [send, layout]);
+
+  // ── guest link generator ─────────────────────────────────────────────
+  /** Copies one DM-ready link per layout seat to the clipboard. */
+  const copyGuestLinks = useCallback(() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const lines = seats.map((seat, i) => {
+      const name = roster[seat] || seat;
+      return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
+    });
+    const text = lines.join("\n\n");
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text).then(() => {
+        setLinksCopied(true);
+        window.setTimeout(() => setLinksCopied(false), 2500);
+      }).catch(() => {
+        // Clipboard permission refused (some OBS CEF builds) — fall back to
+        // selecting the textarea below for a manual Ctrl+C.
+        linksTextareaRef.current?.select();
+      });
+    } else {
+      // No clipboard API at all — select the textarea for manual copy.
+      linksTextareaRef.current?.select();
+    }
+  }, [seats, roster, layout, pushIds]);
+  const linksTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const guestLinksText = useMemo(() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return seats
+      .map((seat, i) => {
+        const name = roster[seat] || seat;
+        return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
+      })
+      .join("\n\n");
+  }, [seats, roster, layout, pushIds]);
 
   return (
     <div style={styles.shell}>
@@ -576,7 +675,7 @@ function ProducerPanel() {
 
       <Section title="Roster names">
         <div style={styles.rosterGrid}>
-          {SEAT_ORDER.map((seat, i) => (
+          {seats.map((seat, i) => (
             <label key={seat} style={styles.rosterField}>
               <span style={styles.rosterFieldLabel}>{`Guest ${i + 1} · ${seat}`}</span>
               <input
@@ -628,6 +727,62 @@ function ProducerPanel() {
         </div>
       </Section>
 
+      <Section title={`Guest links (${layout}-guest layout)`}>
+        <span style={styles.hint}>
+          Push IDs are per-slot VDO.Ninja stream IDs (same as the OBS cam sources watch). Enter once — they persist on this machine. Links are built from the current roster names.
+        </span>
+        <div style={styles.rosterGrid}>
+          {seats.map((seat, i) => (
+            <label key={seat} style={styles.rosterField}>
+              <span style={styles.rosterFieldLabel}>{`Guest ${i + 1} · ${seat} · push ID`}</span>
+              <input
+                type="text"
+                value={pushIds[seat]}
+                onChange={(e) => {
+                  const v = e.target.value.trim();
+                  setPushIds((prev) => {
+                    const next = { ...prev, [seat]: v };
+                    savePushIds(next);
+                    return next;
+                  });
+                }}
+                style={styles.input}
+                spellCheck={false}
+                placeholder="i2zCGkA"
+              />
+            </label>
+          ))}
+        </div>
+        <div style={styles.row}>
+          <button
+            type="button"
+            onClick={(e) => { copyGuestLinks(); e.currentTarget.blur(); }}
+            style={{ ...styles.primaryButton, background: NEON.cyan, color: "#0a0610" }}
+          >
+            {linksCopied ? "Copied!" : "Copy guest links"}
+          </button>
+          <span style={styles.hint}>
+            {rosterDirty ? "Save the roster first — names in links follow the saved roster." : "One link per seat, ready to DM."}
+          </span>
+        </div>
+        <textarea
+          ref={linksTextareaRef}
+          readOnly
+          value={guestLinksText}
+          spellCheck={false}
+          onFocus={(e) => e.currentTarget.select()}
+          style={{
+            ...styles.input,
+            width: "100%",
+            minHeight: 120,
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontSize: 11,
+            lineHeight: 1.5,
+            resize: "vertical",
+          }}
+        />
+      </Section>
+
       <Section title="Mute controls">
         <div style={styles.row}>
           <button
@@ -646,7 +801,7 @@ function ProducerPanel() {
           </button>
         </div>
         <div style={styles.rosterGrid}>
-          {SEAT_ORDER.map((seat) => {
+          {seats.map((seat) => {
             const isMuted = mutedSeats.has(seat);
             return (
               <button
@@ -673,6 +828,7 @@ function ProducerPanel() {
           roster={roster}
           buzzingSeats={buzzingSeats}
           variant="producer"
+          seats={seats}
           onSeatClear={(seat) => {
             buzzOff(seat);
             send({ type: "buzzOff", seat, ts: Date.now() });
@@ -704,7 +860,7 @@ function ProducerPanel() {
           placeholder="Tracker title..."
         />
         <div style={styles.trackerList}>
-          {SEAT_ORDER.map((seat) => (
+          {seats.map((seat) => (
             <label key={seat} style={styles.rosterField}>
               <span style={styles.rosterFieldLabel}>{`${seat} · ${roster[seat]}`}</span>
               <input
@@ -774,11 +930,12 @@ function ProducerPanel() {
         </label>
         {calibrate && (
           <div style={styles.calibGrid}>
-            {SEAT_ORDER.map((seat) => (
+            {seats.map((seat) => (
               <CalibCard
                 key={seat}
                 seat={seat}
                 tile={tiles[seat]}
+                defaults={defaultTiles}
                 onNudge={(axis, delta) => updateTile(seat, axis, delta)}
                 onSet={(axis, raw) => setTileValue(seat, axis, raw)}
               />
@@ -910,16 +1067,18 @@ function Section({ title, children }: SectionProps) {
 interface CalibCardProps {
   seat: SeatId;
   tile: Tile;
+  /** Layout's factory defaults — used for the "edited" dirty flag. */
+  defaults: TileMap;
   onNudge: (axis: keyof Tile, delta: number) => void;
   onSet: (axis: keyof Tile, raw: string) => void;
 }
 
-function CalibCard({ seat, tile, onNudge, onSet }: CalibCardProps) {
+function CalibCard({ seat, tile, defaults, onNudge, onSet }: CalibCardProps) {
   const dirty =
-    tile.x !== TILES[seat].x ||
-    tile.y !== TILES[seat].y ||
-    tile.w !== TILES[seat].w ||
-    tile.h !== TILES[seat].h;
+    tile.x !== defaults[seat].x ||
+    tile.y !== defaults[seat].y ||
+    tile.w !== defaults[seat].w ||
+    tile.h !== defaults[seat].h;
   return (
     <div style={{ ...styles.calibCard, borderColor: dirty ? NEON.amber : NEON.panelEdge }}>
       <div style={styles.calibHeader}>

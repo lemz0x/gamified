@@ -36,7 +36,7 @@ src/
   vite-env.d.ts
   cards.ts                   # Card definitions (STFU, WRAP IT UP, MIC DROP)
   emojis.ts                  # Reaction emojis (12), chat emojis (24), EMOJI_COLOURS
-  coords.ts                  # Tile coordinates (1920x1080) + SEAT_ORDER
+  coords.ts                  # Tile coordinates (1920x1080), SEAT_ORDER, guest layouts (4/6)
   components/
     BuzzPanel.tsx            # Buzz-in button component
   lib/
