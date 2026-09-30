@@ -244,10 +244,12 @@ export function buildChatOnlyUrl(params: { push: string; label: string }): strin
 
 // ── Event payloads ──────────────────────────────────────────────────────
 
-/** Source of an outgoing event — either a numbered guest seat or the host. */
+/** Source of an outgoing event — a numbered guest seat, the host, or the
+ *  producer (Lemz) voting in the STFU-on-Sam mechanic. */
 export type EventSender =
   | { kind: "guest"; seat: SeatId; label: string }
-  | { kind: "host"; label: string };
+  | { kind: "host"; label: string }
+  | { kind: "lemz" };
 
 /** A guest tapped an emoji button. Renders a float over the sender's tile. */
 export interface EmojiEvent {
@@ -384,6 +386,30 @@ export interface GuestSelfUnmutedEvent {
   ts: number;
 }
 
+/** A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
+ *  The first vote's ts becomes the shared `windowId` — all wrappers
+ *  derive the 30s window and the threshold tally from it.
+ *  Transient state, like buzz: late joiners are not backfilled. */
+export interface SamVoteEvent {
+  type: "samVote";
+  from: EventSender;
+  /** ts of the first vote in this window (shared clock anchor). */
+  windowId: number;
+  ts: number;
+}
+
+/** The vote threshold was met — the STFU-on-Sam landed. Emitted by the
+ *  vote counter (host wrapper, silently). Everyone area-mutes non-voters
+ *  plus the host; the underlay paints SILENCED on Sam's tile and
+ *  non-voter tiles. */
+export interface SamStfuEvent {
+  type: "samStfu";
+  windowId: number;
+  /** Seat ids (+"lemz") that voted — they are spared the area mute. */
+  voters: string[];
+  ts: number;
+}
+
 /** Discriminated union of every payload the app sends over the channel. */
 export type EventPayload =
   | EmojiEvent
@@ -400,7 +426,9 @@ export type EventPayload =
   | TrackerUpdateEvent
   | ChatToScreenEvent
   | ChatToScreenClearEvent
-  | GuestSelfUnmutedEvent;
+  | GuestSelfUnmutedEvent
+  | SamVoteEvent
+  | SamStfuEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
@@ -409,6 +437,7 @@ const VALID_TYPES = new Set([
   "calibration", "muteGuest", "unmuteGuest",
   "buzzIn", "buzzOff", "trackerUpdate",
   "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "getRoster",
+  "samVote", "samStfu",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -425,6 +454,7 @@ function isValidSeatId(v: unknown): v is SeatId {
 function isValidSender(v: unknown): v is EventSender {
   if (!v || typeof v !== "object") return false;
   const s = v as Record<string, unknown>;
+  if (s.kind === "lemz") return true;
   if (s.kind === "host") return typeof s.label === "string";
   if (s.kind === "guest") return isValidSeatId(s.seat) && typeof s.label === "string";
   return false;
@@ -463,6 +493,15 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "guestSelfUnmuted":
       if (!isValidSeatId(p.seat)) return null;
+      break;
+    case "samVote":
+      if (!isValidSender(p.from)) return null;
+      if (typeof p.windowId !== "number") return null;
+      break;
+    case "samStfu":
+      if (typeof p.windowId !== "number") return null;
+      if (!Array.isArray(p.voters)) return null;
+      if (p.voters.some((v) => typeof v !== "string")) return null;
       break;
     case "calibration":
       if (!p.tiles || typeof p.tiles !== "object") return null;

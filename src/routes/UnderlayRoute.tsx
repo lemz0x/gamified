@@ -9,7 +9,9 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import {
   LAYOUT_SEATS,
+  HOST_TILE_STORAGE_KEY,
   loadCalibratedTiles,
+  loadCalibratedHostTile,
   saveCalibratedTiles,
   resolveLayout,
   tilesStorageKey,
@@ -139,6 +141,15 @@ export function UnderlayRoute() {
   // localStorage on this overlay browser source's machine.
   const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout));
 
+  // Sam's host tile — separate override key so per-machine calibration of
+  // guest tiles can't clobber the host geometry (and vice versa).
+  const [hostTile, setHostTile] = useState<Tile>(loadCalibratedHostTile);
+
+  // STFU-on-Sam: SILENCED wash is active on the host tile. The MutedTileOverlay
+  // treatment below renders over Sam's 16:9 box for 10s when the vote lands.
+  const [samSilenced, setSamSilenced] = useState(false);
+  const samSilenceTimeoutRef = useRef<number | null>(null);
+
   // Roster names synced from producer — used for card announcements.
   // Load from localStorage for instant display before getRoster reply arrives.
   function loadCachedRoster(): Record<SeatId, string> {
@@ -241,6 +252,9 @@ export function UnderlayRoute() {
       if (stfuVisualTimeoutRef.current !== null) {
         window.clearTimeout(stfuVisualTimeoutRef.current);
       }
+      if (samSilenceTimeoutRef.current !== null) {
+        window.clearTimeout(samSilenceTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -250,6 +264,7 @@ export function UnderlayRoute() {
     // layout's calibration slot (e.g. calibration nudged in a sibling tab).
     const onStorage = (e: StorageEvent) => {
       if (e.key === tilesStorageKey(layout)) setTiles(loadCalibratedTiles(layout));
+      if (e.key === HOST_TILE_STORAGE_KEY) setHostTile(loadCalibratedHostTile());
     };
     window.addEventListener("storage", onStorage);
     return () => {
@@ -425,6 +440,29 @@ export function UnderlayRoute() {
           removeMuteReasons([msg.seat], "host");
           break;
         }
+        case "samStfu": {
+          // The STFU-on-Sam vote landed (docs/stfu-on-sam.md):
+          // SILENCED wash on Sam's host tile + every non-voter guest tile
+          // for 10s. Voters are spared — they're the rebellion.
+          setSamSilenced(true);
+          const nonVoterSeats = (Object.keys(tiles) as SeatId[]).filter(
+            (s) => !msg.voters.includes(s),
+          );
+          addMuteReasons(nonVoterSeats, "stfu");
+          if (samSilenceTimeoutRef.current !== null) {
+            window.clearTimeout(samSilenceTimeoutRef.current);
+          }
+          samSilenceTimeoutRef.current = window.setTimeout(() => {
+            const stfuSeats = (Object.keys(tiles) as SeatId[]).filter((s) => {
+              const reasons = muteReasonsRef.current.get(s as SeatId);
+              return reasons?.has("stfu");
+            }) as SeatId[];
+            removeMuteReasons(stfuSeats, "stfu");
+            setSamSilenced(false);
+            samSilenceTimeoutRef.current = null;
+          }, 10_000);
+          break;
+        }
         default:
           break;
       }
@@ -474,6 +512,11 @@ export function UnderlayRoute() {
           })
           .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
+        {/* STFU-on-Sam: SILENCED wash on Sam's host tile while the
+            vote's 10s hard-mute runs. Same visual language as guest
+            STFU — the rebellion uses the show's own punishment style. */}
+        {samSilenced && <MutedTileOverlay key="__sam" tile={hostTile} />}
+
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
         {calibrateMode && <CalibrationGrid tiles={tiles} seats={seats} />}
@@ -520,7 +563,9 @@ function fireCardAnnounce(
   const fromName =
     msg.from.kind === "host"
       ? hostName
-      : roster[msg.from.seat] || msg.from.label || "?";
+      : msg.from.kind === "lemz"
+        ? "LEMZ"
+        : roster[msg.from.seat] || msg.from.label || "?";
   const targetName = roster[msg.targetSeat] || msg.targetLabel || msg.targetSeat;
   const id = nextId();
   setAnnounce({

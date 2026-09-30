@@ -39,6 +39,8 @@ import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 // Same key used by /play so both surfaces stay in sync via localStorage.
 const ROSTER_STORAGE_KEY = "gamified.roster.v1";
 const HOST_NAME_STORAGE_KEY = "gamified.hostName.v1";
+/** Lemz's voter id in the STFU-on-Sam tally. */
+const LEMZ_VOTER_ID = "lemz";
 /** Producer-side persistence of the last committed tracker payload. */
 const TRACKER_STORAGE_KEY = "gamified.tracker.v1";
 /**
@@ -232,20 +234,22 @@ function formatEvent(
   msg: EventPayload,
   roster: Record<SeatId, string>,
 ): string | null {
-  const nameOf = (kind: "guest" | "host", seat?: SeatId, label?: string) =>
-    kind === "host" ? "HOST" : (seat && roster[seat]) || label || "?";
+  const nameOf = (kind: "guest" | "host" | "lemz", seat?: SeatId, label?: string) => {
+    if (kind === "lemz") return "LEMZ";
+    return kind === "host" ? "HOST" : (seat && roster[seat]) || label || "?";
+  }
   switch (msg.type) {
     case "emoji":
       return `${nameOf(
         msg.from.kind,
         msg.from.kind === "guest" ? msg.from.seat : undefined,
-        msg.from.label,
+        msg.from.kind === "host" ? msg.from.label : undefined,
       )} fired ${msg.emoji}`;
     case "cardPlay":
       return `${nameOf(
         msg.from.kind,
         msg.from.kind === "guest" ? msg.from.seat : undefined,
-        msg.from.label,
+        msg.from.kind === "host" ? msg.from.label : undefined,
       )} played ${cardLabel(msg.cardId)} on ${roster[msg.targetSeat] || msg.targetLabel}`;
     case "rosterUpdate":
       return "Roster updated";
@@ -263,6 +267,10 @@ function formatEvent(
       return `Chat featured: ${msg.author}`;
     case "chatToScreenClear":
       return "Chat cleared from screen";
+    case "samVote":
+      return `${nameOf(msg.from.kind, msg.from.kind === "guest" ? msg.from.seat : undefined, msg.from.kind === "host" ? msg.from.label : undefined)} voted to STFU the host`;
+    case "samStfu":
+      return "STFU on host landed — Sam + non-voters silenced 10s";
     default:
       return null;
   }
@@ -375,6 +383,12 @@ function ProducerPanel() {
   // Guest link generator state — push IDs entered once, persisted per machine.
   const [pushIds, setPushIds] = useState<Record<SeatId, string>>(loadPushIds);
   const [linksCopied, setLinksCopied] = useState(false);
+  // STFU-on-Sam vote tally (producer view + Lemz's own vote).
+  // Mirror of the guest-side window: windowId anchors the 30s countdown.
+  const [samVotes, setSamVotes] = useState<string[]>([]);
+  const [samWindowId, setSamWindowId] = useState<number | null>(null);
+  const [samSecondsLeft, setSamSecondsLeft] = useState<number | null>(null);
+  const samWindowTimerRef = useRef<number | null>(null);
   const rosterDirty =
     seats.some((s) => draftRoster[s] !== roster[s]) ||
     draftHostName !== hostName;
@@ -415,6 +429,28 @@ function ProducerPanel() {
       }
       if (msg.type === "cardPlay") {
         playCardSfx(msg.cardId);
+      }
+      // STFU-on-Sam vote tracking — producer sees the live tally and can
+      // vote as Lemz (docs/stfu-on-sam.md §Visibility).
+      if (msg.type === "samVote") {
+        const voterId =
+          msg.from.kind === "guest"
+            ? msg.from.seat
+            : msg.from.kind === "lemz"
+              ? LEMZ_VOTER_ID
+              : null;
+        if (voterId !== null) {
+          setSamVotes((prev) => {
+            if (prev.includes(voterId)) return prev;
+            return [...prev, voterId];
+          });
+          setSamWindowId((prev) => prev ?? msg.windowId);
+        }
+      }
+      if (msg.type === "samStfu") {
+        setSamVotes([]);
+        setSamWindowId(null);
+        playCardSfx("stfu");
       }
       // Sync mute state from host: when host mutes/unmutes, update
       // producer panel indicators so both panels stay in sync.
@@ -554,6 +590,55 @@ function ProducerPanel() {
     send({ type: "unmuteGuest", target: "all", ts: Date.now() });
     setMutedSeats(new Set());
   }, [send]);
+
+  // ── STFU-on-Sam: Lemz's vote + live tally ────────────────────────────
+  // Producer votes with the same samVote event guests use; "lemz" counts
+  // toward the threshold. Producer never area-mutes (he's the camera, not
+  // a mic in the show audio), so the result event is display-only here.
+  const lemzVote = useCallback(() => {
+    const windowId = samWindowId ?? Date.now();
+    send({
+      type: "samVote",
+      from: { kind: "lemz" },
+      windowId,
+      ts: Date.now(),
+    });
+    // VDO.Ninja doesn't echo back — count locally.
+    setSamVotes((prev) => (prev.includes("lemz") ? prev : [...prev, "lemz"]));
+    setSamWindowId((prev) => prev ?? windowId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [samWindowId, send]);
+
+  // Window countdown mirrors the guest side: windowId + 30s.
+  useEffect(() => {
+    if (samWindowId === null) {
+      if (samWindowTimerRef.current !== null) {
+        window.clearInterval(samWindowTimerRef.current);
+        samWindowTimerRef.current = null;
+      }
+      setSamSecondsLeft(null);
+      return;
+    }
+    const endsAt = samWindowId + 30_000;
+    const tick = () => {
+      const remaining = Math.ceil((endsAt - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setSamVotes([]);
+        setSamWindowId(null);
+        setSamSecondsLeft(null);
+      } else {
+        setSamSecondsLeft(remaining);
+      }
+    };
+    tick();
+    samWindowTimerRef.current = window.setInterval(tick, 1000);
+    return () => {
+      if (samWindowTimerRef.current !== null) {
+        window.clearInterval(samWindowTimerRef.current);
+        samWindowTimerRef.current = null;
+      }
+    };
+  }, [samWindowId]);
 
   const sendTracker = useCallback(() => {
     const title = (trackerTitle || "Tracker").toUpperCase();
@@ -846,6 +931,30 @@ function ProducerPanel() {
           />
           <span style={styles.hint}>
             Zeroes per-guest counters and re-enables both card buttons in every wrapper.
+          </span>
+        </div>
+      </Section>
+
+      <Section title="STFU on Sam">
+        <div style={{ ...styles.row, flexWrap: "wrap", gap: 8 }}>
+          <button
+            type="button"
+            onClick={lemzVote}
+            disabled={samVotes.includes("lemz")}
+            style={{
+              ...styles.primaryButton,
+              background: NEON.red,
+              color: "#fff",
+              opacity: samVotes.includes("lemz") ? 0.5 : 1,
+              cursor: samVotes.includes("lemz") ? "not-allowed" : "pointer",
+            }}
+          >
+            {samVotes.includes("lemz") ? "LEMZ VOTED" : "LEMZ: VOTE TO STFU SAM"}
+          </button>
+          <span style={styles.hint}>
+            {samWindowId !== null
+              ? `${samVotes.length}/3 votes · ${samSecondsLeft ?? "?"}s left`
+              : "No vote window open. Guests (or Lemz) start one by voting."}
           </span>
         </div>
       </Section>

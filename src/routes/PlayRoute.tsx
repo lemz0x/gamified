@@ -18,6 +18,7 @@ import {
   useVdoNinja,
   type EventPayload,
   type EventSender,
+  type SamStfuEvent,
 } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
@@ -148,20 +149,29 @@ function saveCardUses(
   }
 }
 
-function senderFromIdentity(identity: Identity): EventSender {
-  if (identity.kind === "guest") {
-    return { kind: "guest", seat: identity.seat, label: identity.label };
-  }
-  // Editor and host both broadcast as "host"-kind so existing overlay/
-  // producer code paths (which only switch on guest vs. host) keep
-  // working. The label still distinguishes them in feed entries.
-  return { kind: "host", label: identity.label };
-}
-
 // ── visual constants (gamified neon palette, dark theme) ─────────────────
 
 /** Buzzer auto-off duration (ms). After this, a buzzer is silently turned off. */
 const BUZZ_AUTO_OFF_MS = 300_000;
+
+// ── STFU-on-Sam vote mechanic (see docs/stfu-on-sam.md) ─────────────────
+
+/** Vote window: first vote opens it, 30s later unspent votes expire. */
+const SAM_VOTE_WINDOW_MS = 30_000;
+/** Hard-lock duration on Sam + non-voters once the vote lands. */
+const SAM_STFU_MS = 10_000;
+/** Cooldown before the button re-arms after a successful vote. */
+const SAM_STFU_COOLDOWN_MS = 60_000;
+/** Cooldown after a window times out with no threshold reach. */
+const SAM_TIMEOUT_COOLDOWN_MS = 30_000;
+/**
+ * Votes needed to land the STFU. Half the panel. NOTE: staging has a single
+ * 6-guest universe; when the 4-people layout branch merges, gate this on
+ * LAYOUT_SEATS (2 for layout=4, 3 for layout=6).
+ */
+const SAM_VOTE_THRESHOLD = 3;
+/** Voter id for Lemz's producer-side vote. */
+const LEMZ_VOTER_ID = "lemz";
 
 const NEON = {
   bg: "#08080d",
@@ -328,6 +338,30 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   // muted themselves (dog barking, cough) when STFU or host-mute clears.
   const selfMutedRef = useRef(false);
   const stfuMuteTimeoutRef = useRef<number | null>(null);
+
+  // ── STFU-on-Sam vote state ────────────────────────────────────────────
+  // All wrappers (guest/host/editor) tally votes from samVote events so
+  // they can act at threshold on their OWN tally (P2P broadcast can race).
+  // The host wrapper additionally emits samStfu when ITS tally reaches
+  // threshold — one canonical result event, not N.
+  // IMPORTANT: onMessage is a useCallback created once per identity change,
+  // so all mutable reads inside helpers MUST go through refs, never state.
+  const [samVotes, setSamVotes] = useState<string[]>([]);
+  const samVotesRef = useRef<string[]>([]);
+  const samWindowIdRef = useRef<number | null>(null);
+  const [samSecondsLeft, setSamSecondsLeft] = useState<number | null>(null);
+  const [samCooldown, setSamCooldown] = useState<number | null>(null);
+  // Own vote in the CURRENT window (seat id or lemz) — drives button state.
+  const [samMyVote, setSamMyVote] = useState<string | null>(null);
+  // Flash cue when another guest casts the first vote of a window.
+  const [samCueFlash, setSamCueFlash] = useState(false);
+  const samWindowTimerRef = useRef<number | null>(null);
+  const samCooldownIntervalRef = useRef<number | null>(null);
+  const samCooldownEndsAtRef = useRef<number | null>(null);
+  // Windows this wrapper already acted on (muted / burned card / emitted).
+  const samActedRef = useRef<Set<number>>(new Set());
+  // Window ids whose result event this wrapper already processed.
+  const samHandledResultRef = useRef<number | null>(null);
   const hostMuteIntervalRef = useRef<number | null>(null);
   const lastEmojiTsRef = useRef(0);
   // Tracks the last label we pushed to the VDO.Ninja iframe so we
@@ -350,6 +384,197 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
         }
       }
     }, 150);
+  }
+
+  // ── STFU-on-Sam helpers ───────────────────────────────────────────────
+
+  /** Local voter id for this wrapper (guests use their seat; host/editor
+   *  never vote; "lemz" votes from the producer route, not here). */
+  const samSelfVoterId = identity.kind === "guest" ? identity.seat : null;
+
+  /** Stops the vote-window countdown and clears window state. */
+  function samClearWindow(): void {
+    if (samWindowTimerRef.current !== null) {
+      window.clearInterval(samWindowTimerRef.current);
+      samWindowTimerRef.current = null;
+    }
+    samVotesRef.current = [];
+    setSamVotes([]);
+    samWindowIdRef.current = null;
+    setSamSecondsLeft(null);
+    setSamMyVote(null);
+    setSamCueFlash(false);
+  }
+
+  /** Starts the 30s window countdown anchored at windowId. Ticks once per
+   *  second; at 0 the window expires (votes vanish, no result, 30s cooldown). */
+  function samStartWindowClock(windowId: number): void {
+    if (samWindowTimerRef.current !== null) {
+      window.clearInterval(samWindowTimerRef.current);
+    }
+    const endsAt = windowId + SAM_VOTE_WINDOW_MS;
+    const tick = () => {
+      const remaining = Math.ceil((endsAt - Date.now()) / 1000);
+      if (remaining <= 0) {
+        // Window expired — nothing happened. Timeout cooldown.
+        samClearWindow();
+        samStartCooldown(SAM_TIMEOUT_COOLDOWN_MS);
+      } else {
+        setSamSecondsLeft(remaining);
+      }
+    };
+    tick();
+    samWindowTimerRef.current = window.setInterval(tick, 1000);
+  }
+
+  /** Arms the mechanic cooldown (60s success / 30s timeout). */
+  function samStartCooldown(durationMs: number): void {
+    if (samCooldownIntervalRef.current !== null) {
+      window.clearInterval(samCooldownIntervalRef.current);
+    }
+    samCooldownEndsAtRef.current = Date.now() + durationMs;
+    const remainingSec = Math.ceil(durationMs / 1000);
+    setSamCooldown(remainingSec);
+    samCooldownIntervalRef.current = window.setInterval(() => {
+      const ends = samCooldownEndsAtRef.current;
+      if (ends === null) {
+        if (samCooldownIntervalRef.current !== null) {
+          window.clearInterval(samCooldownIntervalRef.current);
+          samCooldownIntervalRef.current = null;
+        }
+        setSamCooldown(null);
+        return;
+      }
+      const remaining = Math.ceil((ends - Date.now()) / 1000);
+      if (remaining <= 0) {
+        if (samCooldownIntervalRef.current !== null) {
+          window.clearInterval(samCooldownIntervalRef.current);
+          samCooldownIntervalRef.current = null;
+        }
+        samCooldownEndsAtRef.current = null;
+        setSamCooldown(null);
+      } else {
+        setSamCooldown(remaining);
+      }
+    }, 1000);
+  }
+
+  /** Hard-mute the local wrapper's iframe for the STFU-on-Sam result.
+   *  Used by the HOST wrapper on itself, and by guest wrappers for
+   *  non-voters (area mute). Force-mute + circuit breaker, cleared
+   *  after SAM_STFU_MS via the same ref-reconcile path as guest STFU. */
+  function samHardMuteLocal(): void {
+    stfuMutedRef.current = true;
+    reconcileMicRef.current();
+    startCircuitBreaker();
+    if (stfuMuteTimeoutRef.current !== null) {
+      window.clearTimeout(stfuMuteTimeoutRef.current);
+    }
+    stfuMuteTimeoutRef.current = window.setTimeout(() => {
+      stfuMutedRef.current = false;
+      stfuMuteTimeoutRef.current = null;
+      reconcileMicRef.current();
+    }, SAM_STFU_MS);
+  }
+
+  /** Burns the local guest's STFU card if they voted in this window.
+   *  Guarded by samActedRef so a vote-tally path and a result-event path
+   *  can't double-burn. */
+  function samBurnOwnCard(windowId: number): void {
+    if (identity.kind !== "guest") return;
+    if (samActedRef.current.has(windowId)) return;
+    samActedRef.current.add(windowId);
+    setCardUses((prev) => {
+      const burned = { ...prev, stfu: prev.stfu + 1 };
+      saveCardUses(identity, burned);
+      return burned;
+    });
+  }
+
+  /** Processes an inbound samVote event. Tallies locally; on threshold the
+   *  host wrapper emits samStfu (once per window). All wrappers act on their
+   *  own tally without waiting for the broadcast. */
+  function samHandleVote(from: EventSender, windowId: number): void {
+    const voterId =
+      from.kind === "guest" ? from.seat : from.kind === "lemz" ? LEMZ_VOTER_ID : null;
+    if (voterId === null) return; // host never votes
+    if (samActedRef.current.has(windowId)) return; // window already resolved
+
+    // Window bookkeeping: first vote opens the window.
+    if (samWindowIdRef.current === null && samVotesRef.current.length === 0) {
+      samWindowIdRef.current = windowId;
+      samStartWindowClock(windowId);
+    } else if (windowId !== samWindowIdRef.current) {
+      return; // stale vote from an old window — ignore
+    }
+    // Dedupe: one vote per voter per window.
+    if (samVotesRef.current.includes(voterId)) return;
+    // First vote from SOMEONE ELSE while we haven't voted: flash cue.
+    const isSelf = samSelfVoterId === voterId;
+    if (!isSelf && samVotesRef.current.length === 0) {
+      setSamCueFlash(true);
+      window.setTimeout(() => setSamCueFlash(false), 1500);
+    }
+    const next = [...samVotesRef.current, voterId];
+    samVotesRef.current = next;
+    setSamVotes(next);
+    if (isSelf) setSamMyVote(voterId);
+
+    if (next.length >= SAM_VOTE_THRESHOLD) {
+      samClearWindow();
+      samActedRef.current.add(windowId);
+      // Host wrapper is the canonical emitter (one samStfu per window).
+      if (identity.kind === "host") {
+        send({
+          type: "samStfu",
+          windowId,
+          voters: next,
+          ts: Date.now(),
+        });
+      }
+      // Host always gets silenced. Guests only if they didn't vote.
+      if (identity.kind === "host") {
+        samHardMuteLocal();
+      } else if (identity.kind === "guest" && !next.includes(identity.seat)) {
+        samHardMuteLocal();
+      }
+      // Voters burn their STFU card — success consumes the reservation.
+      if (identity.kind === "guest" && next.includes(identity.seat)) {
+        samBurnOwnCard(windowId);
+      }
+      // All wrappers: success cooldown so the button doesn't re-arm instantly.
+      samStartCooldown(SAM_STFU_COOLDOWN_MS);
+    }
+  }
+
+  /** Result event from the host wrapper. Redundant for wrappers that already
+   *  acted on their own tally, authoritative for underlay/producer/late
+   *  arrivals. Also the SFX cue point for non-host wrappers. */
+  function samHandleStfu(msg: SamStfuEvent): void {
+    if (samHandledResultRef.current === msg.windowId) return;
+    samHandledResultRef.current = msg.windowId;
+    samActedRef.current.add(msg.windowId);
+    samClearWindow();
+    // Host already hard-muted itself at its own tally; don't re-mute.
+    if (identity.kind === "host") return;
+    // Non-voter guest: hard-mute the moment the result lands.
+    if (
+      identity.kind === "guest" &&
+      !msg.voters.includes(identity.seat) &&
+      !samActedRef.current.has(msg.windowId)
+    ) {
+      samHardMuteLocal();
+    }
+    // Voter guest: burn card if not already burned via the tally path.
+    if (identity.kind === "guest" && msg.voters.includes(identity.seat)) {
+      samBurnOwnCard(msg.windowId);
+    }
+    // Success cooldown everywhere (defence-in-depth vs missed final vote).
+    samStartCooldown(SAM_STFU_COOLDOWN_MS);
+    // SFX on guest wrappers: the rebellion succeeded, everyone hears it.
+    if (identity.kind === "guest" || identity.kind === "editor") {
+      playCardSfx("stfu");
+    }
   }
 
   // Ref-based so onMessage can call it without deps
@@ -553,6 +778,14 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
           buzzOff(msg.seat);
           break;
         }
+        case "samVote": {
+          samHandleVote(msg.from, msg.windowId);
+          break;
+        }
+        case "samStfu": {
+          samHandleStfu(msg);
+          break;
+        }
         default:
           break;
       }
@@ -639,6 +872,12 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       }
       if (buzzTimerRef.current !== null) {
         window.clearTimeout(buzzTimerRef.current);
+      }
+      if (samWindowTimerRef.current !== null) {
+        window.clearInterval(samWindowTimerRef.current);
+      }
+      if (samCooldownIntervalRef.current !== null) {
+        window.clearInterval(samCooldownIntervalRef.current);
       }
     };
   }, []);
@@ -733,7 +972,10 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       lastEmojiTsRef.current = now;
       send({
         type: "emoji",
-        from: { ...senderFromIdentity(identity), label: effectiveLabelRef.current },
+        from:
+          identity.kind === "guest"
+            ? { kind: "guest", seat: identity.seat, label: effectiveLabelRef.current }
+            : { kind: "host", label: effectiveLabelRef.current },
         emoji,
         ts: Date.now(),
       });
@@ -750,7 +992,10 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     (card: Card, target: { seat: SeatId; label: string }) => {
       send({
         type: "cardPlay",
-        from: { ...senderFromIdentity(identity), label: effectiveLabelRef.current },
+        from:
+          identity.kind === "guest"
+            ? { kind: "guest", seat: identity.seat, label: effectiveLabelRef.current }
+            : { kind: "host", label: effectiveLabelRef.current },
         cardId: card.id,
         targetSeat: target.seat,
         targetLabel: target.label,
@@ -839,6 +1084,37 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
               />
             ))}
           </section>
+        )}
+
+        {identity.kind === "guest" && (
+          <SamVotePanel
+            votes={samVotes.length}
+            threshold={SAM_VOTE_THRESHOLD}
+            secondsLeft={samSecondsLeft}
+            myVote={samMyVote}
+            cooldown={samCooldown}
+            cueFlash={samCueFlash}
+            onVote={() => {
+              if (identity.kind !== "guest") return;
+              if (samCooldown !== null) return;
+              if (samMyVote !== null) return;
+              // Reserving the STFU card requires one to be spare.
+              const stfuCard = CARDS.find((c) => c.id === "stfu");
+              if (cardUses.stfu >= (stfuCard?.usesPerTopic ?? 1)) return;
+              const windowId = samWindowIdRef.current ?? Date.now();
+              send({
+                type: "samVote",
+                from: { kind: "guest", seat: identity.seat, label: effectiveLabelRef.current },
+                windowId,
+                ts: Date.now(),
+              });
+              // VDO.Ninja doesn't echo back to the sender — count locally too.
+              samHandleVote(
+                { kind: "guest", seat: identity.seat, label: effectiveLabelRef.current },
+                windowId,
+              );
+            }}
+          />
         )}
 
         {showMuteControls && (
@@ -999,6 +1275,130 @@ interface CardButtonProps {
   /** Seconds remaining on cooldown (STFU and WRAP IT UP). null = not on cooldown. */
   cooldown: number | null;
   onClick: () => void;
+}
+
+interface SamVotePanelProps {
+  /** Current vote tally in the open window. */
+  votes: number;
+  /** Votes needed to land the STFU. */
+  threshold: number;
+  /** Seconds left in the window; null when no window is open. */
+  secondsLeft: number | null;
+  /** Local guest's vote in this window, if cast. */
+  myVote: string | null;
+  /** Mechanic cooldown seconds; null when armed. */
+  cooldown: number | null;
+  /** True for 1.5s after the first vote from someone else lands. */
+  cueFlash: boolean;
+  onVote: () => void;
+}
+
+/**
+ * STFU-on-Sam vote panel — the guest-side "rebellion" button.
+ *
+ * States:
+ *  - ARMED: idle button, gold-red theme, no window open.
+ *  - IN WINDOW (not voted): shows tally bar n/threshold + countdown; the
+ *    button reads "ADD MY VOTE". A first vote from someone else fires
+ *    the flash cue so the rebellion is visible before it lands.
+ *  - IN WINDOW (voted): button dims to "VOTE CAST", bar keeps filling.
+ *  - COOLDOWN: shows the countdown; disabled.
+ *  - NO CARD LEFT: STFU uses exhausted for the topic — disabled.
+ *
+ * NEVER rendered for host/editor: Sam's wrapper tallies silently and the
+ * editor has no cards. See docs/stfu-on-sam.md §Visibility.
+ */
+function SamVotePanel({ votes, threshold, secondsLeft, myVote, cooldown, cueFlash, onVote }: SamVotePanelProps) {
+  const stfuGlow = "#ff2e6b";
+  const windowOpen = secondsLeft !== null;
+  const voted = myVote !== null;
+  const disabled = cooldown !== null || (windowOpen && voted);
+  const pct = Math.min(100, (votes / threshold) * 100);
+  return (
+    <section style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: 4,
+      padding: "6px 8px",
+      borderRadius: 8,
+      border: `1px solid ${cueFlash ? stfuGlow : "#1f1f30"}`,
+      background: cueFlash ? "rgba(255,46,107,0.12)" : "#0e0e16",
+      transition: "border-color 300ms ease-out, background 300ms ease-out",
+      boxShadow: cueFlash ? `0 0 18px ${stfuGlow}66` : "none",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: 1.5,
+          color: stfuGlow,
+          textShadow: `0 0 10px ${stfuGlow}88`,
+        }}>
+          SHUT THE HOST UP
+        </span>
+        {windowOpen && (
+          <span style={{
+            fontFamily: '"Orbitron", system-ui, sans-serif',
+            fontSize: 11,
+            fontWeight: 900,
+            color: secondsLeft !== null && secondsLeft <= 10 ? stfuGlow : "#8a8aa3",
+          }}>
+            {secondsLeft}s
+          </span>
+        )}
+      </div>
+      {windowOpen && (
+        <div style={{
+          height: 6,
+          borderRadius: 3,
+          background: "#1a1a28",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            width: `${pct}%`,
+            height: "100%",
+            borderRadius: 3,
+            background: `linear-gradient(90deg, ${stfuGlow}, #ff7700)`,
+            transition: "width 300ms ease-out",
+          }} />
+        </div>
+      )}
+      {windowOpen && (
+        <div style={{ fontSize: 9, color: "#8a8aa3", letterSpacing: 0.5 }}>
+          {voted ? "YOUR VOTE IS IN" : `${votes} / ${threshold} VOTES`}
+        </div>
+      )}
+      <button
+        onClick={onVote}
+        disabled={disabled}
+        style={{
+          position: "relative",
+          padding: "6px 10px",
+          borderRadius: 6,
+          cursor: disabled ? "not-allowed" : "pointer",
+          border: `1px solid ${disabled ? "#2a2a3a" : stfuGlow}`,
+          background: disabled ? "#12121c" : "rgba(255,46,107,0.14)",
+          color: disabled ? "#5a5a6e" : "#ff8fae",
+          fontFamily: '"Orbitron", system-ui, sans-serif',
+          fontWeight: 900,
+          fontSize: 11,
+          letterSpacing: 1,
+          textTransform: "uppercase",
+          transition: "all 200ms ease-out",
+        }}
+      >
+        {cooldown !== null
+          ? `REARMING ${cooldown}s`
+          : windowOpen
+            ? voted
+              ? "VOTE CAST"
+              : "ADD MY VOTE"
+            : votes >= threshold
+              ? "IT LANDED"
+              : "PLAY STFU ON SAM"}
+      </button>
+    </section>
+  );
 }
 
 function CardButton({ card, uses, cooldown, onClick }: CardButtonProps) {
