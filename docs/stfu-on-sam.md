@@ -7,7 +7,7 @@
 
 | # | Item | Notes |
 |---|------|-------|
-| 1 | Self-mute visibility | Host/producer panels show when a guest self-mutes. Listener exists (`mic-mute-state` → `selfMutedRef`) but no `guestSelfMuted` broadcast exists — only the narrow `guestSelfUnmuted` while-host-muted case. Needs a broadcast on the mute-direction event + handler case per panel + distinct indicator style (so host-mute ≠ self-mute). Deferred by Lemz Oct 14: state overlap with host-mute/mute-all/STFU in `reconcileMic` is real risk for a cosmetic gain, and it sits on the mute machinery STFU depends on. Do AFTER the episode, not before. |
+| 1 | Self-mute visibility | **SHIPPED Oct 15** — `micState` broadcast on every guest self-toggle (suppressed during force mutes). Producer + host panels show LIVE green / SELF-MUTED amber / MUTED red; host-mute wins display. State is transient like buzz (panel reload loses it until next toggle). |
 | 2 | Pill size | Accepted after episode-size tweak; Lemz may want a final trim after seeing it live. |
 | 3 | 4-guest layout support | `SAM_VOTE_THRESHOLD` hardcoded 3 — needs layout-aware gate (2-of-4 / 3-of-6) + rebase onto `main` where the layout system lives. Blocker for 4-person shows. |
 
@@ -72,6 +72,21 @@ interface SamStfuEvent {
 | Producer panel (`/producer`) | Lemz's vote button (identical rules: reserves nothing since producer has no cards, but counts toward threshold). Live tally display. |
 | Underlay (`/underlay`) | On `samStfu`: SILENCED wash on Sam's tile (geometry below) + non-voter guest tiles. Clears after 10s. |
 | Sam's screen | Nothing. Ever. |
+
+## Show link format (producer keeps these in the Google doc — no generator UI)
+
+The producer panel does NOT generate links anymore. Hand-build them like this
+(push IDs are the stable VDO.Ninja stream IDs the OBS cam sources watch):
+
+- **Guest (6-cam, default):** `https://<origin>/play?seat=<N>&push=<STREAM_ID>&label=<NAME>`
+- **Guest (4-cam):** add `&layout=4`
+- **Host (Sam, 6-cam):** `https://<origin>/play?role=host&push=<STREAM_ID>&label=Sam`
+- **Host (Sam, 4-cam):** `https://<origin>/play?role=host&layout=4&push=<STREAM_ID>&label=Sam`
+
+**The host link MUST carry the same `?layout=` as the guests.** The host wrapper
+is the canonical evaluator of STFU-on-Sam — it derives the vote threshold from
+its own URL. A host link without it silently runs the 6-guest universe (3-vote
+threshold, 6-seat card grid), which is exactly the Oct 14 show bug.
 
 ## Sam's tile geometry (from Gamified_master.json, Sep 30 2026)
 

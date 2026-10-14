@@ -24,6 +24,7 @@ import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildOverlayDataOnlyUrl,
   useVdoNinja,
+  SAM_VOTE_WINDOW_MS,
   type EventPayload,
 } from "../lib/vdoninja";
 import {
@@ -131,58 +132,6 @@ function emptyTrackerState(): { title: string; answers: Record<SeatId, string> }
     title: "",
     answers: Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>,
   };
-}
-
-// ── guest link generator ──────────────────────────────────────────────────
-
-/**
- * Per-seat VDO.Ninja push stream IDs for the guest link generator. These are
- * stable per slot (the OBS cam sources watch these stream IDs), so they're
- * entered once per machine and persisted. Mirrors the producer's Google-doc
- * link sheet: seat = slot, push = stream id, label comes from the roster.
- */
-const PUSH_IDS_STORAGE_KEY = "gamified.links.pushIds.v1";
-
-function loadPushIds(): Record<SeatId, string> {
-  const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
-  if (typeof window === "undefined") return empty;
-  try {
-    const raw = window.localStorage.getItem(PUSH_IDS_STORAGE_KEY);
-    if (!raw) return empty;
-    const parsed = JSON.parse(raw) as Partial<Record<SeatId, string>> | null;
-    if (!parsed || typeof parsed !== "object") return empty;
-    for (const seat of SEAT_ORDER) {
-      if (typeof parsed[seat] === "string") empty[seat] = parsed[seat] ?? "";
-    }
-    return empty;
-  } catch {
-    return empty;
-  }
-}
-
-function savePushIds(ids: Record<SeatId, string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PUSH_IDS_STORAGE_KEY, JSON.stringify(ids));
-  } catch {
-    // ignore quota / disabled storage
-  }
-}
-
-/** Builds the /play URL for one guest slot on this layout. */
-function buildGuestLink(
-  origin: string,
-  layout: GuestLayout,
-  seatIndex: number,
-  pushId: string,
-  label: string,
-): string {
-  const params = new URLSearchParams();
-  if (layout !== "6") params.set("layout", layout);
-  params.set("seat", String(seatIndex));
-  params.set("push", pushId);
-  params.set("label", label);
-  return `${origin}/play?${params.toString()}`;
 }
 
 /** Load the last committed tracker from localStorage. Falls back to empty. */
@@ -380,11 +329,11 @@ function ProducerPanel() {
   );
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
-  // Guest link generator state — push IDs entered once, persisted per machine.
-  const [pushIds, setPushIds] = useState<Record<SeatId, string>>(loadPushIds);
-  const [linksCopied, setLinksCopied] = useState(false);
+  // Guests who muted themselves via their own VDO.Ninja mic button.
+  // Display-only mirror of micState broadcasts — host-mute wins at render.
+  const [selfMutedSeats, setSelfMutedSeats] = useState<Set<SeatId>>(new Set());
   // STFU-on-Sam vote tally (producer view + Lemz's own vote).
-  // Mirror of the guest-side window: windowId anchors the 30s countdown.
+  // Mirror of the guest-side window: windowId anchors the 60s countdown.
   const [samVotes, setSamVotes] = useState<string[]>([]);
   const [samWindowId, setSamWindowId] = useState<number | null>(null);
   const [samSecondsLeft, setSamSecondsLeft] = useState<number | null>(null);
@@ -482,6 +431,16 @@ function ProducerPanel() {
           if (!prev.has(msg.seat)) return prev;
           const next = new Set(prev);
           next.delete(msg.seat);
+          return next;
+        });
+      }
+      // Guest self-toggled their mic: track the true state for display.
+      // Host-mute display wins when both apply (handled at render).
+      if (msg.type === "micState") {
+        setSelfMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (msg.selfMuted) next.add(msg.seat);
+          else next.delete(msg.seat);
           return next;
         });
       }
@@ -609,7 +568,7 @@ function ProducerPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [samWindowId, send]);
 
-  // Window countdown mirrors the guest side: windowId + 30s.
+  // Window countdown mirrors the guest side: windowId + SAM_VOTE_WINDOW_MS.
   useEffect(() => {
     if (samWindowId === null) {
       if (samWindowTimerRef.current !== null) {
@@ -619,7 +578,7 @@ function ProducerPanel() {
       setSamSecondsLeft(null);
       return;
     }
-    const endsAt = samWindowId + 30_000;
+    const endsAt = samWindowId + SAM_VOTE_WINDOW_MS;
     const tick = () => {
       const remaining = Math.ceil((endsAt - Date.now()) / 1000);
       if (remaining <= 0) {
@@ -717,40 +676,6 @@ function ProducerPanel() {
     send({ type: "calibration", tiles: fresh, ts: Date.now() });
   }, [send, layout]);
 
-  // ── guest link generator ─────────────────────────────────────────────
-  /** Copies one DM-ready link per layout seat to the clipboard. */
-  const copyGuestLinks = useCallback(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const lines = seats.map((seat, i) => {
-      const name = roster[seat] || seat;
-      return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
-    });
-    const text = lines.join("\n\n");
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(text).then(() => {
-        setLinksCopied(true);
-        window.setTimeout(() => setLinksCopied(false), 2500);
-      }).catch(() => {
-        // Clipboard permission refused (some OBS CEF builds) — fall back to
-        // selecting the textarea below for a manual Ctrl+C.
-        linksTextareaRef.current?.select();
-      });
-    } else {
-      // No clipboard API at all — select the textarea for manual copy.
-      linksTextareaRef.current?.select();
-    }
-  }, [seats, roster, layout, pushIds]);
-  const linksTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const guestLinksText = useMemo(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return seats
-      .map((seat, i) => {
-        const name = roster[seat] || seat;
-        return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
-      })
-      .join("\n\n");
-  }, [seats, roster, layout, pushIds]);
-
   return (
     <div style={styles.shell}>
       <header style={styles.headerBar}>
@@ -812,62 +737,6 @@ function ProducerPanel() {
         </div>
       </Section>
 
-      <Section title={`Guest links (${layout}-guest layout)`}>
-        <span style={styles.hint}>
-          Push IDs are per-slot VDO.Ninja stream IDs (same as the OBS cam sources watch). Enter once — they persist on this machine. Links are built from the current roster names.
-        </span>
-        <div style={styles.rosterGrid}>
-          {seats.map((seat, i) => (
-            <label key={seat} style={styles.rosterField}>
-              <span style={styles.rosterFieldLabel}>{`Guest ${i + 1} · ${seat} · push ID`}</span>
-              <input
-                type="text"
-                value={pushIds[seat]}
-                onChange={(e) => {
-                  const v = e.target.value.trim();
-                  setPushIds((prev) => {
-                    const next = { ...prev, [seat]: v };
-                    savePushIds(next);
-                    return next;
-                  });
-                }}
-                style={styles.input}
-                spellCheck={false}
-                placeholder="i2zCGkA"
-              />
-            </label>
-          ))}
-        </div>
-        <div style={styles.row}>
-          <button
-            type="button"
-            onClick={(e) => { copyGuestLinks(); e.currentTarget.blur(); }}
-            style={{ ...styles.primaryButton, background: NEON.cyan, color: "#0a0610" }}
-          >
-            {linksCopied ? "Copied!" : "Copy guest links"}
-          </button>
-          <span style={styles.hint}>
-            {rosterDirty ? "Save the roster first — names in links follow the saved roster." : "One link per seat, ready to DM."}
-          </span>
-        </div>
-        <textarea
-          ref={linksTextareaRef}
-          readOnly
-          value={guestLinksText}
-          spellCheck={false}
-          onFocus={(e) => e.currentTarget.select()}
-          style={{
-            ...styles.input,
-            width: "100%",
-            minHeight: 120,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            fontSize: 11,
-            lineHeight: 1.5,
-            resize: "vertical",
-          }}
-        />
-      </Section>
-
       <Section title="Mute controls">
         <div style={styles.row}>
           <button
@@ -888,6 +757,9 @@ function ProducerPanel() {
         <div style={styles.rosterGrid}>
           {seats.map((seat) => {
             const isMuted = mutedSeats.has(seat);
+            // Host-mute wins the display when both apply — the seat is
+            // actually muted either way, but who silenced them matters.
+            const isSelfMuted = !isMuted && selfMutedSeats.has(seat);
             return (
               <button
                 key={seat}
@@ -896,11 +768,12 @@ function ProducerPanel() {
                 style={{
                   ...styles.muteSeatBtn,
                   ...(isMuted ? styles.muteSeatActive : {}),
+                  ...(isSelfMuted ? styles.muteSeatSelf : {}),
                 }}
               >
                 <span style={styles.muteSeatName}>{roster[seat] || seat}</span>
                 <span style={styles.muteSeatStatus}>
-                  {isMuted ? "MUTED" : "LIVE"}
+                  {isMuted ? "MUTED" : isSelfMuted ? "SELF-MUTED" : "LIVE"}
                 </span>
               </button>
             );
@@ -1397,6 +1270,12 @@ const styles: Record<string, CSSProperties> = {
   muteSeatActive: {
     borderColor: NEON.red,
     background: `rgba(255, 46, 107, 0.08)`,
+  },
+  // Self-muted (guest clicked their own VDO.Ninja mic): amber, distinct
+  // from the red host-mute so the producer can tell who silenced whom.
+  muteSeatSelf: {
+    borderColor: NEON.amber,
+    background: `rgba(255, 176, 0, 0.08)`,
   },
   muteSeatName: {
     fontSize: 13,

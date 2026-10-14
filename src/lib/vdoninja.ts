@@ -378,7 +378,10 @@ export interface ChatToScreenClearEvent {
 /** Guest unmuted themselves by clicking the mic icon in VDO.Ninja.
  *  This is an advisory notification so the host/producer can clear
  *  the SILENCED badge for that guest. STFU mutes are not cleared
- *  (the circuit breaker continues to re-assert those). */
+ *  (the circuit breaker continues to re-assert those).
+ *
+ *  Superseded by micState for panel display — kept because the underlay's
+ *  SILENCED-reason clearing still keys off this narrow event. */
 export interface GuestSelfUnmutedEvent {
   type: "guestSelfUnmuted";
   /** Which guest seat self-unmuted. */
@@ -386,10 +389,28 @@ export interface GuestSelfUnmutedEvent {
   ts: number;
 }
 
-/** A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
+/** A guest's actual mic state after they toggled it themselves in
+ *  VDO.Ninja. Broadcast so the host and producer panels can display the
+ *  true mic state (LIVE / SELF-MUTED) alongside host mutes. Purely
+ *  advisory — display only, no mute machinery reacts to this.
+ *  Guests do NOT emit this while a force mute (STFU / mute-all) is
+ *  active, so a guest clicking their mic mid-force-mute can't paint a
+ *  misleading "live" state on the panels. */
+export interface MicStateEvent {
+  type: "micState";
+  /** Which guest seat toggled their own mic. */
+  seat: SeatId;
+  /** True = guest muted themselves, false = guest went live. */
+  selfMuted: boolean;
+  ts: number;
+}
+
+/**
+ * A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
  *  The first vote's ts becomes the shared `windowId` — all wrappers
- *  derive the 30s window and the threshold tally from it.
+ *  derive the vote window and the threshold tally from it.
  *  Transient state, like buzz: late joiners are not backfilled. */
+export const SAM_VOTE_WINDOW_MS = 60_000;
 export interface SamVoteEvent {
   type: "samVote";
   from: EventSender;
@@ -401,12 +422,29 @@ export interface SamVoteEvent {
 /** The vote threshold was met — the STFU-on-Sam landed. Emitted by the
  *  vote counter (host wrapper, silently). Everyone area-mutes non-voters
  *  plus the host; the underlay paints SILENCED on Sam's tile and
- *  non-voter tiles. */
+ *  non-voter tiles.
+ *
+ *  `cooldownEndsAt` (epoch ms) is the host's cooldown clock — receivers
+ *  sync their own countdown to it so a reloaded tab doesn't drift out
+ *  of step with the rest of the panel. */
 export interface SamStfuEvent {
   type: "samStfu";
   windowId: number;
   /** Seat ids (+"lemz") that voted — they are spared the area mute. */
   voters: string[];
+  /** Epoch ms when the post-result cooldown ends (host's clock). */
+  cooldownEndsAt?: number;
+  ts: number;
+}
+
+/** A vote window expired without reaching threshold. Emitted only by the
+ *  host wrapper (its clock is the canonical window anchor). Receivers
+ *  clear the window and sync their cooldown to `cooldownEndsAt` — same
+ *  duration as the success path, so tabs stay in step either way. */
+export interface SamCooldownEvent {
+  type: "samCooldown";
+  /** Epoch ms when the post-timeout cooldown ends (host's clock). */
+  cooldownEndsAt: number;
   ts: number;
 }
 
@@ -427,8 +465,10 @@ export type EventPayload =
   | ChatToScreenEvent
   | ChatToScreenClearEvent
   | GuestSelfUnmutedEvent
+  | MicStateEvent
   | SamVoteEvent
-  | SamStfuEvent;
+  | SamStfuEvent
+  | SamCooldownEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
@@ -436,8 +476,8 @@ const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
   "calibration", "muteGuest", "unmuteGuest",
   "buzzIn", "buzzOff", "trackerUpdate",
-  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "getRoster",
-  "samVote", "samStfu",
+  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "micState", "getRoster",
+  "samVote", "samStfu", "samCooldown",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -494,6 +534,10 @@ export function validatePayload(raw: unknown): EventPayload | null {
     case "guestSelfUnmuted":
       if (!isValidSeatId(p.seat)) return null;
       break;
+    case "micState":
+      if (!isValidSeatId(p.seat)) return null;
+      if (typeof p.selfMuted !== "boolean") return null;
+      break;
     case "samVote":
       if (!isValidSender(p.from)) return null;
       if (typeof p.windowId !== "number") return null;
@@ -502,6 +546,10 @@ export function validatePayload(raw: unknown): EventPayload | null {
       if (typeof p.windowId !== "number") return null;
       if (!Array.isArray(p.voters)) return null;
       if (p.voters.some((v) => typeof v !== "string")) return null;
+      if (p.cooldownEndsAt !== undefined && typeof p.cooldownEndsAt !== "number") return null;
+      break;
+    case "samCooldown":
+      if (typeof p.cooldownEndsAt !== "number") return null;
       break;
     case "calibration":
       if (!p.tiles || typeof p.tiles !== "object") return null;
