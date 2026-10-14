@@ -134,101 +134,6 @@ function emptyTrackerState(): { title: string; answers: Record<SeatId, string> }
   };
 }
 
-// ── guest link generator ──────────────────────────────────────────────────
-
-/**
- * Per-seat VDO.Ninja push stream IDs for the guest link generator. These are
- * stable per slot (the OBS cam sources watch these stream IDs), so they're
- * entered once per machine and persisted. Mirrors the producer's Google-doc
- * link sheet: seat = slot, push = stream id, label comes from the roster.
- */
-const PUSH_IDS_STORAGE_KEY = "gamified.links.pushIds.v1";
-/** Host (Sam) has his own push ID — kept separate from the per-seat map so
- *  the v1 storage shape stays untouched. */
-const HOST_PUSH_ID_STORAGE_KEY = "gamified.links.hostPushId.v1";
-
-function loadHostPushId(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    const raw = window.localStorage.getItem(HOST_PUSH_ID_STORAGE_KEY);
-    return typeof raw === "string" ? raw : "";
-  } catch {
-    return "";
-  }
-}
-
-function saveHostPushId(id: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(HOST_PUSH_ID_STORAGE_KEY, id);
-  } catch {
-    // ignore quota / disabled storage
-  }
-}
-
-function loadPushIds(): Record<SeatId, string> {
-  const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
-  if (typeof window === "undefined") return empty;
-  try {
-    const raw = window.localStorage.getItem(PUSH_IDS_STORAGE_KEY);
-    if (!raw) return empty;
-    const parsed = JSON.parse(raw) as Partial<Record<SeatId, string>> | null;
-    if (!parsed || typeof parsed !== "object") return empty;
-    for (const seat of SEAT_ORDER) {
-      if (typeof parsed[seat] === "string") empty[seat] = parsed[seat] ?? "";
-    }
-    return empty;
-  } catch {
-    return empty;
-  }
-}
-
-function savePushIds(ids: Record<SeatId, string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PUSH_IDS_STORAGE_KEY, JSON.stringify(ids));
-  } catch {
-    // ignore quota / disabled storage
-  }
-}
-
-/** Builds the /play URL for one guest slot on this layout. */
-function buildGuestLink(
-  origin: string,
-  layout: GuestLayout,
-  seatIndex: number,
-  pushId: string,
-  label: string,
-): string {
-  const params = new URLSearchParams();
-  if (layout !== "6") params.set("layout", layout);
-  params.set("seat", String(seatIndex));
-  params.set("push", pushId);
-  params.set("label", label);
-  return `${origin}/play?${params.toString()}`;
-}
-
-/**
- * Builds the /play URL for the host (Sam). The host wrapper is the canonical
- * evaluator of STFU-on-Sam — it derives the vote threshold from its own
- * layout — so the host link MUST carry the same ?layout= as the guests.
- * A hand-built link without it silently runs the 6-guest universe (3-vote
- * threshold, 6-seat card grid), which is exactly the Oct 14 show bug.
- */
-function buildHostLink(
-  origin: string,
-  layout: GuestLayout,
-  pushId: string,
-  label: string,
-): string {
-  const params = new URLSearchParams();
-  if (layout !== "6") params.set("layout", layout);
-  params.set("role", "host");
-  params.set("push", pushId);
-  params.set("label", label);
-  return `${origin}/play?${params.toString()}`;
-}
-
 /** Load the last committed tracker from localStorage. Falls back to empty. */
 function loadCommittedTracker(): { title: string; answers: Record<SeatId, string> } {
   if (typeof window === "undefined") return emptyTrackerState();
@@ -424,10 +329,6 @@ function ProducerPanel() {
   );
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
-  // Guest link generator state — push IDs entered once, persisted per machine.
-  const [pushIds, setPushIds] = useState<Record<SeatId, string>>(loadPushIds);
-  const [linksCopied, setLinksCopied] = useState(false);
-  const [hostPushId, setHostPushId] = useState(loadHostPushId);
   // STFU-on-Sam vote tally (producer view + Lemz's own vote).
   // Mirror of the guest-side window: windowId anchors the 60s countdown.
   const [samVotes, setSamVotes] = useState<string[]>([]);
@@ -762,48 +663,6 @@ function ProducerPanel() {
     send({ type: "calibration", tiles: fresh, ts: Date.now() });
   }, [send, layout]);
 
-  // ── guest link generator ─────────────────────────────────────────────
-  /** Copies the full link sheet to the clipboard: Sam's 4/6-cam versions
-   *  on top, then one DM-ready link per layout seat. Park it in the show
-   *  doc — nothing here depends on the active layout at copy time. */
-  const copyGuestLinks = useCallback(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const lines = seats.map((seat, i) => {
-      const name = roster[seat] || seat;
-      return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
-    });
-    const text = [
-      `Host (Sam) — 4-camera:\n${buildHostLink(origin, "4", hostPushId || "PUSH_ID", hostName)}`,
-      `Host (Sam) — 6-camera:\n${buildHostLink(origin, "6", hostPushId || "PUSH_ID", hostName)}`,
-      ...lines,
-    ].join("\n\n");
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(text).then(() => {
-        setLinksCopied(true);
-        window.setTimeout(() => setLinksCopied(false), 2500);
-      }).catch(() => {
-        // Clipboard permission refused (some OBS CEF builds) — fall back to
-        // selecting the textarea below for a manual Ctrl+C.
-        linksTextareaRef.current?.select();
-      });
-    } else {
-      // No clipboard API at all — select the textarea for manual copy.
-      linksTextareaRef.current?.select();
-    }
-  }, [seats, roster, layout, pushIds, hostPushId, hostName]);
-  const linksTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const guestLinksText = useMemo(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return [
-      `Host (Sam) — 4-camera:\n${buildHostLink(origin, "4", hostPushId || "PUSH_ID", hostName)}`,
-      `Host (Sam) — 6-camera:\n${buildHostLink(origin, "6", hostPushId || "PUSH_ID", hostName)}`,
-      ...seats.map((seat, i) => {
-        const name = roster[seat] || seat;
-        return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
-      }),
-    ].join("\n\n");
-  }, [seats, roster, layout, pushIds, hostPushId, hostName]);
-
   return (
     <div style={styles.shell}>
       <header style={styles.headerBar}>
@@ -863,76 +722,6 @@ function ProducerPanel() {
             <span style={styles.hint}>No unsaved changes.</span>
           )}
         </div>
-      </Section>
-
-      <Section title={`Guest links (${layout}-guest layout)`}>
-        <span style={styles.hint}>
-          Push IDs are per-slot VDO.Ninja stream IDs (same as the OBS cam sources watch). Enter once — they persist on this machine. Links are built from the current roster names.
-        </span>
-        <div style={styles.rosterGrid}>
-          {seats.map((seat, i) => (
-            <label key={seat} style={styles.rosterField}>
-              <span style={styles.rosterFieldLabel}>{`Guest ${i + 1} · ${seat} · push ID`}</span>
-              <input
-                type="text"
-                value={pushIds[seat]}
-                onChange={(e) => {
-                  const v = e.target.value.trim();
-                  setPushIds((prev) => {
-                    const next = { ...prev, [seat]: v };
-                    savePushIds(next);
-                    return next;
-                  });
-                }}
-                style={styles.input}
-                spellCheck={false}
-                placeholder="i2zCGkA"
-              />
-            </label>
-          ))}
-        </div>
-        <div style={styles.row}>
-          <button
-            type="button"
-            onClick={(e) => { copyGuestLinks(); e.currentTarget.blur(); }}
-            style={{ ...styles.primaryButton, background: NEON.cyan, color: "#0a0610" }}
-          >
-            {linksCopied ? "Copied!" : "Copy show links"}
-          </button>
-          <span style={styles.hint}>
-            {rosterDirty ? "Save the roster first — names in links follow the saved roster." : "Sam's 4/6-cam links + one link per seat, ready to DM."}
-          </span>
-        </div>
-        <label style={{ ...styles.label, marginTop: 8 }}>
-          HOST PUSH ID (SAM)
-          <input
-            value={hostPushId}
-            onChange={(e) => {
-              const v = e.currentTarget.value.trim();
-              setHostPushId(v);
-              saveHostPushId(v);
-            }}
-            style={{ ...styles.input, width: 120, marginTop: 4 }}
-            placeholder="i2zCGkA"
-            spellCheck={false}
-          />
-        </label>
-        <textarea
-          ref={linksTextareaRef}
-          readOnly
-          value={guestLinksText}
-          spellCheck={false}
-          onFocus={(e) => e.currentTarget.select()}
-          style={{
-            ...styles.input,
-            width: "100%",
-            minHeight: 120,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            fontSize: 11,
-            lineHeight: 1.5,
-            resize: "vertical",
-          }}
-        />
       </Section>
 
       <Section title="Mute controls">

@@ -73,6 +73,21 @@ interface SamStfuEvent {
 | Underlay (`/underlay`) | On `samStfu`: SILENCED wash on Sam's tile (geometry below) + non-voter guest tiles. Clears after 10s. |
 | Sam's screen | Nothing. Ever. |
 
+## Show link format (producer keeps these in the Google doc — no generator UI)
+
+The producer panel does NOT generate links anymore. Hand-build them like this
+(push IDs are the stable VDO.Ninja stream IDs the OBS cam sources watch):
+
+- **Guest (6-cam, default):** `https://<origin>/play?seat=<N>&push=<STREAM_ID>&label=<NAME>`
+- **Guest (4-cam):** add `&layout=4`
+- **Host (Sam, 6-cam):** `https://<origin>/play?role=host&push=<STREAM_ID>&label=Sam`
+- **Host (Sam, 4-cam):** `https://<origin>/play?role=host&layout=4&push=<STREAM_ID>&label=Sam`
+
+**The host link MUST carry the same `?layout=` as the guests.** The host wrapper
+is the canonical evaluator of STFU-on-Sam — it derives the vote threshold from
+its own URL. A host link without it silently runs the 6-guest universe (3-vote
+threshold, 6-seat card grid), which is exactly the Oct 14 show bug.
+
 ## Sam's tile geometry (from Gamified_master.json, Sep 30 2026)
 
 Sam Cam is a 1920x1080 chroma-keyed VDO.Ninja browser source (`?view=Host1`),
