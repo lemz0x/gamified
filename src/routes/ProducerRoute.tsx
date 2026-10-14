@@ -24,6 +24,7 @@ import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildOverlayDataOnlyUrl,
   useVdoNinja,
+  SAM_VOTE_WINDOW_MS,
   type EventPayload,
 } from "../lib/vdoninja";
 import {
@@ -142,6 +143,28 @@ function emptyTrackerState(): { title: string; answers: Record<SeatId, string> }
  * link sheet: seat = slot, push = stream id, label comes from the roster.
  */
 const PUSH_IDS_STORAGE_KEY = "gamified.links.pushIds.v1";
+/** Host (Sam) has his own push ID — kept separate from the per-seat map so
+ *  the v1 storage shape stays untouched. */
+const HOST_PUSH_ID_STORAGE_KEY = "gamified.links.hostPushId.v1";
+
+function loadHostPushId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem(HOST_PUSH_ID_STORAGE_KEY);
+    return typeof raw === "string" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+function saveHostPushId(id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HOST_PUSH_ID_STORAGE_KEY, id);
+  } catch {
+    // ignore quota / disabled storage
+  }
+}
 
 function loadPushIds(): Record<SeatId, string> {
   const empty = Object.fromEntries(SEAT_ORDER.map((s) => [s, ""])) as Record<SeatId, string>;
@@ -180,6 +203,27 @@ function buildGuestLink(
   const params = new URLSearchParams();
   if (layout !== "6") params.set("layout", layout);
   params.set("seat", String(seatIndex));
+  params.set("push", pushId);
+  params.set("label", label);
+  return `${origin}/play?${params.toString()}`;
+}
+
+/**
+ * Builds the /play URL for the host (Sam). The host wrapper is the canonical
+ * evaluator of STFU-on-Sam — it derives the vote threshold from its own
+ * layout — so the host link MUST carry the same ?layout= as the guests.
+ * A hand-built link without it silently runs the 6-guest universe (3-vote
+ * threshold, 6-seat card grid), which is exactly the Oct 14 show bug.
+ */
+function buildHostLink(
+  origin: string,
+  layout: GuestLayout,
+  pushId: string,
+  label: string,
+): string {
+  const params = new URLSearchParams();
+  if (layout !== "6") params.set("layout", layout);
+  params.set("role", "host");
   params.set("push", pushId);
   params.set("label", label);
   return `${origin}/play?${params.toString()}`;
@@ -383,8 +427,10 @@ function ProducerPanel() {
   // Guest link generator state — push IDs entered once, persisted per machine.
   const [pushIds, setPushIds] = useState<Record<SeatId, string>>(loadPushIds);
   const [linksCopied, setLinksCopied] = useState(false);
+  const [hostLinkCopied, setHostLinkCopied] = useState(false);
+  const [hostPushId, setHostPushId] = useState(loadHostPushId);
   // STFU-on-Sam vote tally (producer view + Lemz's own vote).
-  // Mirror of the guest-side window: windowId anchors the 30s countdown.
+  // Mirror of the guest-side window: windowId anchors the 60s countdown.
   const [samVotes, setSamVotes] = useState<string[]>([]);
   const [samWindowId, setSamWindowId] = useState<number | null>(null);
   const [samSecondsLeft, setSamSecondsLeft] = useState<number | null>(null);
@@ -609,7 +655,7 @@ function ProducerPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [samWindowId, send]);
 
-  // Window countdown mirrors the guest side: windowId + 30s.
+  // Window countdown mirrors the guest side: windowId + SAM_VOTE_WINDOW_MS.
   useEffect(() => {
     if (samWindowId === null) {
       if (samWindowTimerRef.current !== null) {
@@ -619,7 +665,7 @@ function ProducerPanel() {
       setSamSecondsLeft(null);
       return;
     }
-    const endsAt = samWindowId + 30_000;
+    const endsAt = samWindowId + SAM_VOTE_WINDOW_MS;
     const tick = () => {
       const remaining = Math.ceil((endsAt - Date.now()) / 1000);
       if (remaining <= 0) {
@@ -751,6 +797,24 @@ function ProducerPanel() {
       .join("\n\n");
   }, [seats, roster, layout, pushIds]);
 
+  // ── host link generator ──────────────────────────────────────────────
+  const hostLinksText = useMemo(() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `Host (Sam):\n${buildHostLink(origin, layout, hostPushId || "PUSH_ID", hostName)}`;
+  }, [layout, hostPushId, hostName]);
+  const copyHostLink = useCallback(() => {
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(hostLinksText).then(() => {
+        setHostLinkCopied(true);
+        window.setTimeout(() => setHostLinkCopied(false), 2500);
+      }).catch(() => {
+        linksTextareaRef.current?.select();
+      });
+    } else {
+      linksTextareaRef.current?.select();
+    }
+  }, [hostLinksText]);
+
   return (
     <div style={styles.shell}>
       <header style={styles.headerBar}>
@@ -846,10 +910,31 @@ function ProducerPanel() {
           >
             {linksCopied ? "Copied!" : "Copy guest links"}
           </button>
+          <button
+            type="button"
+            onClick={(e) => { copyHostLink(); e.currentTarget.blur(); }}
+            style={{ ...styles.primaryButton, background: NEON.pink, color: "#0a0610" }}
+          >
+            {hostLinkCopied ? "Copied!" : "Copy host link"}
+          </button>
           <span style={styles.hint}>
             {rosterDirty ? "Save the roster first — names in links follow the saved roster." : "One link per seat, ready to DM."}
           </span>
         </div>
+        <label style={{ ...styles.label, marginTop: 8 }}>
+          HOST PUSH ID (SAM)
+          <input
+            value={hostPushId}
+            onChange={(e) => {
+              const v = e.currentTarget.value.trim();
+              setHostPushId(v);
+              saveHostPushId(v);
+            }}
+            style={{ ...styles.input, width: 120, marginTop: 4 }}
+            placeholder="i2zCGkA"
+            spellCheck={false}
+          />
+        </label>
         <textarea
           ref={linksTextareaRef}
           readOnly

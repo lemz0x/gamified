@@ -386,10 +386,12 @@ export interface GuestSelfUnmutedEvent {
   ts: number;
 }
 
-/** A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
+/**
+ * A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
  *  The first vote's ts becomes the shared `windowId` — all wrappers
- *  derive the 30s window and the threshold tally from it.
+ *  derive the vote window and the threshold tally from it.
  *  Transient state, like buzz: late joiners are not backfilled. */
+export const SAM_VOTE_WINDOW_MS = 60_000;
 export interface SamVoteEvent {
   type: "samVote";
   from: EventSender;
@@ -401,12 +403,29 @@ export interface SamVoteEvent {
 /** The vote threshold was met — the STFU-on-Sam landed. Emitted by the
  *  vote counter (host wrapper, silently). Everyone area-mutes non-voters
  *  plus the host; the underlay paints SILENCED on Sam's tile and
- *  non-voter tiles. */
+ *  non-voter tiles.
+ *
+ *  `cooldownEndsAt` (epoch ms) is the host's cooldown clock — receivers
+ *  sync their own countdown to it so a reloaded tab doesn't drift out
+ *  of step with the rest of the panel. */
 export interface SamStfuEvent {
   type: "samStfu";
   windowId: number;
   /** Seat ids (+"lemz") that voted — they are spared the area mute. */
   voters: string[];
+  /** Epoch ms when the post-result cooldown ends (host's clock). */
+  cooldownEndsAt?: number;
+  ts: number;
+}
+
+/** A vote window expired without reaching threshold. Emitted only by the
+ *  host wrapper (its clock is the canonical window anchor). Receivers
+ *  clear the window and sync their cooldown to `cooldownEndsAt` — same
+ *  duration as the success path, so tabs stay in step either way. */
+export interface SamCooldownEvent {
+  type: "samCooldown";
+  /** Epoch ms when the post-timeout cooldown ends (host's clock). */
+  cooldownEndsAt: number;
   ts: number;
 }
 
@@ -428,7 +447,8 @@ export type EventPayload =
   | ChatToScreenClearEvent
   | GuestSelfUnmutedEvent
   | SamVoteEvent
-  | SamStfuEvent;
+  | SamStfuEvent
+  | SamCooldownEvent;
 
 // ── Inbound payload validation ───────────────────────────────────────────
 
@@ -437,7 +457,7 @@ const VALID_TYPES = new Set([
   "calibration", "muteGuest", "unmuteGuest",
   "buzzIn", "buzzOff", "trackerUpdate",
   "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "getRoster",
-  "samVote", "samStfu",
+  "samVote", "samStfu", "samCooldown",
 ] as const);
 
 const VALID_SEAT_IDS = new Set<SeatId>(SEAT_ORDER);
@@ -502,6 +522,10 @@ export function validatePayload(raw: unknown): EventPayload | null {
       if (typeof p.windowId !== "number") return null;
       if (!Array.isArray(p.voters)) return null;
       if (p.voters.some((v) => typeof v !== "string")) return null;
+      if (p.cooldownEndsAt !== undefined && typeof p.cooldownEndsAt !== "number") return null;
+      break;
+    case "samCooldown":
+      if (typeof p.cooldownEndsAt !== "number") return null;
       break;
     case "calibration":
       if (!p.tiles || typeof p.tiles !== "object") return null;

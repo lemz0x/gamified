@@ -16,9 +16,11 @@ import {
   buildHostIframeUrl,
   buildIframeUrl,
   useVdoNinja,
+  SAM_VOTE_WINDOW_MS,
   type EventPayload,
   type EventSender,
   type SamStfuEvent,
+  type SamCooldownEvent,
 } from "../lib/vdoninja";
 import { useVdoNinjaChat, type ChatMessage } from "../lib/vdoninjaChat";
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
@@ -156,14 +158,17 @@ const BUZZ_AUTO_OFF_MS = 300_000;
 
 // ── STFU-on-Sam vote mechanic (see docs/stfu-on-sam.md) ─────────────────
 
-/** Vote window: first vote opens it, 30s later unspent votes expire. */
-const SAM_VOTE_WINDOW_MS = 30_000;
+/** Vote window duration lives in vdoninja.ts (SAM_VOTE_WINDOW_MS) —
+ *  one source of truth shared with the producer panel, no drift. */
 /** Hard-lock duration on Sam + non-voters once the vote lands. */
 const SAM_STFU_MS = 10_000;
-/** Cooldown before the button re-arms after a successful vote. */
-const SAM_STFU_COOLDOWN_MS = 60_000;
-/** Cooldown after a window times out with no threshold reach. */
-const SAM_TIMEOUT_COOLDOWN_MS = 30_000;
+/**
+ * Mechanic cooldown after a window resolves — success OR timeout, one flat
+ * duration (Oct 14 show feedback: 60s/30s felt arbitrary and drifted out of
+ * sync across tabs). 10s exactly matches the mute duration, so a new window
+ * can only open once the host is back — no overlapping windows possible.
+ */
+const SAM_STFU_COOLDOWN_MS = 10_000;
 /**
  * Votes needed to land the STFU — half the panel, so it tracks the show
  * format: 2 for a 4-guest show, 3 for 6. Only the host wrapper evaluates
@@ -422,8 +427,8 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     setSamCueFlash(false);
   }
 
-  /** Starts the 30s window countdown anchored at windowId. Ticks once per
-   *  second; at 0 the window expires (votes vanish, no result, 30s cooldown). */
+  /** Starts the vote-window countdown anchored at windowId. Ticks once per
+   *  second; at 0 the window expires (votes vanish, no result, cooldown). */
   function samStartWindowClock(windowId: number): void {
     if (samWindowTimerRef.current !== null) {
       window.clearInterval(samWindowTimerRef.current);
@@ -434,7 +439,19 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       if (remaining <= 0) {
         // Window expired — nothing happened. Timeout cooldown.
         samClearWindow();
-        samStartCooldown(SAM_TIMEOUT_COOLDOWN_MS);
+        samStartCooldown(SAM_STFU_COOLDOWN_MS);
+        // Host window clock is canonical: broadcast the timeout so every
+        // tab clears its own window and syncs to the same cooldown. Guest
+        // tabs run their own clocks too (P2P delivery is racey), but they
+        // also handle this event, so whichever fires first wins — the
+        // guard on samWindowIdRef makes the second one a no-op.
+        if (identity.kind === "host") {
+          send({
+            type: "samCooldown",
+            cooldownEndsAt: Date.now() + SAM_STFU_COOLDOWN_MS,
+            ts: Date.now(),
+          });
+        }
       } else {
         setSamSecondsLeft(remaining);
       }
@@ -443,13 +460,17 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     samWindowTimerRef.current = window.setInterval(tick, 1000);
   }
 
-  /** Arms the mechanic cooldown (60s success / 30s timeout). */
-  function samStartCooldown(durationMs: number): void {
+  /** Arms the mechanic cooldown. One flat duration now (10s success OR
+   *  timeout — see SAM_STFU_COOLDOWN_MS), synced across tabs via the
+   *  host's cooldownEndsAt broadcast. */
+  function samStartCooldown(durationMsOrEndsAt: number, absolute = false): void {
     if (samCooldownIntervalRef.current !== null) {
       window.clearInterval(samCooldownIntervalRef.current);
     }
-    samCooldownEndsAtRef.current = Date.now() + durationMs;
-    const remainingSec = Math.ceil(durationMs / 1000);
+    samCooldownEndsAtRef.current = absolute
+      ? durationMsOrEndsAt
+      : Date.now() + durationMsOrEndsAt;
+    const remainingSec = Math.ceil((samCooldownEndsAtRef.current - Date.now()) / 1000);
     setSamCooldown(remainingSec);
     samCooldownIntervalRef.current = window.setInterval(() => {
       const ends = samCooldownEndsAtRef.current;
@@ -559,6 +580,8 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
           type: "samStfu",
           windowId,
           voters: next,
+          // Host's clock is the cooldown authority — receivers sync to it.
+          cooldownEndsAt: Date.now() + SAM_STFU_COOLDOWN_MS,
           ts: Date.now(),
         });
       }
@@ -591,11 +614,25 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     }
     samActedRef.current.add(msg.windowId);
     // Success cooldown everywhere (defence-in-depth vs missed final vote).
-    samStartCooldown(SAM_STFU_COOLDOWN_MS);
+    // Sync to the host's clock when available — absolute, not relative, so
+    // a reloaded/late tab still counts down with the rest of the panel.
+    if (msg.cooldownEndsAt !== undefined) {
+      samStartCooldown(msg.cooldownEndsAt, true);
+    } else {
+      samStartCooldown(SAM_STFU_COOLDOWN_MS);
+    }
     // SFX on guest wrappers: the rebellion succeeded, everyone hears it.
     if (identity.kind === "guest" || identity.kind === "editor") {
       playCardSfx("stfu");
     }
+  }
+
+  /** Timeout broadcast from the host's window clock: clear the window and
+   *  sync cooldown. Guest tabs' own clocks also fire — samClearWindow is
+   *  guarded (no windowId → no-op) so double-handling is harmless. */
+  function samHandleCooldown(msg: SamCooldownEvent): void {
+    samClearWindow();
+    samStartCooldown(msg.cooldownEndsAt, true);
   }
 
   // Ref-based so onMessage can call it without deps
@@ -805,6 +842,10 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
         }
         case "samStfu": {
           samHandleStfu(msg);
+          break;
+        }
+        case "samCooldown": {
+          samHandleCooldown(msg);
           break;
         }
         default:
