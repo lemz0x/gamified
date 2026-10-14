@@ -427,7 +427,6 @@ function ProducerPanel() {
   // Guest link generator state — push IDs entered once, persisted per machine.
   const [pushIds, setPushIds] = useState<Record<SeatId, string>>(loadPushIds);
   const [linksCopied, setLinksCopied] = useState(false);
-  const [hostLinkCopied, setHostLinkCopied] = useState(false);
   const [hostPushId, setHostPushId] = useState(loadHostPushId);
   // STFU-on-Sam vote tally (producer view + Lemz's own vote).
   // Mirror of the guest-side window: windowId anchors the 60s countdown.
@@ -764,14 +763,20 @@ function ProducerPanel() {
   }, [send, layout]);
 
   // ── guest link generator ─────────────────────────────────────────────
-  /** Copies one DM-ready link per layout seat to the clipboard. */
+  /** Copies the full link sheet to the clipboard: Sam's 4/6-cam versions
+   *  on top, then one DM-ready link per layout seat. Park it in the show
+   *  doc — nothing here depends on the active layout at copy time. */
   const copyGuestLinks = useCallback(() => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const lines = seats.map((seat, i) => {
       const name = roster[seat] || seat;
       return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
     });
-    const text = lines.join("\n\n");
+    const text = [
+      `Host (Sam) — 4-camera:\n${buildHostLink(origin, "4", hostPushId || "PUSH_ID", hostName)}`,
+      `Host (Sam) — 6-camera:\n${buildHostLink(origin, "6", hostPushId || "PUSH_ID", hostName)}`,
+      ...lines,
+    ].join("\n\n");
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text).then(() => {
         setLinksCopied(true);
@@ -785,35 +790,19 @@ function ProducerPanel() {
       // No clipboard API at all — select the textarea for manual copy.
       linksTextareaRef.current?.select();
     }
-  }, [seats, roster, layout, pushIds]);
+  }, [seats, roster, layout, pushIds, hostPushId, hostName]);
   const linksTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const guestLinksText = useMemo(() => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return seats
-      .map((seat, i) => {
+    return [
+      `Host (Sam) — 4-camera:\n${buildHostLink(origin, "4", hostPushId || "PUSH_ID", hostName)}`,
+      `Host (Sam) — 6-camera:\n${buildHostLink(origin, "6", hostPushId || "PUSH_ID", hostName)}`,
+      ...seats.map((seat, i) => {
         const name = roster[seat] || seat;
         return `Guest ${i + 1} (${name}):\n${buildGuestLink(origin, layout, i + 1, pushIds[seat] || "PUSH_ID", name)}`;
-      })
-      .join("\n\n");
-  }, [seats, roster, layout, pushIds]);
-
-  // ── host link generator ──────────────────────────────────────────────
-  const hostLinksText = useMemo(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `Host (Sam):\n${buildHostLink(origin, layout, hostPushId || "PUSH_ID", hostName)}`;
-  }, [layout, hostPushId, hostName]);
-  const copyHostLink = useCallback(() => {
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(hostLinksText).then(() => {
-        setHostLinkCopied(true);
-        window.setTimeout(() => setHostLinkCopied(false), 2500);
-      }).catch(() => {
-        linksTextareaRef.current?.select();
-      });
-    } else {
-      linksTextareaRef.current?.select();
-    }
-  }, [hostLinksText]);
+      }),
+    ].join("\n\n");
+  }, [seats, roster, layout, pushIds, hostPushId, hostName]);
 
   return (
     <div style={styles.shell}>
@@ -908,17 +897,10 @@ function ProducerPanel() {
             onClick={(e) => { copyGuestLinks(); e.currentTarget.blur(); }}
             style={{ ...styles.primaryButton, background: NEON.cyan, color: "#0a0610" }}
           >
-            {linksCopied ? "Copied!" : "Copy guest links"}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { copyHostLink(); e.currentTarget.blur(); }}
-            style={{ ...styles.primaryButton, background: NEON.pink, color: "#0a0610" }}
-          >
-            {hostLinkCopied ? "Copied!" : "Copy host link"}
+            {linksCopied ? "Copied!" : "Copy show links"}
           </button>
           <span style={styles.hint}>
-            {rosterDirty ? "Save the roster first — names in links follow the saved roster." : "One link per seat, ready to DM."}
+            {rosterDirty ? "Save the roster first — names in links follow the saved roster." : "Sam's 4/6-cam links + one link per seat, ready to DM."}
           </span>
         </div>
         <label style={{ ...styles.label, marginTop: 8 }}>
