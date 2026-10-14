@@ -165,11 +165,13 @@ const SAM_STFU_COOLDOWN_MS = 60_000;
 /** Cooldown after a window times out with no threshold reach. */
 const SAM_TIMEOUT_COOLDOWN_MS = 30_000;
 /**
- * Votes needed to land the STFU. Half the panel. NOTE: staging has a single
- * 6-guest universe; when the 4-people layout branch merges, gate this on
- * LAYOUT_SEATS (2 for layout=4, 3 for layout=6).
+ * Votes needed to land the STFU — half the panel, so it tracks the show
+ * format: 2 for a 4-guest show, 3 for 6. Only the host wrapper evaluates
+ * this (it emits the canonical samStfu); producer + guests display it.
  */
-const SAM_VOTE_THRESHOLD = 3;
+function samVoteThreshold(layout: GuestLayout): number {
+  return layout === "4" ? 2 : 3;
+}
 /** Voter id for Lemz's producer-side vote. */
 const LEMZ_VOTER_ID = "lemz";
 
@@ -357,6 +359,12 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   const [samCueFlash, setSamCueFlash] = useState(false);
   const samWindowTimerRef = useRef<number | null>(null);
   const samCooldownIntervalRef = useRef<number | null>(null);
+  // Layout captured at mount — the vote handler (useCallback, sees refs only)
+  // needs the show format for the layout-aware threshold (2-of-4 / 3-of-6).
+  // OBS bakes ?layout= into scene URLs, so it can't change without a reload.
+  // Derived from the seat count PlaySurface already receives: LAYOUT_SEATS["4"]
+  // is exactly 4 seats, everything else is the 6-guest universe.
+  const layoutRef = useRef<GuestLayout>(seats.length === 4 ? "4" : "6");
   const samCooldownEndsAtRef = useRef<number | null>(null);
   // Windows this wrapper already acted on (muted / burned card / emitted).
   const samActedRef = useRef<Set<number>>(new Set());
@@ -528,7 +536,7 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     setSamVotes(next);
     if (isSelf) setSamMyVote(voterId);
 
-    if (next.length >= SAM_VOTE_THRESHOLD) {
+    if (next.length >= samVoteThreshold(layoutRef.current)) {
       samClearWindow();
       // Host always gets silenced. Guests only if they didn't vote.
       if (identity.kind === "host") {
@@ -1102,7 +1110,7 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
         {identity.kind === "guest" && (
           <SamVotePanel
             votes={samVotes.length}
-            threshold={SAM_VOTE_THRESHOLD}
+            threshold={samVoteThreshold(layoutRef.current)}
             secondsLeft={samSecondsLeft}
             myVote={samMyVote}
             cooldown={samCooldown}
