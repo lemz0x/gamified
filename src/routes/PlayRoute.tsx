@@ -9,7 +9,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { CARDS, type Card, type CardId } from "../cards";
 import { CHAT_EMOJIS, EMOJIS, type Emoji } from "../emojis";
-import { SEAT_ORDER, type SeatId } from "../coords";
+import { LAYOUT_SEATS, SEAT_ORDER, resolveLayout, type GuestLayout, type SeatId } from "../coords";
 import { BuzzPanel, useBuzzState } from "../components/BuzzPanel";
 import {
   buildEditorIframeUrl,
@@ -27,13 +27,17 @@ import { renderLinks } from "../lib/linkify";
 
 // ── seat / role plumbing ─────────────────────────────────────────────────
 
-/** Map ?seat=1..6 to the seat ids used everywhere else (see AGENTS.md). */
-
-function parseSeat(raw: string | null): SeatId | null {
+/** Map ?seat=1..N to the seat ids used everywhere else (see AGENTS.md).
+ * N is bounded by the active layout's seat count (6-guest default, 4 for
+ * `?layout=4`). Out-of-range seats are rejected — a 4-guest show has no
+ * seat 5, so a stale link from a 6-guest week must fail loudly, not map
+ * into a phantom seat. */
+function parseSeat(raw: string | null, layout: GuestLayout): SeatId | null {
   if (!raw) return null;
+  const seatList = LAYOUT_SEATS[layout];
   const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n < 1 || n > 6) return null;
-  return SEAT_ORDER[n - 1] ?? null;
+  if (Number.isNaN(n) || n < 1 || n > seatList.length) return null;
+  return seatList[n - 1] ?? null;
 }
 
 const ROSTER_STORAGE_KEY = "gamified.roster.v1";
@@ -201,7 +205,11 @@ export function PlayRoute() {
   const role = search.get("role");
   const isHost = role === "host";
   const isEditor = role === "editor";
-  const seat = parseSeat(search.get("seat"));
+  // Layout from `?layout=4|6` — same resolution as underlay/producer. Guest
+  // links for a 4-guest show carry `?layout=4&seat=1..4`.
+  const layout = resolveLayout(search.get("layout"));
+  const seats: readonly SeatId[] = LAYOUT_SEATS[layout];
+  const seat = parseSeat(search.get("seat"), layout);
   const push = search.get("push") ?? "";
   const label =
     search.get("label") ??
@@ -226,15 +234,17 @@ export function PlayRoute() {
     return <MissingParamsHelp />;
   }
 
-  return <PlaySurface identity={identity} push={push} />;
+  return <PlaySurface identity={identity} push={push} seats={seats} />;
 }
 
 interface PlaySurfaceProps {
   identity: Identity;
   push: string;
+  /** Seats that exist in the active layout (see coords.ts LAYOUT_SEATS). */
+  seats: readonly SeatId[];
 }
 
-function PlaySurface({ identity, push }: PlaySurfaceProps) {
+function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   const [roster, setRoster] = useState<Record<SeatId, string>>(loadRoster);
   const [tracker, setTracker] = useState<{
     title: string;
@@ -764,15 +774,26 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
     [identity, send],
   );
 
-  // Build the target list — every seat except the local guest. Host
-  // and editor are never card-targetable per spec §3.1 (and editor was
-  // added in v1.2 with the same crew exclusion). When the local user
-  // is host or editor, no seat is theirs, so all six seats appear.
+  // Build the target list — every seat in this layout except the local
+  // guest. Host and editor are never card-targetable per spec §3.1 (and
+  // editor was added in v1.2 with the same crew exclusion). When the local
+  // user is host or editor, no seat is theirs, so all layout seats appear.
   const targets = useMemo(() => {
-    return SEAT_ORDER
+    return seats
       .filter((s) => identity.kind !== "guest" || s !== identity.seat)
       .map((s) => ({ seat: s, label: roster[s] }));
-  }, [identity, roster]);
+  }, [identity, roster, seats]);
+
+  // Tracker grid rows: pair left/right seats by row position
+  // (L1+R1, L2+R2, [L3+R3]) — 4-guest shows get a 2-row grid.
+  const trackerRows = useMemo(() => {
+    const left = seats.filter((s) => s[0] === "L");
+    const right = seats.filter((s) => s[0] === "R");
+    return Array.from(
+      { length: Math.max(left.length, right.length) },
+      (_, row) => [left[row], right[row]] as const,
+    ).filter(([l, r]) => !!l && !!r);
+  }, [seats]);
 
   return (
     <div style={styles.shell}>
@@ -821,7 +842,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
         )}
 
         {showMuteControls && (
-          <HostMutePanel roster={roster} send={send} />
+          <HostMutePanel roster={roster} send={send} seats={seats} />
         )}
 
         {identity.kind === "host" && (
@@ -840,6 +861,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               roster={roster}
               buzzingSeats={buzzingSeats}
               variant="play"
+              seats={seats}
             />
           </div>
         )}
@@ -849,6 +871,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
             roster={roster}
             buzzingSeats={buzzingSeats}
             isBuzzing={buzzingSeats.has(identity.seat)}
+            seats={seats}
             onBuzzToggle={() => {
               const nowOn = !buzzingSeats.has(identity.seat);
               if (nowOn) {
@@ -891,11 +914,7 @@ function PlaySurface({ identity, push }: PlaySurfaceProps) {
               flexDirection: "column",
               gap: 4,
             }}>
-              {([
-                ["L1", "R1"],
-                ["L2", "R2"],
-                ["L3", "R3"],
-              ] as const).map(([left, right]) => (
+              {trackerRows.map(([left, right]) => (
                 <div key={left} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                   {([left, right] as const).map((seat) => {
                     const answer = tracker.answers[seat] || "";
@@ -1517,9 +1536,13 @@ function MissingParamsHelp() {
         <h1 style={{ color: NEON.pink, marginBottom: 8 }}>Missing URL params</h1>
         <p style={{ color: NEON.textDim, maxWidth: 520, lineHeight: 1.5 }}>
           The /play wrapper needs <code>?seat=1..6&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code>{" "}
-          for guests, <code>?role=host&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for the
+          for guests (<code>?layout=4&amp;seat=1..4</code> on a 4-guest show),{" "}
+          <code>?role=host&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for the
           host, or <code>?role=editor&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for
-          the editor (chat-only, audio publish).
+          the editor (chat-only, audio publish). A seat number outside the
+          active layout's range also lands here — use the guest-links
+          generator in the producer panel or check the URL against the
+          show's guest-link doc section.
         </p>
       </div>
     </div>
@@ -1531,9 +1554,11 @@ function MissingParamsHelp() {
 interface HostMutePanelProps {
   roster: Record<SeatId, string>;
   send: (payload: EventPayload) => void;
+  /** Seats in the active layout — the panel only lists/control these. */
+  seats: readonly SeatId[];
 }
 
-function HostMutePanel({ roster, send }: HostMutePanelProps) {
+function HostMutePanel({ roster, send, seats }: HostMutePanelProps) {
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
 
   // Listen for mute state changes from the data channel handler so
@@ -1544,7 +1569,7 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
       setMutedSeats((prev) => {
         const next = new Set(prev);
         if (seat === "all") {
-          if (muted) SEAT_ORDER.forEach((s) => next.add(s));
+          if (muted) seats.forEach((s) => next.add(s));
           else next.clear();
         } else {
           if (muted) next.add(seat);
@@ -1555,7 +1580,7 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
     };
     window.addEventListener("gamified-mute-state", handler);
     return () => window.removeEventListener("gamified-mute-state", handler);
-  }, []);
+  }, [seats]);
 
   const muteSeat = useCallback(
     (seat: SeatId) => {
@@ -1580,8 +1605,8 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
   );
   const muteAll = useCallback(() => {
     send({ type: "muteGuest", target: "all", ts: Date.now() });
-    setMutedSeats(new Set(SEAT_ORDER));
-  }, [send]);
+    setMutedSeats(new Set(seats));
+  }, [send, seats]);
   const unmuteAll = useCallback(() => {
     send({ type: "unmuteGuest", target: "all", ts: Date.now() });
     setMutedSeats(new Set());
@@ -1599,7 +1624,7 @@ function HostMutePanel({ roster, send }: HostMutePanelProps) {
         </button>
       </div>
       <div style={styles.muteList}>
-        {SEAT_ORDER.map((seat) => {
+        {seats.map((seat) => {
           const muted = mutedSeats.has(seat);
           return (
             <button

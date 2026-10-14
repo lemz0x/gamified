@@ -8,10 +8,13 @@ import React, {
 } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  TILES_STORAGE_KEY,
+  LAYOUT_SEATS,
   loadCalibratedTiles,
   saveCalibratedTiles,
+  resolveLayout,
+  tilesStorageKey,
   SEAT_ORDER,
+  type GuestLayout,
   type SeatId,
   type Tile,
   type TileMap,
@@ -124,9 +127,17 @@ export function UnderlayRoute() {
   const calibrateMode = search.get("calibrate") === "1";
   const debugMode = search.get("debug") === "1";
 
+  // Layout: `?layout=4|6` selects the OBS scene geometry this underlay
+  // paints against (seat list + tile defaults + calibration storage slot).
+  // Both live inside OBS scene collections, so the scene collection the
+  // producer loads IS the layout choice. Absent/invalid → 6-guest default.
+  const layout: GuestLayout = resolveLayout(search.get("layout"));
+  /** Seats that exist in this layout (authoritative seat universe here). */
+  const seats: readonly SeatId[] = LAYOUT_SEATS[layout];
+
   // Per-machine tile overrides (from prior CalibrationEvents). Live in
   // localStorage on this overlay browser source's machine.
-  const [tiles, setTiles] = useState<TileMap>(loadCalibratedTiles);
+  const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout));
 
   // Roster names synced from producer — used for card announcements.
   // Load from localStorage for instant display before getRoster reply arrives.
@@ -235,15 +246,17 @@ export function UnderlayRoute() {
 
   useEffect(() => {
     document.body.classList.add("overlay-route");
+    // Cross-tab calibration: pick up direct localStorage writes for THIS
+    // layout's calibration slot (e.g. calibration nudged in a sibling tab).
     const onStorage = (e: StorageEvent) => {
-      if (e.key === TILES_STORAGE_KEY) setTiles(loadCalibratedTiles());
+      if (e.key === tilesStorageKey(layout)) setTiles(loadCalibratedTiles(layout));
     };
     window.addEventListener("storage", onStorage);
     return () => {
       document.body.classList.remove("overlay-route");
       window.removeEventListener("storage", onStorage);
     };
-  }, []);
+  }, [layout]);
 
   // Single sweep interval: instead of per-sprite setTimeout removals
   // (which create N individual state updates during a spam burst), we
@@ -325,10 +338,12 @@ export function UnderlayRoute() {
           // (STFU expiry won't visually clear a host-muted seat).
           if (msg.cardId === "stfu") {
             const sourceSeat = msg.from.kind === "guest" ? msg.from.seat : null;
-            const allSeats = Object.keys(tiles) as SeatId[];
+            // Only seats that exist in this layout. In the 4-guest layout
+            // there IS no L3/R3 — an STFU must never paint (or "mute") the
+            // empty set space where a 6-guest cam used to be.
             const mutedSeatsArr = sourceSeat
-              ? allSeats.filter((s) => s !== sourceSeat)
-              : allSeats;
+              ? seats.filter((s) => s !== sourceSeat)
+              : [...seats];
             addMuteReasons(mutedSeatsArr, "stfu");
             // Clear any pending STFU visual timeout (handles stacking:
             // a second STFU extends the window). The old timeout only
@@ -341,10 +356,13 @@ export function UnderlayRoute() {
             // have it — if the host also muted a seat, the "host" reason
             // remains and the seat stays SILENCED.
             stfuVisualTimeoutRef.current = window.setTimeout(() => {
-              const stfuSeats = Object.keys(tiles).filter((s) => {
-                const reasons = muteReasonsRef.current.get(s as SeatId);
+              // Remove "stfu" from all seats that currently have the reason
+              // (muteReasonsRef is layout-gated at add time, so no phantom
+              // seats can be present).
+              const stfuSeats = [...muteReasonsRef.current.keys()].filter((s) => {
+                const reasons = muteReasonsRef.current.get(s);
                 return reasons?.has("stfu");
-              }) as SeatId[];
+              });
               removeMuteReasons(stfuSeats, "stfu");
               stfuVisualTimeoutRef.current = null;
             }, 10_000);
@@ -354,7 +372,7 @@ export function UnderlayRoute() {
           break;
         case "calibration":
           setTiles(msg.tiles);
-          saveCalibratedTiles(msg.tiles);
+          saveCalibratedTiles(msg.tiles, layout);
           break;
         case "rosterUpdate":
           rosterRef.current = { ...msg.names };
@@ -369,7 +387,7 @@ export function UnderlayRoute() {
           // "muteall" is used for SILENCED overlay (shown for mute-all + STFU only).
           // Individual host mutes use "host" reason (no SILENCED overlay).
           const targets: SeatId[] = msg.target === "all"
-            ? (Object.keys(tiles) as SeatId[])
+            ? [...seats]
             : [msg.target as SeatId];
           addMuteReasons(targets, msg.target === "all" ? "muteall" : "host");
           break;
@@ -380,7 +398,7 @@ export function UnderlayRoute() {
           // otherwise the SILENCED overlay stays on after the guest's
           // mic is actually live.
           const targets: SeatId[] = msg.target === "all"
-            ? (Object.keys(tiles) as SeatId[])
+            ? [...seats]
             : [msg.target as SeatId];
           if (msg.target === "all") {
             removeMuteReasons(targets, "muteall");
@@ -412,8 +430,9 @@ export function UnderlayRoute() {
       }
     },
     // tiles is intentionally read fresh inside handleEmoji via closure;
-    // re-binding the listener every tile change is fine and rare.
-    [tiles, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
+    // re-binding the listener every tile change is fine and rare. `seats` is
+    // derived from the layout URL param (stable for the page's lifetime).
+    [tiles, seats, layout, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -448,7 +467,7 @@ export function UnderlayRoute() {
 
         {/* SILENCED overlay — shown for STFU and mute-all only.
             Individual host mutes are audio-only (no visual overlay). */}
-        {muteReasons.size > 0 && (Object.keys(tiles) as SeatId[])
+        {muteReasons.size > 0 && seats
           .filter((seat) => {
             const reasons = muteReasons.get(seat);
             return reasons?.has("stfu") || reasons?.has("muteall");
@@ -457,7 +476,7 @@ export function UnderlayRoute() {
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
-        {calibrateMode && <CalibrationGrid tiles={tiles} />}
+        {calibrateMode && <CalibrationGrid tiles={tiles} seats={seats} />}
         {debugMode && <DebugHud snapshot={debugSnapshot} sprites={{ emoji: emojiSprites.length, card: cardSprites.length, aura: sourceAuraSprites.length, muted: muteReasons.size }} />}
       </div>
 
@@ -1080,10 +1099,10 @@ const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: 
   );
 });
 
-function CalibrationGrid({ tiles }: { tiles: TileMap }) {
+function CalibrationGrid({ tiles, seats }: { tiles: TileMap; seats: readonly SeatId[] }) {
   return (
     <>
-      {(Object.keys(tiles) as SeatId[]).map((seat) => {
+      {seats.map((seat) => {
         const tile = tiles[seat];
         const color = CALIBRATION_COLORS[seat];
         return (

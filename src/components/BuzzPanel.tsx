@@ -1,12 +1,7 @@
 import { useCallback, useState, type CSSProperties } from "react";
-import type { SeatId } from "../coords";
+import { SEAT_ORDER, type SeatId } from "../coords";
 
-// ── seat layout ──────────────────────────────────────────────────────────
-
-const LEFT_SEATS: readonly SeatId[] = ["L1", "L2", "L3"];
-const RIGHT_SEATS: readonly SeatId[] = ["R1", "R2", "R3"];
-
-// ── props ────────────────────────────────────────────────────────────────
+// ── component ─────────────────────────────────────────────────────────────
 
 interface BuzzPanelProps {
   /** Roster names from producer. */
@@ -21,12 +16,20 @@ interface BuzzPanelProps {
   onSeatClear?: (seat: SeatId) => void;
   /** "play" for the neon dark wrapper, "producer" for the producer panel. */
   variant: "play" | "producer";
+  /**
+   * Seats that exist in the active layout (default: all 6). In the 4-guest
+   * layout the panel shows 2+2 boxes instead of 3+3; grid columns adapt.
+   */
+  seats?: readonly SeatId[];
 }
 
 // ── component ────────────────────────────────────────────────────────────
 
-export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, onSeatClear, variant }: BuzzPanelProps) {
+export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, onSeatClear, variant, seats = SEAT_ORDER }: BuzzPanelProps) {
   const isPlay = variant === "play";
+  const leftSeats = seats.filter((s) => s[0] === "L");
+  const rightSeats = seats.filter((s) => s[0] === "R");
+  const maxPerRow = Math.max(leftSeats.length, rightSeats.length);
 
   const nameBox = (seat: SeatId) => {
     const buzzing = buzzingSeats.has(seat);
@@ -93,16 +96,18 @@ export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, onSea
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: onBuzzToggle ? "1fr 1fr 1fr auto" : "1fr 1fr 1fr",
+        gridTemplateColumns: onBuzzToggle
+          ? `${"1fr ".repeat(maxPerRow).trim()} auto`
+          : "1fr ".repeat(maxPerRow).trim(),
         gridTemplateRows: "1fr 1fr",
         gap: 6,
         ...(isPlay ? {} : { marginTop: 4 }),
       }}
     >
       {/* Row 1: left seats */}
-      {LEFT_SEATS.map((seat) => nameBox(seat))}
+      {leftSeats.map((seat) => nameBox(seat))}
       {/* Row 2: right seats */}
-      {RIGHT_SEATS.map((seat) => nameBox(seat))}
+      {rightSeats.map((seat) => nameBox(seat))}
       {/* Buzzer toggle button — spans both rows */}
       {onBuzzToggle && (
         <button
@@ -110,7 +115,9 @@ export function BuzzPanel({ roster, buzzingSeats, isBuzzing, onBuzzToggle, onSea
           onClick={onBuzzToggle}
           style={{
             gridRow: "1 / 3",
-            gridColumn: 4,
+            // Column after the seat boxes; grid columns are maxPerRow wide
+            // (plus the 'auto' track when this button exists).
+            gridColumn: maxPerRow + 1,
             background: active
               ? "linear-gradient(135deg, #00e676 0%, #00c853 100%)"
               : "linear-gradient(135deg, #ff2e6b 0%, #cc1a4a 100%)",

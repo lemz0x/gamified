@@ -7,6 +7,12 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 ## [Unreleased] — staging
 
 ### Added
+- **Guest layouts (4/6):** `?layout=4` URL param selects the 4-guest OBS scene geometry (2×2, 350×350 tiles measured from the "Gamified (4 guests)" scene collection). Applies to `/play`, `/underlay`, `/producer`, `/chat`, and `/editorchat`. Seat count, tile positions, STFU area-mute, mute-all, buzz board, tracker, roster, host mute panel, and card target picker all gate to the layout's seats; effects never paint on empty set space.
+- **Per-layout calibration:** tile calibration overrides persist per layout (6-guest keeps the legacy localStorage key; 4-guest uses its own), so nudges never cross-contaminate.
+- **Producer link generator:** "Guest links" section — enter each slot's VDO.Ninja push ID once (persisted), generates DM-ready guest URLs with correct `layout`/`seat` params from the saved roster.
+
+### Changed
+- `parseSeat` rejects out-of-range seats for the active layout (seat 5/6 links fail with the missing-params help screen on a 4-guest show instead of mapping to phantom seats).
 - **VDO.Ninja integration deep dive** (`docs/vdo-ninja-integration.md`): iframe API transports, `mic-mute-state` event firing rules, `iframetarget` requirement, codirector topology, postMessage security, advisory vs force mute architecture, `reconcileMic` bidirectional bug history, full event type reference.
 - **OBS/CEF gotchas** (`docs/obs-cef-gotchas.md`): Source Record encoder defaults, audio crackling diagnosis, emoji codepoint compatibility, focus ring fix, chat auto-scroll rule, dual-OBS bandwidth math.
 - **VDO.Ninja quality parameters** (`docs/vdo-ninja-quality-params.md`): full URL parameter research with rationale, rejected alternatives, OBS encoder settings, verification steps.
