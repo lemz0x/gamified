@@ -11,6 +11,8 @@ import {
   useVdoNinja,
   type EventPayload,
 } from "../lib/vdoninja";
+import { loadCalibratedHostTile } from "../coords";
+import { MutedTileOverlay } from "../components/MutedTileOverlay";
 
 // ── constants ───────────────────────────────────────────────────────────
 
@@ -22,6 +24,12 @@ const CLEAR_FADE_MS = 400;
 
 /** Sweep interval for pruning expired sprites. */
 const SWEEP_INTERVAL_MS = 250;
+
+/**
+ * STFU-on-Sam: how long the SILENCED treatment paints over Sam's tile.
+ * Must match SAM_STFU_MS in PlayRoute (the hard-lock window).
+ */
+const SAM_STFU_MS = 10_000;
 
 // ── types ──────────────────────────────────────────────────────────────
 
@@ -46,6 +54,23 @@ interface ChatScreenSprite {
  */
 export function OverlayRoute() {
   const [chatScreenSprite, setChatScreenSprite] = useState<ChatScreenSprite | null>(null);
+
+  // STFU-on-Sam: SILENCED treatment over Sam's tile. The overlay sits ABOVE
+  // Sam Cam in every show scene (unlike the underlay, which is below him —
+  // the Sept 30 test showed the underlay wash painting "behind" his cam).
+  // Tile resolved once on mount; host calibration is per-machine like guests.
+  const samTile = useMemo(loadCalibratedHostTile, []);
+  const [samSilenced, setSamSilenced] = useState(false);
+  const samSilenceTimeoutRef = useRef<number | null>(null);
+
+  // Clear the pending silence timer on unmount (OBS source shutdown).
+  useEffect(() => {
+    return () => {
+      if (samSilenceTimeoutRef.current !== null) {
+        window.clearTimeout(samSilenceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const idCounter = useRef(0);
   const nextId = () => `${Date.now().toString(36)}-${(idCounter.current++).toString(36)}`;
@@ -96,6 +121,19 @@ export function OverlayRoute() {
           prev ? { ...prev, cleared: true } : null,
         );
         break;
+      case "samStfu":
+        // STFU-on-Sam landed: paint SILENCED over Sam for the hard-lock
+        // window. Clear any pending timeout so stacked votes (impossible
+        // today — cooldown blocks them — but future-proof) extend, not cut.
+        setSamSilenced(true);
+        if (samSilenceTimeoutRef.current !== null) {
+          window.clearTimeout(samSilenceTimeoutRef.current);
+        }
+        samSilenceTimeoutRef.current = window.setTimeout(() => {
+          setSamSilenced(false);
+          samSilenceTimeoutRef.current = null;
+        }, SAM_STFU_MS);
+        break;
     }
   }, []);
 
@@ -112,6 +150,7 @@ export function OverlayRoute() {
         allow="autoplay; camera; microphone"
         title="data-channel"
       />
+      {samSilenced && <MutedTileOverlay tile={samTile} />}
       {chatScreenSprite && (
         <div
           style={
