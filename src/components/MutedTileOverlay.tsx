@@ -39,7 +39,13 @@ export const MutedTileOverlay = React.memo(function MutedTileOverlay({
   label?: string;
   variant?: "tile" | "host";
 }) {
-  const labelSize = Math.max(12, Math.round(tile.w * 0.05));
+  const labelSize =
+    variant === "host"
+      ? // Sam's box is 902x507 — width-based scaling would give a 45px
+        // pill vs guests' 14px, which reads LOUD on a wide chroma-keyed
+        // box. Scale on height instead: ~25px, proportionate but subtle.
+        Math.max(14, Math.round(tile.h * 0.05))
+      : Math.max(12, Math.round(tile.w * 0.05));
   const bleed = variant === "tile" ? 8 : 0;
   const radius = Math.round(Math.min(tile.w, tile.h) * 0.22);
 
@@ -110,12 +116,14 @@ export const MutedTileOverlay = React.memo(function MutedTileOverlay({
           }}
         />
       )}
-      {/* SILENCED label — animates in with scale + fade */}
+      {/* SILENCED label — animates in with scale + fade. Host variant sits
+          a bit lower (8% vs guest 14%): Sam's box is wide and shallow, so
+          the pill reads better tucked toward the bottom of his frame. */}
       <div
         style={{
           position: "absolute",
           left: "50%",
-          bottom: "14%",
+          bottom: variant === "host" ? "8%" : "14%",
           fontFamily: '"Orbitron", system-ui, sans-serif',
           fontWeight: 900,
           fontSize: labelSize,

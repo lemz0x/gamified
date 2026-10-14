@@ -522,6 +522,20 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
 
     if (next.length >= SAM_VOTE_THRESHOLD) {
       samClearWindow();
+      // Host always gets silenced. Guests only if they didn't vote.
+      if (identity.kind === "host") {
+        samHardMuteLocal();
+      } else if (identity.kind === "guest" && !next.includes(identity.seat)) {
+        samHardMuteLocal();
+      }
+      // Voters burn their STFU card — success consumes the reservation.
+      // MUST run before the window is marked acted: samBurnOwnCard is
+      // guarded by samActedRef (burn-once per window) so the tally path
+      // and the result-event path can't double-burn — but that guard
+      // means the mark has to come AFTER the burn, or the burn no-ops.
+      if (identity.kind === "guest" && next.includes(identity.seat)) {
+        samBurnOwnCard(windowId);
+      }
       samActedRef.current.add(windowId);
       // Host wrapper is the canonical emitter (one samStfu per window).
       if (identity.kind === "host") {
@@ -531,16 +545,6 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
           voters: next,
           ts: Date.now(),
         });
-      }
-      // Host always gets silenced. Guests only if they didn't vote.
-      if (identity.kind === "host") {
-        samHardMuteLocal();
-      } else if (identity.kind === "guest" && !next.includes(identity.seat)) {
-        samHardMuteLocal();
-      }
-      // Voters burn their STFU card — success consumes the reservation.
-      if (identity.kind === "guest" && next.includes(identity.seat)) {
-        samBurnOwnCard(windowId);
       }
       // All wrappers: success cooldown so the button doesn't re-arm instantly.
       samStartCooldown(SAM_STFU_COOLDOWN_MS);
@@ -553,22 +557,23 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   function samHandleStfu(msg: SamStfuEvent): void {
     if (samHandledResultRef.current === msg.windowId) return;
     samHandledResultRef.current = msg.windowId;
-    samActedRef.current.add(msg.windowId);
     samClearWindow();
     // Host already hard-muted itself at its own tally; don't re-mute.
     if (identity.kind === "host") return;
-    // Non-voter guest: hard-mute the moment the result lands.
-    if (
-      identity.kind === "guest" &&
-      !msg.voters.includes(identity.seat) &&
-      !samActedRef.current.has(msg.windowId)
-    ) {
+    // Non-voter guest: hard-mute the moment the result lands. Defence-in-
+    // depth for wrappers that missed the final vote broadcast. Runs BEFORE
+    // the acted-mark (samHardMuteLocal is idempotent-ish: re-asserting just
+    // restarts the 10s window from now, broadcast latency is ~ms).
+    if (identity.kind === "guest" && !msg.voters.includes(identity.seat)) {
       samHardMuteLocal();
     }
     // Voter guest: burn card if not already burned via the tally path.
+    // samBurnOwnCard is guarded by samActedRef — marking acted happens
+    // after, same ordering fix as the tally path.
     if (identity.kind === "guest" && msg.voters.includes(identity.seat)) {
       samBurnOwnCard(msg.windowId);
     }
+    samActedRef.current.add(msg.windowId);
     // Success cooldown everywhere (defence-in-depth vs missed final vote).
     samStartCooldown(SAM_STFU_COOLDOWN_MS);
     // SFX on guest wrappers: the rebellion succeeded, everyone hears it.
