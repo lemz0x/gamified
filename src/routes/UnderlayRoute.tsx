@@ -456,9 +456,14 @@ export function UnderlayRoute() {
           // Same announce treatment as a normal card play: "NAMES played
           // STFU on Sam". Voters listed left-to-right, LEMZ name-dropped
           // when he's part of the mutiny.
-          const voterNames = msg.voters
-            .map((v) => (v === "lemz" ? "LEMZ" : rosterRef.current[v as SeatId] || v))
-            .join(", ");
+          const nameOf = (v: string) =>
+            v === "lemz" ? "LEMZ" : rosterRef.current[v as SeatId] || v;
+          const names = msg.voters.map(nameOf);
+          // "A, B & C" — comma-join all but the last, ampersand on the last.
+          const voterNames =
+            names.length <= 1
+              ? names.join("")
+              : `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
           const announceId = nextId();
           setCardAnnounce({
             id: announceId,

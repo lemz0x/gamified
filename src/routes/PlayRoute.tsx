@@ -392,6 +392,14 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
    *  never vote; "lemz" votes from the producer route, not here). */
   const samSelfVoterId = identity.kind === "guest" ? identity.seat : null;
 
+  /** True when the local guest has exhausted their per-topic STFU card.
+   *  Kept in a ref so onMessage's vote handler and the render can share it
+   *  without onMessage re-subscribing on every cardUses change. */
+  const samNoCardLeftRef = useRef(false);
+  samNoCardLeftRef.current =
+    identity.kind === "guest" &&
+    cardUses.stfu >= (CARDS.find((c) => c.id === "stfu")?.usesPerTopic ?? 1);
+
   /** Stops the vote-window countdown and clears window state. */
   function samClearWindow(): void {
     if (samWindowTimerRef.current !== null) {
@@ -1099,6 +1107,7 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
             myVote={samMyVote}
             cooldown={samCooldown}
             cueFlash={samCueFlash}
+            noCardLeft={samNoCardLeftRef.current}
             onVote={() => {
               if (identity.kind !== "guest") return;
               if (samCooldown !== null) return;
@@ -1295,6 +1304,9 @@ interface SamVotePanelProps {
   cooldown: number | null;
   /** True for 1.5s after the first vote from someone else lands. */
   cueFlash: boolean;
+  /** True when the guest's STFU card is exhausted — panel locks with
+   *  "NO CARD LEFT" so the burn state is unmissable on camera. */
+  noCardLeft: boolean;
   onVote: () => void;
 }
 
@@ -1313,11 +1325,20 @@ interface SamVotePanelProps {
  * NEVER rendered for host/editor: Sam's wrapper tallies silently and the
  * editor has no cards. See docs/stfu-on-sam.md §Visibility.
  */
-function SamVotePanel({ votes, threshold, secondsLeft, myVote, cooldown, cueFlash, onVote }: SamVotePanelProps) {
+function SamVotePanel({
+  votes,
+  threshold,
+  secondsLeft,
+  myVote,
+  cooldown,
+  cueFlash,
+  noCardLeft,
+  onVote,
+}: SamVotePanelProps) {
   const stfuGlow = "#ff2e6b";
   const windowOpen = secondsLeft !== null;
   const voted = myVote !== null;
-  const disabled = cooldown !== null || (windowOpen && voted);
+  const disabled = cooldown !== null || (windowOpen && voted) || noCardLeft;
   const pct = Math.min(100, (votes / threshold) * 100);
   return (
     <section style={{
@@ -1393,14 +1414,16 @@ function SamVotePanel({ votes, threshold, secondsLeft, myVote, cooldown, cueFlas
         }}
       >
         {cooldown !== null
-          ? `REARMING ${cooldown}s`
-          : windowOpen
-            ? voted
-              ? "VOTE CAST"
-              : "ADD MY VOTE"
-            : votes >= threshold
-              ? "IT LANDED"
-              : "PLAY STFU ON SAM"}
+          ? `COOLDOWN ${cooldown}s`
+          : noCardLeft
+            ? "NO CARD LEFT"
+            : windowOpen
+              ? voted
+                ? "VOTE CAST"
+                : "ADD MY VOTE"
+              : votes >= threshold
+                ? "IT LANDED"
+                : "PLAY STFU ON SAM"}
       </button>
     </section>
   );
