@@ -96,6 +96,43 @@ export const LAYOUT_TILES: Record<GuestLayout, TileMap> = {
 export const TILES_STORAGE_KEY = "gamified.tiles.calibrated.v1";
 
 /**
+ * Sam's host-cam tile (1920×1080 canvas). His source is a 1920x1080
+ * chroma-keyed VDO.Ninja browser source scaled 0.4688 into a 16:9 box at
+ * bottom-center. Measured from the producer's Gamified_master scene JSON
+ * (Sep 30 2026); same localStorage calibration override story as guest
+ * tiles — see {@link loadCalibratedHostTile}. Used by the underlay to
+ * paint the SILENCED wash when the STFU-on-Sam vote lands.
+ */
+export const HOST_TILE: Tile = { x: 521, y: 498, w: 902, h: 507 };
+
+/** localStorage key for the host-tile calibration override. */
+export const HOST_TILE_STORAGE_KEY = "gamified.tiles.host.v1";
+
+/** Sam's tile with any per-machine calibration override applied. */
+export function loadCalibratedHostTile(): Tile {
+  if (typeof window === "undefined") return { ...HOST_TILE };
+  try {
+    const raw = window.localStorage.getItem(HOST_TILE_STORAGE_KEY);
+    if (!raw) return { ...HOST_TILE };
+    const parsed = JSON.parse(raw) as Partial<Tile> | null;
+    if (parsed && isTile(parsed)) return parsed as Tile;
+    return { ...HOST_TILE };
+  } catch {
+    return { ...HOST_TILE };
+  }
+}
+
+/** Persists a calibration override for the host tile. */
+export function saveCalibratedHostTile(tile: Tile): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HOST_TILE_STORAGE_KEY, JSON.stringify(tile));
+  } catch {
+    // Quota exceeded or storage disabled — defaults still work.
+  }
+}
+
+/**
  * localStorage calibration key per layout. Separate key per layout so
  * nudges saved for the 6-guest scene never leak into the 4-guest scene
  * calibration (and vice versa). The 6-guest key is preserved byte-for-byte

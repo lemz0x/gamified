@@ -1,0 +1,88 @@
+# STFU on Sam — Guest Vote Mechanic
+
+**Status:** Prototype (branch `feat/stfu-on-sam`)
+**Origin:** Backlog idea from Aug 5 2026 session; scope confirmed by Lemz Sep 30 2026.
+
+## Post-prototype backlog (Oct 14 2026, Lemz)
+
+| # | Item | Notes |
+|---|------|-------|
+| 1 | Self-mute visibility | Host/producer panels show when a guest self-mutes. Listener exists (`mic-mute-state` → `selfMutedRef`) but no `guestSelfMuted` broadcast exists — only the narrow `guestSelfUnmuted` while-host-muted case. Needs a broadcast on the mute-direction event + handler case per panel + distinct indicator style (so host-mute ≠ self-mute). Deferred by Lemz Oct 14: state overlap with host-mute/mute-all/STFU in `reconcileMic` is real risk for a cosmetic gain, and it sits on the mute machinery STFU depends on. Do AFTER the episode, not before. |
+| 2 | Pill size | Accepted after episode-size tweak; Lemz may want a final trim after seeing it live. |
+| 3 | 4-guest layout support | `SAM_VOTE_THRESHOLD` hardcoded 3 — needs layout-aware gate (2-of-4 / 3-of-6) + rebase onto `main` where the layout system lives. Blocker for 4-person shows. |
+
+## Concept
+
+Guests can collectively vote to STFU the host (Sam). It's about a moment in
+time — enough guests think Sam needs to shut up *right now*, they gang up, and
+his mic is hard-locked for 10s. The host must never see it coming.
+
+## Locked decisions (Lemz, Sep 30 2026)
+
+| # | Decision | Call |
+|---|----------|------|
+| 1 | Vote window | **30s timer**. No withdrawal; votes auto-expire at 0. First vote starts the window. Visual cue (flash/glow) on other guests' UI so they see the rebellion forming. |
+| 2 | Mute type on Sam | **Hard lock** — same rules as guest STFU: mic forced false + circuit breaker re-asserts; Sam cannot self-unmute for the duration. Duration: 10s (same as guest STFU). |
+| 3 | Card consumption | Guests reserve their STFU card when voting; **consumed only on success**. Timeout = card refunded. |
+| 4 | Vote threshold | **2 in 4-guest layout, 3 in 6-guest layout** (half the panel). **Lemz (producer) may also vote** — he's a known figure just behind the scenes; his vote counts toward the threshold. |
+| 5 | Cooldown | **60s after success, 30s after timeout**, before the button arms again. |
+| 6 | Target on success | Voters stay unmuted. **Everyone else including Sam gets the STFU area-mute** (non-voter guests + host hard-muted 10s). |
+| 7 | Visibility | Guest UI + producer panel only. **NEVER on Sam's host screen** — the host wrapper must tally votes silently with zero UI. |
+
+## Wire protocol (new P2P events)
+
+```ts
+// A voter (guest seat or "lemz") casts a vote for the current window.
+interface SamVoteEvent {
+  type: "samVote";
+  from: EventSender;      // guest: {kind:"guest", seat, label} | lemz: {kind:"lemz"}
+  windowId: number;       // Date.now() of the first vote — groups votes into a window
+  ts: number;
+}
+
+// Broadcast when the threshold is met. The last voter to cross the
+// threshold emits this. Everyone hard-mutes non-voters + host.
+interface SamStfuEvent {
+  type: "samStfu";
+  windowId: number;
+  voters: string[];       // seat ids + "lemz" — non-voters get area-muted
+  ts: number;
+}
+```
+
+- New `EventSender` variant: `{ kind: "lemz" }` (producer-side vote).
+- Host wrapper counts `samVote` against the layout's threshold. On reach, it
+  force-mutes its own iframe and starts the circuit breaker — **no UI, no
+  audio cue on host wrapper** (guests' wrappers play the STFU SFX).
+- `samStfu` is broadcast so the underlay can paint SILENCED on Sam's tile and
+  non-voter guest tiles, and guest wrappers can burn voters' cards.
+- Timeout is local: each wrapper runs the 30s window from the first vote
+  (`windowId` provides the shared clock anchor). At 0, votes expire. No
+  broadcast needed — everyone times out together. Clock skew handled by
+  clamping: votes arriving after local 0 are ignored.
+- Vote state is transient (like buzz state) — late joiners don't get backfilled.
+  If no threshold is met, nothing happened as far as the show record goes.
+
+## Who does what
+
+| Surface | Behaviour |
+|---------|-----------|
+| Guest wrapper (`/play`) | "STFU SAM" button under cards. While a window is open: progress bar (n/threshold), seconds remaining, own-vote state. First vote from someone else → flash/glow cue. On success: non-voters area-muted 10s, voters burn STFU card. |
+| Host wrapper (`/play?role=host`) | Silently counts votes. On threshold: hard-mute own iframe + circuit breaker 10s. **Zero UI feedback** — no toast, no badge, no SFX on host side. |
+| Producer panel (`/producer`) | Lemz's vote button (identical rules: reserves nothing since producer has no cards, but counts toward threshold). Live tally display. |
+| Underlay (`/underlay`) | On `samStfu`: SILENCED wash on Sam's tile (geometry below) + non-voter guest tiles. Clears after 10s. |
+| Sam's screen | Nothing. Ever. |
+
+## Sam's tile geometry (from Gamified_master.json, Sep 30 2026)
+
+Sam Cam is a 1920x1080 chroma-keyed VDO.Ninja browser source (`?view=Host1`),
+scaled 0.4688 into a **(521, 498, 902 x 507)** box at bottom-center of the
+1920x1080 canvas. Added to `coords.ts` as `HOST_TILE` with the same
+localStorage calibration override support as guest tiles.
+
+## Future / open
+
+- Aria design pass on the button, bar, flash, and Sam's SILENCED treatment.
+- Whether vote state needs late-joiner sync (currently transient, like buzz).
+- 4-person layout scenes (Sam tile measured from 6-guest scene; 4-guest scene
+  may position Sam differently — verify before first 4-guest show).

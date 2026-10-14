@@ -9,7 +9,9 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import {
   LAYOUT_SEATS,
+  HOST_TILE_STORAGE_KEY,
   loadCalibratedTiles,
+  loadCalibratedHostTile,
   saveCalibratedTiles,
   resolveLayout,
   tilesStorageKey,
@@ -27,6 +29,7 @@ import {
   type EventPayload,
 } from "../lib/vdoninja";
 import { CARDS, type CardId } from "../cards";
+import { MutedTileOverlay } from "../components/MutedTileOverlay";
 
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
@@ -112,6 +115,9 @@ interface CardAnnounce {
   cardId: CardId;
   /** Who played it. */
   fromName: string;
+  /** True when fromName is a voter list (STFU-on-Sam) — render smaller
+   *  so multiple names fit on one line. */
+  fromNameIsList?: boolean;
   /** Card display slug (STFU / MIC DROP). */
   cardSlug: string;
   /** Second line: "on Y". */
@@ -138,6 +144,15 @@ export function UnderlayRoute() {
   // Per-machine tile overrides (from prior CalibrationEvents). Live in
   // localStorage on this overlay browser source's machine.
   const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout));
+
+  // Sam's host tile — separate override key so per-machine calibration of
+  // guest tiles can't clobber the host geometry (and vice versa).
+  const [hostTile, setHostTile] = useState<Tile>(loadCalibratedHostTile);
+
+  // STFU-on-Sam: SILENCED wash is active on the host tile. The MutedTileOverlay
+  // treatment below renders over Sam's 16:9 box for 10s when the vote lands.
+  const [samSilenced, setSamSilenced] = useState(false);
+  const samSilenceTimeoutRef = useRef<number | null>(null);
 
   // Roster names synced from producer — used for card announcements.
   // Load from localStorage for instant display before getRoster reply arrives.
@@ -241,6 +256,9 @@ export function UnderlayRoute() {
       if (stfuVisualTimeoutRef.current !== null) {
         window.clearTimeout(stfuVisualTimeoutRef.current);
       }
+      if (samSilenceTimeoutRef.current !== null) {
+        window.clearTimeout(samSilenceTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -250,6 +268,7 @@ export function UnderlayRoute() {
     // layout's calibration slot (e.g. calibration nudged in a sibling tab).
     const onStorage = (e: StorageEvent) => {
       if (e.key === tilesStorageKey(layout)) setTiles(loadCalibratedTiles(layout));
+      if (e.key === HOST_TILE_STORAGE_KEY) setHostTile(loadCalibratedHostTile());
     };
     window.addEventListener("storage", onStorage);
     return () => {
@@ -425,6 +444,55 @@ export function UnderlayRoute() {
           removeMuteReasons([msg.seat], "host");
           break;
         }
+        case "samStfu": {
+          // The STFU-on-Sam vote landed (docs/stfu-on-sam.md):
+          // SILENCED wash on Sam's host tile + every non-voter guest tile
+          // for 10s. Voters are spared — they're the rebellion.
+          setSamSilenced(true);
+          const nonVoterSeats = (Object.keys(tiles) as SeatId[]).filter(
+            (s) => !msg.voters.includes(s),
+          );
+          addMuteReasons(nonVoterSeats, "stfu");
+          // Same announce treatment as a normal card play: "NAMES played
+          // STFU on Sam". Voters listed left-to-right, LEMZ name-dropped
+          // when he's part of the mutiny.
+          const nameOf = (v: string) =>
+            v === "lemz" ? "LEMZ" : rosterRef.current[v as SeatId] || v;
+          const names = msg.voters.map(nameOf);
+          // "A, B & C" — comma-join all but the last, ampersand on the last.
+          const voterNames =
+            names.length <= 1
+              ? names.join("")
+              : `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
+          const announceId = nextId();
+          setCardAnnounce({
+            id: announceId,
+            cardId: "stfu",
+            fromName: voterNames,
+            fromNameIsList: true,
+            cardSlug: "STFU",
+            text2: `on ${hostNameRef.current}`,
+            color: CARD_COLORS.stfu,
+          });
+          window.setTimeout(() => {
+            setCardAnnounce((prev: CardAnnounce | null) =>
+              prev?.id === announceId ? null : prev,
+            );
+          }, CARD_ANNOUNCE_MS);
+          if (samSilenceTimeoutRef.current !== null) {
+            window.clearTimeout(samSilenceTimeoutRef.current);
+          }
+          samSilenceTimeoutRef.current = window.setTimeout(() => {
+            const stfuSeats = (Object.keys(tiles) as SeatId[]).filter((s) => {
+              const reasons = muteReasonsRef.current.get(s as SeatId);
+              return reasons?.has("stfu");
+            }) as SeatId[];
+            removeMuteReasons(stfuSeats, "stfu");
+            setSamSilenced(false);
+            samSilenceTimeoutRef.current = null;
+          }, 10_000);
+          break;
+        }
         default:
           break;
       }
@@ -474,6 +542,17 @@ export function UnderlayRoute() {
           })
           .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
+        {/* STFU-on-Sam: SILENCED wash on Sam's host tile while the
+            vote's 10s hard-mute runs. Same visual language as guest
+            STFU — the rebellion uses the show's own punishment style.
+            Host variant: elliptical fade so the wash blends with the
+            scene around his chroma-keyed body instead of a rigid box.
+            (The overlay paints the visible copy above Sam Cam; this
+            underlay copy sits below him and stays for symmetry.) */}
+        {samSilenced && (
+          <MutedTileOverlay key="__sam" tile={hostTile} variant="host" />
+        )}
+
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
         {calibrateMode && <CalibrationGrid tiles={tiles} seats={seats} />}
@@ -520,7 +599,9 @@ function fireCardAnnounce(
   const fromName =
     msg.from.kind === "host"
       ? hostName
-      : roster[msg.from.seat] || msg.from.label || "?";
+      : msg.from.kind === "lemz"
+        ? "LEMZ"
+        : roster[msg.from.seat] || msg.from.label || "?";
   const targetName = roster[msg.targetSeat] || msg.targetLabel || msg.targetSeat;
   const id = nextId();
   setAnnounce({
@@ -589,7 +670,7 @@ const CardAnnounceText = React.memo(function CardAnnounceText({ announce }: { an
           position: "relative",
           minWidth: 480,
           color: "#ffffff",
-          fontSize: "2rem",
+          fontSize: announce.fromNameIsList ? "1.5rem" : "2rem",
           letterSpacing: "0.04em",
           textShadow:
             `0 0 12px rgba(0,0,0,0.5), 0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66`,
@@ -1007,97 +1088,7 @@ const SourceAura = React.memo(function SourceAura({ tile }: { tile: Tile }) {
   );
 });
 
-/**
- * Muted tile overlay — grayscale simulation + "SILENCED" label.
- *
- * OBS composites browser sources as separate layers, so CSS
- * mix-blend-mode can't reach the camera feed. We use a multi-layer
- * approach to simulate desaturation and make it feel "silenced":
- *
- * Layers:
- *   1. Blue-teal darkening wash — cools the camera colors, pushing
- *      skin tones toward blue-gray. Less "gray box" than neutral gray.
- *   2. Radial gray wash — center lighter (face visible) to darker edges.
- *      Overlaps with the blue layer to desaturate.
- *   3. Red edge vignette — subtle STFU red tint around the border edges
- *      so it reads as "punished" not just "muted".
- *   4. SILENCED label — Orbitron 900 in STFU red, lower third centered.
- *      Animates in with scale + fade via @keyframes silencedLabelIn.
- */
-const MutedTileOverlay = React.memo(function MutedTileOverlay({ tile }: { tile: Tile }) {
-  const labelSize = Math.max(12, Math.round(tile.w * 0.05));
-  const bleed = 8;
-  const radius = Math.round(Math.min(tile.w, tile.h) * 0.22);
-  return (
-    <div style={{
-      position: "absolute",
-      left: tile.x - bleed,
-      top: tile.y - bleed,
-      width: tile.w + bleed * 2,
-      height: tile.h + bleed * 2,
-      pointerEvents: "none",
-      overflow: "hidden",
-      borderRadius: radius + bleed,
-    }}>
-      {/* Layer 1: Blue-teal cooling wash. Cools skin tones toward blue-gray
-          so it reads as "desaturated" rather than "gray box over camera". */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "rgba(30,45,65,0.55)",
-          transition: "opacity 300ms ease-out",
-          borderRadius: radius + bleed,
-        }}
-      />
-      {/* Layer 2: Radial gray wash — center lighter (face visible),
-          edges darker. Overlaps with blue layer to desaturate. */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "radial-gradient(ellipse at 50% 45%, rgba(60,65,78,0.35) 0%, rgba(40,45,55,0.65) 55%, rgba(20,22,28,0.88) 100%)",
-          transition: "opacity 300ms ease-out",
-          borderRadius: radius + bleed,
-        }}
-      />
-      {/* Layer 3: Red edge vignette — subtle STFU red tint around edges
-          so it reads as "punished" not just "muted". */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "radial-gradient(ellipse at 50% 45%, transparent 50%, rgba(255,46,107,0.08) 80%, rgba(255,46,107,0.15) 100%)",
-          transition: "opacity 300ms ease-out",
-          borderRadius: radius + bleed,
-        }}
-      />
-      {/* SILENCED label — animates in with scale + fade */}
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          bottom: "14%",
-          fontFamily: '"Orbitron", system-ui, sans-serif',
-          fontWeight: 900,
-          fontSize: labelSize,
-          letterSpacing: 2,
-          color: "#ff2e6b",
-          textShadow: "0 0 10px rgba(0,0,0,0.85), 0 0 20px rgba(255,46,107,0.6)",
-          padding: "4px 14px",
-          borderRadius: 6,
-          background: "rgba(10,6,16,0.92)",
-          border: "1px solid rgba(255,46,107,0.45)",
-          whiteSpace: "nowrap",
-          pointerEvents: "none",
-          animation: "silencedLabelIn 300ms cubic-bezier(0.2, 1.5, 0.4, 1) forwards",
-        }}
-      >
-        SILENCED
-      </div>
-    </div>
-  );
-});
+// ── CalibrationGrid ─────────────────────────────────────────────────────
 
 function CalibrationGrid({ tiles, seats }: { tiles: TileMap; seats: readonly SeatId[] }) {
   return (
