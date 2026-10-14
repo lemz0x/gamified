@@ -515,8 +515,14 @@ export function UnderlayRoute() {
 
         {/* STFU-on-Sam: SILENCED wash on Sam's host tile while the
             vote's 10s hard-mute runs. Same visual language as guest
-            STFU — the rebellion uses the show's own punishment style. */}
-        {samSilenced && <MutedTileOverlay key="__sam" tile={hostTile} />}
+            STFU — the rebellion uses the show's own punishment style.
+            Host variant: elliptical fade so the wash blends with the
+            scene around his chroma-keyed body instead of a rigid box.
+            (The overlay paints the visible copy above Sam Cam; this
+            underlay copy sits below him and stays for symmetry.) */}
+        {samSilenced && (
+          <MutedTileOverlay key="__sam" tile={hostTile} variant="host" />
+        )}
 
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 

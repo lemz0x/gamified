@@ -150,7 +150,7 @@ export function OverlayRoute() {
         allow="autoplay; camera; microphone"
         title="data-channel"
       />
-      {samSilenced && <MutedTileOverlay tile={samTile} />}
+      {samSilenced && <MutedTileOverlay tile={samTile} variant="host" />}
       {chatScreenSprite && (
         <div
           style={
