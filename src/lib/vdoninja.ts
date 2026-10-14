@@ -378,11 +378,30 @@ export interface ChatToScreenClearEvent {
 /** Guest unmuted themselves by clicking the mic icon in VDO.Ninja.
  *  This is an advisory notification so the host/producer can clear
  *  the SILENCED badge for that guest. STFU mutes are not cleared
- *  (the circuit breaker continues to re-assert those). */
+ *  (the circuit breaker continues to re-assert those).
+ *
+ *  Superseded by micState for panel display — kept because the underlay's
+ *  SILENCED-reason clearing still keys off this narrow event. */
 export interface GuestSelfUnmutedEvent {
   type: "guestSelfUnmuted";
   /** Which guest seat self-unmuted. */
   seat: SeatId;
+  ts: number;
+}
+
+/** A guest's actual mic state after they toggled it themselves in
+ *  VDO.Ninja. Broadcast so the host and producer panels can display the
+ *  true mic state (LIVE / SELF-MUTED) alongside host mutes. Purely
+ *  advisory — display only, no mute machinery reacts to this.
+ *  Guests do NOT emit this while a force mute (STFU / mute-all) is
+ *  active, so a guest clicking their mic mid-force-mute can't paint a
+ *  misleading "live" state on the panels. */
+export interface MicStateEvent {
+  type: "micState";
+  /** Which guest seat toggled their own mic. */
+  seat: SeatId;
+  /** True = guest muted themselves, false = guest went live. */
+  selfMuted: boolean;
   ts: number;
 }
 
@@ -446,6 +465,7 @@ export type EventPayload =
   | ChatToScreenEvent
   | ChatToScreenClearEvent
   | GuestSelfUnmutedEvent
+  | MicStateEvent
   | SamVoteEvent
   | SamStfuEvent
   | SamCooldownEvent;
@@ -456,7 +476,7 @@ const VALID_TYPES = new Set([
   "emoji", "cardPlay", "rosterUpdate", "cardReset", "getResetEpoch",
   "calibration", "muteGuest", "unmuteGuest",
   "buzzIn", "buzzOff", "trackerUpdate",
-  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "getRoster",
+  "chatToScreen", "chatToScreenClear", "guestSelfUnmuted", "micState", "getRoster",
   "samVote", "samStfu", "samCooldown",
 ] as const);
 
@@ -513,6 +533,10 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "guestSelfUnmuted":
       if (!isValidSeatId(p.seat)) return null;
+      break;
+    case "micState":
+      if (!isValidSeatId(p.seat)) return null;
+      if (typeof p.selfMuted !== "boolean") return null;
       break;
     case "samVote":
       if (!isValidSender(p.from)) return null;

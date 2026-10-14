@@ -7,7 +7,7 @@
 
 | # | Item | Notes |
 |---|------|-------|
-| 1 | Self-mute visibility | Host/producer panels show when a guest self-mutes. Listener exists (`mic-mute-state` → `selfMutedRef`) but no `guestSelfMuted` broadcast exists — only the narrow `guestSelfUnmuted` while-host-muted case. Needs a broadcast on the mute-direction event + handler case per panel + distinct indicator style (so host-mute ≠ self-mute). Deferred by Lemz Oct 14: state overlap with host-mute/mute-all/STFU in `reconcileMic` is real risk for a cosmetic gain, and it sits on the mute machinery STFU depends on. Do AFTER the episode, not before. |
+| 1 | Self-mute visibility | **SHIPPED Oct 15** — `micState` broadcast on every guest self-toggle (suppressed during force mutes). Producer + host panels show LIVE green / SELF-MUTED amber / MUTED red; host-mute wins display. State is transient like buzz (panel reload loses it until next toggle). |
 | 2 | Pill size | Accepted after episode-size tweak; Lemz may want a final trim after seeing it live. |
 | 3 | 4-guest layout support | `SAM_VOTE_THRESHOLD` hardcoded 3 — needs layout-aware gate (2-of-4 / 3-of-6) + rebase onto `main` where the layout system lives. Blocker for 4-person shows. |
 

@@ -329,6 +329,9 @@ function ProducerPanel() {
   );
   const { buzzingSeats, buzzOn, buzzOff } = useBuzzState();
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+  // Guests who muted themselves via their own VDO.Ninja mic button.
+  // Display-only mirror of micState broadcasts — host-mute wins at render.
+  const [selfMutedSeats, setSelfMutedSeats] = useState<Set<SeatId>>(new Set());
   // STFU-on-Sam vote tally (producer view + Lemz's own vote).
   // Mirror of the guest-side window: windowId anchors the 60s countdown.
   const [samVotes, setSamVotes] = useState<string[]>([]);
@@ -428,6 +431,16 @@ function ProducerPanel() {
           if (!prev.has(msg.seat)) return prev;
           const next = new Set(prev);
           next.delete(msg.seat);
+          return next;
+        });
+      }
+      // Guest self-toggled their mic: track the true state for display.
+      // Host-mute display wins when both apply (handled at render).
+      if (msg.type === "micState") {
+        setSelfMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (msg.selfMuted) next.add(msg.seat);
+          else next.delete(msg.seat);
           return next;
         });
       }
@@ -744,6 +757,9 @@ function ProducerPanel() {
         <div style={styles.rosterGrid}>
           {seats.map((seat) => {
             const isMuted = mutedSeats.has(seat);
+            // Host-mute wins the display when both apply — the seat is
+            // actually muted either way, but who silenced them matters.
+            const isSelfMuted = !isMuted && selfMutedSeats.has(seat);
             return (
               <button
                 key={seat}
@@ -752,11 +768,12 @@ function ProducerPanel() {
                 style={{
                   ...styles.muteSeatBtn,
                   ...(isMuted ? styles.muteSeatActive : {}),
+                  ...(isSelfMuted ? styles.muteSeatSelf : {}),
                 }}
               >
                 <span style={styles.muteSeatName}>{roster[seat] || seat}</span>
                 <span style={styles.muteSeatStatus}>
-                  {isMuted ? "MUTED" : "LIVE"}
+                  {isMuted ? "MUTED" : isSelfMuted ? "SELF-MUTED" : "LIVE"}
                 </span>
               </button>
             );
@@ -1253,6 +1270,12 @@ const styles: Record<string, CSSProperties> = {
   muteSeatActive: {
     borderColor: NEON.red,
     background: `rgba(255, 46, 107, 0.08)`,
+  },
+  // Self-muted (guest clicked their own VDO.Ninja mic): amber, distinct
+  // from the red host-mute so the producer can tell who silenced whom.
+  muteSeatSelf: {
+    borderColor: NEON.amber,
+    background: `rgba(255, 176, 0, 0.08)`,
   },
   muteSeatName: {
     fontSize: 13,

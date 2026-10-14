@@ -828,6 +828,18 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
           }
           break;
         }
+        case "micState": {
+          // Host panel display sync: mirror the guest's true mic state.
+          // Display-only — no mute machinery reacts to this.
+          if (identity.kind === "host" || identity.kind === "editor") {
+            window.dispatchEvent(
+              new CustomEvent("gamified-mute-state", {
+                detail: { seat: msg.seat, muted: msg.selfMuted, selfToggled: true },
+              }),
+            );
+          }
+          break;
+        }
         case "buzzIn": {
           buzzOn(msg.seat);
           break;
@@ -895,6 +907,13 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       if (typeof data.value !== "boolean") return;
       // Track self-mute state (both directions)
       selfMutedRef.current = data.value === true;
+      // Broadcast the true mic state to host + producer panels (display
+      // only). Suppressed while a force mute is active: a guest clicking
+      // their mic mid-STFU/mute-all cannot change their real state (the
+      // circuit breaker re-asserts), so we must not paint a false one.
+      if (identity.kind === "guest" && !muteAllRef.current && !stfuMutedRef.current) {
+        send({ type: "micState", seat: identity.seat, selfMuted: data.value === true, ts: Date.now() });
+      }
       // value: false means the user clicked unmute
       if (data.value === false) {
         // If mute-all or STFU is active, ignore the self-unmute.
@@ -2037,12 +2056,31 @@ interface HostMutePanelProps {
 
 function HostMutePanel({ roster, send, seats }: HostMutePanelProps) {
   const [mutedSeats, setMutedSeats] = useState<Set<SeatId>>(new Set());
+  // Guests who self-muted via their own VDO.Ninja mic. Amber display,
+  // distinct from host mutes; host-mute wins when both apply.
+  const [selfMutedSeats, setSelfMutedSeats] = useState<Set<SeatId>>(new Set());
 
   // Listen for mute state changes from the data channel handler so
   // the host's UI stays in sync if a guest self-unmutes or if mute-all fires.
   useEffect(() => {
     const handler = (e: Event) => {
-      const { seat, muted } = (e as CustomEvent<{ seat: SeatId | "all"; muted: boolean }>).detail;
+      const { seat, muted, selfToggled } = (e as CustomEvent<{
+        seat: SeatId | "all";
+        muted: boolean;
+        selfToggled?: boolean;
+      }>).detail;
+      // micState mirror: guest self-toggled their own mic. Display-only
+      // update; never touches the host-mute set.
+      if (selfToggled) {
+        if (seat === "all") return;
+        setSelfMutedSeats((prev) => {
+          const next = new Set(prev);
+          if (muted) next.add(seat);
+          else next.delete(seat);
+          return next;
+        });
+        return;
+      }
       setMutedSeats((prev) => {
         const next = new Set(prev);
         if (seat === "all") {
@@ -2103,6 +2141,8 @@ function HostMutePanel({ roster, send, seats }: HostMutePanelProps) {
       <div style={styles.muteList}>
         {seats.map((seat) => {
           const muted = mutedSeats.has(seat);
+          // Host-mute wins the display when both apply.
+          const selfMuted = !muted && selfMutedSeats.has(seat);
           return (
             <button
               key={seat}
@@ -2111,14 +2151,16 @@ function HostMutePanel({ roster, send, seats }: HostMutePanelProps) {
               style={{
                 ...styles.muteRow,
                 ...(muted ? styles.muteRowMuted : {}),
+                ...(selfMuted ? styles.muteRowSelfMuted : {}),
               }}
             >
-              <span style={muted ? styles.muteIconMuted : styles.muteIcon}>
-                {muted ? "🔇" : "🎤"}
+              <span style={muted ? styles.muteIconMuted : selfMuted ? styles.muteIconSelfMuted : styles.muteIcon}>
+                {muted ? "🔇" : selfMuted ? "🔈" : "🎤"}
               </span>
               <span style={{
                 ...styles.muteName,
                 ...(muted ? styles.muteNameMuted : {}),
+                ...(selfMuted ? styles.muteNameSelfMuted : {}),
               }}>
                 {roster[seat] || seat}
               </span>
@@ -2597,6 +2639,12 @@ const styles: Record<string, CSSProperties> = {
     borderColor: "#cc2244",
     boxShadow: "0 0 12px #cc224444, inset 0 0 12px #cc224422",
   },
+  // Self-muted (guest's own mic click): amber, distinct from host-mute red.
+  muteRowSelfMuted: {
+    background: "#2a2410",
+    borderColor: "#c89a1a",
+    boxShadow: "0 0 12px #c89a1a44, inset 0 0 12px #c89a1a22",
+  },
   muteName: {
     fontSize: 11,
     fontWeight: 700,
@@ -2608,11 +2656,18 @@ const styles: Record<string, CSSProperties> = {
   muteNameMuted: {
     color: "#ff4466",
   },
+  muteNameSelfMuted: {
+    color: "#e8b429",
+  },
   muteIcon: {
     fontSize: 14,
     opacity: 0.6,
   },
   muteIconMuted: {
+    fontSize: 14,
+    opacity: 1,
+  },
+  muteIconSelfMuted: {
     fontSize: 14,
     opacity: 1,
   },
