@@ -43,8 +43,9 @@ export const MutedTileOverlay = React.memo(function MutedTileOverlay({
     variant === "host"
       ? // Sam's box is 902x507 — width-based scaling would give a 45px
         // pill vs guests' 14px, which reads LOUD on a wide chroma-keyed
-        // box. Scale on height instead: ~25px, proportionate but subtle.
-        Math.max(14, Math.round(tile.h * 0.05))
+        // box. Scale on height instead: ~18px, proportionate but subtle
+        // (Lemz called 25px still a bit big).
+        Math.max(12, Math.round(tile.h * 0.035))
       : Math.max(12, Math.round(tile.w * 0.05));
   const bleed = variant === "tile" ? 8 : 0;
   const radius = Math.round(Math.min(tile.w, tile.h) * 0.22);

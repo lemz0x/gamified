@@ -115,6 +115,9 @@ interface CardAnnounce {
   cardId: CardId;
   /** Who played it. */
   fromName: string;
+  /** True when fromName is a voter list (STFU-on-Sam) — render smaller
+   *  so multiple names fit on one line. */
+  fromNameIsList?: boolean;
   /** Card display slug (STFU / MIC DROP). */
   cardSlug: string;
   /** Second line: "on Y". */
@@ -450,6 +453,27 @@ export function UnderlayRoute() {
             (s) => !msg.voters.includes(s),
           );
           addMuteReasons(nonVoterSeats, "stfu");
+          // Same announce treatment as a normal card play: "NAMES played
+          // STFU on Sam". Voters listed left-to-right, LEMZ name-dropped
+          // when he's part of the mutiny.
+          const voterNames = msg.voters
+            .map((v) => (v === "lemz" ? "LEMZ" : rosterRef.current[v as SeatId] || v))
+            .join(", ");
+          const announceId = nextId();
+          setCardAnnounce({
+            id: announceId,
+            cardId: "stfu",
+            fromName: voterNames,
+            fromNameIsList: true,
+            cardSlug: "STFU",
+            text2: `on ${hostNameRef.current}`,
+            color: CARD_COLORS.stfu,
+          });
+          window.setTimeout(() => {
+            setCardAnnounce((prev: CardAnnounce | null) =>
+              prev?.id === announceId ? null : prev,
+            );
+          }, CARD_ANNOUNCE_MS);
           if (samSilenceTimeoutRef.current !== null) {
             window.clearTimeout(samSilenceTimeoutRef.current);
           }
@@ -641,7 +665,7 @@ const CardAnnounceText = React.memo(function CardAnnounceText({ announce }: { an
           position: "relative",
           minWidth: 480,
           color: "#ffffff",
-          fontSize: "2rem",
+          fontSize: announce.fromNameIsList ? "1.5rem" : "2rem",
           letterSpacing: "0.04em",
           textShadow:
             `0 0 12px rgba(0,0,0,0.5), 0 0 20px ${announce.color}aa, 0 0 45px ${announce.color}66`,
