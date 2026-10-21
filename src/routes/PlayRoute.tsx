@@ -428,12 +428,17 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   }
 
   /** Starts the vote-window countdown anchored at windowId. Ticks once per
-   *  second; at 0 the window expires (votes vanish, no result, cooldown). */
-  function samStartWindowClock(windowId: number): void {
+   *  second; at 0 the window expires (votes vanish, no result, cooldown).
+   *  Returns false if the window was ALREADY expired at start — the caller
+   *  must not append the vote in that case (audit #4: an expired first
+   *  vote cleared the window, then got appended anyway, producing a
+   *  second spurious timeout a second later). */
+  function samStartWindowClock(windowId: number): boolean {
     if (samWindowTimerRef.current !== null) {
       window.clearInterval(samWindowTimerRef.current);
     }
     const endsAt = windowId + SAM_VOTE_WINDOW_MS;
+    let expired = false;
     const tick = () => {
       const remaining = Math.ceil((endsAt - Date.now()) / 1000);
       if (remaining <= 0) {
@@ -452,24 +457,38 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
             ts: Date.now(),
           });
         }
+        expired = true;
       } else {
         setSamSecondsLeft(remaining);
       }
     };
     tick();
+    if (expired) return false;
     samWindowTimerRef.current = window.setInterval(tick, 1000);
+    return true;
   }
 
   /** Arms the mechanic cooldown. One flat duration now (10s success OR
    *  timeout — see SAM_STFU_COOLDOWN_MS), synced across tabs via the
-   *  host's cooldownEndsAt broadcast. */
+   *  host's cooldownEndsAt broadcast.
+   *  Absolute (host-clock) values are clamped to the nominal duration
+   *  around NOW — clock skew between machines can't stretch a receiver's
+   *  cooldown to minutes or zero it out (audit #5). A result arriving
+   *  late on the wire still leaves a sane remaining cooldown. */
   function samStartCooldown(durationMsOrEndsAt: number, absolute = false): void {
     if (samCooldownIntervalRef.current !== null) {
       window.clearInterval(samCooldownIntervalRef.current);
     }
-    samCooldownEndsAtRef.current = absolute
-      ? durationMsOrEndsAt
-      : Date.now() + durationMsOrEndsAt;
+    if (absolute) {
+      const earliest = Date.now() - SAM_STFU_COOLDOWN_MS;
+      const latest = Date.now() + SAM_STFU_COOLDOWN_MS;
+      samCooldownEndsAtRef.current = Math.min(
+        Math.max(durationMsOrEndsAt, earliest),
+        latest,
+      );
+    } else {
+      samCooldownEndsAtRef.current = Date.now() + durationMsOrEndsAt;
+    }
     const remainingSec = Math.ceil((samCooldownEndsAtRef.current - Date.now()) / 1000);
     setSamCooldown(remainingSec);
     samCooldownIntervalRef.current = window.setInterval(() => {
@@ -536,11 +555,26 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       from.kind === "guest" ? from.seat : from.kind === "lemz" ? LEMZ_VOTER_ID : null;
     if (voterId === null) return; // host never votes
     if (samActedRef.current.has(windowId)) return; // window already resolved
+    // Expired vote: the window deadline has passed but this tab's interval
+    // callback hasn't run yet (timer granularity race — audit finding #4).
+    // Process the expiry first; the vote is dead, not counted.
+    if (windowId + SAM_VOTE_WINDOW_MS <= Date.now()) {
+      if (samWindowIdRef.current === windowId) {
+        samClearWindow();
+        samStartCooldown(SAM_STFU_COOLDOWN_MS);
+      }
+      return;
+    }
 
     // Window bookkeeping: first vote opens the window.
     if (samWindowIdRef.current === null && samVotesRef.current.length === 0) {
       samWindowIdRef.current = windowId;
-      samStartWindowClock(windowId);
+      if (!samStartWindowClock(windowId)) {
+        // First vote arrived already-expired (clock skew): clear the
+        // bookkeeping the clock's expiry just ran and drop the vote.
+        samWindowIdRef.current = null;
+        return;
+      }
     } else if (windowId !== samWindowIdRef.current) {
       return; // stale vote from an old window — ignore
     }
