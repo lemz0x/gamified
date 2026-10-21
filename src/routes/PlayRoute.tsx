@@ -348,6 +348,9 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   // the suppressed micState broadcast needs republishing once the force
   // reason clears, or panels display a stale SELF-MUTED/LIVE state.
   const micStateDirtyRef = useRef(false);
+  // Window ids where THIS guest's STFU card is reserved (charged at vote
+  // time, audit #13). Cleared to "spent" on success, refunded on timeout.
+  const samReservedRef = useRef<Set<number>>(new Set());
   const stfuMuteTimeoutRef = useRef<number | null>(null);
 
   // ── STFU-on-Sam vote state ────────────────────────────────────────────
@@ -447,6 +450,7 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       const remaining = Math.ceil((endsAt - Date.now()) / 1000);
       if (remaining <= 0) {
         // Window expired — nothing happened. Timeout cooldown.
+        samRefundOwnCard(windowId);
         samClearWindow();
         samStartCooldown(SAM_STFU_COOLDOWN_MS);
         // Host window clock is canonical: broadcast the timeout so every
@@ -539,15 +543,58 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
 
   /** Burns the local guest's STFU card if they voted in this window.
    *  Guarded by samActedRef so a vote-tally path and a result-event path
-   *  can't double-burn. */
+   *  can't double-burn.
+   *  Audit #13: the VOTE already reserved the card (samReserveOwnCard)
+   *  the moment it was cast, so the success burn is a no-op when the
+   *  reservation exists — but it still runs for defence-in-depth against
+   *  a wrapper that somehow missed its own reservation. */
   function samBurnOwnCard(windowId: number): void {
     if (identity.kind !== "guest") return;
     if (samActedRef.current.has(windowId)) return;
+    if (samReservedRef.current.has(windowId)) {
+      // Reservation already charged at vote time; success just converts
+      // it to a burn. Mark acted and done — no second increment.
+      samActedRef.current.add(windowId);
+      return;
+    }
     samActedRef.current.add(windowId);
     setCardUses((prev) => {
       const burned = { ...prev, stfu: prev.stfu + 1 };
       saveCardUses(identity, burned);
       return burned;
+    });
+  }
+
+  /** Reserves the local guest's STFU card at VOTE time (audit #13):
+   *  previously a voter could spend their ordinary STFU mid-window while
+   *  the vote was pending, and a successful vote burned the (already
+   *  spent) card again — one per-topic card paying for two actions.
+   *  The reserve increments uses immediately; samBurnOwnCard sees the
+   *  reservation and doesn't double-charge on success; the timeout path
+   *  (samRefundOwnCard) releases it. */
+  function samReserveOwnCard(windowId: number): void {
+    if (identity.kind !== "guest") return;
+    if (samReservedRef.current.has(windowId)) return;
+    samReservedRef.current.add(windowId);
+    setCardUses((prev) => {
+      const reserved = { ...prev, stfu: prev.stfu + 1 };
+      saveCardUses(identity, reserved);
+      return reserved;
+    });
+  }
+
+  /** Releases the reservation when a window resolves WITHOUT a result
+   *  (timeout, or the window orphaning on host reload): card refunded,
+   *  matching the documented timeout=refund contract. */
+  function samRefundOwnCard(windowId: number): void {
+    if (identity.kind !== "guest") return;
+    if (!samReservedRef.current.has(windowId)) return;
+    if (samActedRef.current.has(windowId)) return; // success — keep the charge
+    samReservedRef.current.delete(windowId);
+    setCardUses((prev) => {
+      const refunded = { ...prev, stfu: Math.max(0, prev.stfu - 1) };
+      saveCardUses(identity, refunded);
+      return refunded;
     });
   }
 
@@ -570,6 +617,7 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     // Process the expiry first; the vote is dead, not counted.
     if (windowId + SAM_VOTE_WINDOW_MS <= Date.now()) {
       if (samWindowIdRef.current === windowId) {
+        samRefundOwnCard(windowId);
         samClearWindow();
         samStartCooldown(SAM_STFU_COOLDOWN_MS);
       }
@@ -660,10 +708,14 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     }
   }
 
-  /** Timeout broadcast from the host's window clock: clear the window and
-   *  sync cooldown. Guest tabs' own clocks also fire — samClearWindow is
+  /** Timeout broadcast from the host's window clock: clear the window,
+   *  refund any local vote reservation (timeout = refund), and sync
+   *  cooldown. Guest tabs' own clocks also fire — samClearWindow is
    *  guarded (no windowId → no-op) so double-handling is harmless. */
   function samHandleCooldown(msg: SamCooldownEvent): void {
+    if (samWindowIdRef.current !== null) {
+      samRefundOwnCard(samWindowIdRef.current);
+    }
     samClearWindow();
     samStartCooldown(msg.cooldownEndsAt, true);
   }
@@ -1247,6 +1299,11 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
               const stfuCard = CARDS.find((c) => c.id === "stfu");
               if (cardUses.stfu >= (stfuCard?.usesPerTopic ?? 1)) return;
               const windowId = samWindowIdRef.current ?? Date.now();
+              // Reserve the STFU card NOW (audit #13): the vote holds the
+              // card until the window resolves — success converts to a burn,
+              // timeout refunds it. Blocks spending the ordinary STFU on a
+              // second action while the vote is live.
+              samReserveOwnCard(windowId);
               send({
                 type: "samVote",
                 from: { kind: "guest", seat: identity.seat, label: effectiveLabelRef.current },
