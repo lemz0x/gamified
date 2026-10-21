@@ -839,6 +839,17 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
               // guest (unless they self-muted). Circuit breaker stops
               // on next tick when it sees both stfuMuted and muteAll are false.
               muteAllRef.current = false;
+            } else {
+              // Individual unmute after a mute-all releases the mute-all
+              // force for THIS seat (audit #2): the panel and underlay
+              // already clear their "muteall" state for this seat — if
+              // muteAllRef stayed true the 150ms circuit breaker would
+              // keep killing the mic while every surface says LIVE.
+              // The breaker self-stops on its next tick once both force
+              // refs are false. Other seats keep their mute-all (an
+              // explicit unmute-all or their own unmute releases them).
+              // Timed STFU is NOT released here — it has its own expiry.
+              muteAllRef.current = false;
             }
             reconcileMicRef.current();
           }
