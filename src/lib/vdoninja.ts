@@ -407,10 +407,17 @@ export interface MicStateEvent {
 
 /**
  * A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
- *  The first vote's ts becomes the shared `windowId` — all wrappers
- *  derive the vote window and the threshold tally from it.
- *  Transient state, like buzz: late joiners are not backfilled. */
+ * The first vote's ts becomes the shared `windowId` — all wrappers
+ * derive the vote window and the threshold tally from it.
+ * Transient state, like buzz: late joiners are not backfilled. */
 export const SAM_VOTE_WINDOW_MS = 60_000;
+
+/** Layout-aware vote threshold: 2 in the 4-guest layout, 3 in 6 (half
+ *  the panel). Shared by the wrappers (host evaluates it) and the
+ *  producer mirror so the surfaces can never disagree. */
+export function samVoteThreshold(layout: "4" | "6"): number {
+  return layout === "4" ? 2 : 3;
+}
 export interface SamVoteEvent {
   type: "samVote";
   from: EventSender;

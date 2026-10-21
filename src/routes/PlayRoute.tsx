@@ -17,6 +17,7 @@ import {
   buildIframeUrl,
   useVdoNinja,
   SAM_VOTE_WINDOW_MS,
+  samVoteThreshold,
   type EventPayload,
   type EventSender,
   type SamStfuEvent,
@@ -171,12 +172,9 @@ const SAM_STFU_MS = 10_000;
 const SAM_STFU_COOLDOWN_MS = 10_000;
 /**
  * Votes needed to land the STFU — half the panel, so it tracks the show
- * format: 2 for a 4-guest show, 3 for 6. Only the host wrapper evaluates
- * this (it emits the canonical samStfu); producer + guests display it.
+ * format: 2 for a 4-guest show, 3 for 6. Now imported from vdoninja.ts
+ * so the producer mirror uses the exact same rule (audit #11).
  */
-function samVoteThreshold(layout: GuestLayout): number {
-  return layout === "4" ? 2 : 3;
-}
 /** Voter id for Lemz's producer-side vote. */
 const LEMZ_VOTER_ID = "lemz";
 
