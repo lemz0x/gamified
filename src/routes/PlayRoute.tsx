@@ -344,6 +344,10 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   // mic button. Prevents reconcileMic from force-unmuting a guest who
   // muted themselves (dog barking, cough) when STFU or host-mute clears.
   const selfMutedRef = useRef(false);
+  // True when a self-toggle happened during a force mute (audit #12):
+  // the suppressed micState broadcast needs republishing once the force
+  // reason clears, or panels display a stale SELF-MUTED/LIVE state.
+  const micStateDirtyRef = useRef(false);
   const stfuMuteTimeoutRef = useRef<number | null>(null);
 
   // ── STFU-on-Sam vote state ────────────────────────────────────────────
@@ -677,8 +681,19 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       // All force mutes cleared, not host-muted, not self-muted: actively unmute.
       // Without this, the VDO.Ninja mic stays muted after STFU/mute-all expires
       // because nothing else sends { mic: true }.
-      // If the guest self-muted (dog, cough), we DON'T force-unmute them.
+      // If the guest self-muted, we DON'T force-unmute them.
       muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
+    }
+    // Force mutes just cleared (audit #12): if the guest self-toggled
+    // during the force mute, the panels' micState is stale — the toggle's
+    // own broadcast was suppressed, and programmatic mic:true/false below
+    // doesn't fire VDO's manual-toggle event. Republish the settled state.
+    if (
+      !stfuMutedRef.current && !muteAllRef.current && micStateDirtyRef.current &&
+      identity.kind === "guest"
+    ) {
+      micStateDirtyRef.current = false;
+      send({ type: "micState", seat: identity.seat, selfMuted: selfMutedRef.current, ts: Date.now() });
     }
     setIsMuted(muted);
   };
@@ -953,6 +968,14 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       // circuit breaker re-asserts), so we must not paint a false one.
       if (identity.kind === "guest" && !muteAllRef.current && !stfuMutedRef.current) {
         send({ type: "micState", seat: identity.seat, selfMuted: data.value === true, ts: Date.now() });
+      } else if (identity.kind === "guest") {
+        // Toggle DURING a force mute (audit #12): suppressed above, but
+        // the guest's self-intent changed and the panels don't know. Mark
+        // it dirty; the force-mute expiry path republishes the settled
+        // state so the panel never goes stale (SELF-MUTED while live or
+        // vice versa). Programmatic mic:true from reconcileMic does NOT
+        // fire this VDO event, so this is the only correction point.
+        micStateDirtyRef.current = true;
       }
       // value: false means the user clicked unmute
       if (data.value === false) {
