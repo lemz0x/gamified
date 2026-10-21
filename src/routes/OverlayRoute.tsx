@@ -49,8 +49,10 @@ interface ChatScreenSprite {
  * Top-layer overlay route — sits above all OBS sources.
  *
  * Connects to VDO.Ninja as a data-only codirector (same as the underlay)
- * and listens for `chatToScreen` / `chatToScreenClear` events. Renders
- * only the ChatScreenCard (for now). Future top-layer elements go here.
+ * and listens for `chatToScreen` / `chatToScreenClear` events plus
+ * `samStfu` (Sam's SILENCED wash paints ABOVE his camera here; the
+ * underlay paints the below-camera copy). Future top-layer elements go
+ * here.
  */
 export function OverlayRoute() {
   const [chatScreenSprite, setChatScreenSprite] = useState<ChatScreenSprite | null>(null);

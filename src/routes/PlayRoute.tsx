@@ -2154,9 +2154,8 @@ function MissingParamsHelp() {
           <code>?role=host&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for the
           host, or <code>?role=editor&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for
           the editor (chat-only, audio publish). A seat number outside the
-          active layout's range also lands here — use the guest-links
-          generator in the producer panel or check the URL against the
-          show's guest-link doc section.
+          active layout's range also lands here — check the URL against
+          the show's link sheet (URL recipes: docs/stfu-on-sam.md).
         </p>
       </div>
     </div>
