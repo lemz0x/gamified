@@ -25,6 +25,7 @@ import {
   buildOverlayDataOnlyUrl,
   useVdoNinja,
   SAM_VOTE_WINDOW_MS,
+  samVoteThreshold,
   type EventPayload,
 } from "../lib/vdoninja";
 import {
@@ -389,17 +390,37 @@ function ProducerPanel() {
               ? LEMZ_VOTER_ID
               : null;
         if (voterId !== null) {
-          setSamVotes((prev) => {
-            if (prev.includes(voterId)) return prev;
-            return [...prev, voterId];
+          // Window-scoped tally (audit #11): a vote for a DIFFERENT window
+          // than the one we're displaying never pollutes the count.
+          setSamWindowId((prev) => {
+            if (prev !== null && prev !== msg.windowId) return prev; // stale window
+            setSamVotes((votes) => {
+              const scoped = prev === null ? [] : votes;
+              if (scoped.includes(voterId)) return votes;
+              return [...scoped, voterId];
+            });
+            return msg.windowId;
           });
-          setSamWindowId((prev) => prev ?? msg.windowId);
         }
       }
       if (msg.type === "samStfu") {
         setSamVotes([]);
         setSamWindowId(null);
+        setSamSecondsLeft(null);
+        // Success cooldown (audit #11): sync to the host's clock; the
+        // button re-arms when it expires.
+        if (msg.cooldownEndsAt !== undefined) {
+          setSamCooldownEndsAt(Math.min(msg.cooldownEndsAt, Date.now() + SAM_VOTE_WINDOW_MS));
+        }
         playCardSfx("stfu");
+      }
+      if (msg.type === "samCooldown") {
+        // Host's window timeout (audit #11): clear the window, sync the
+        // cooldown so Lemz's button doesn't re-arm early.
+        setSamVotes([]);
+        setSamWindowId(null);
+        setSamSecondsLeft(null);
+        setSamCooldownEndsAt(Math.min(msg.cooldownEndsAt, Date.now() + SAM_VOTE_WINDOW_MS));
       }
       // Sync mute state from host: when host mutes/unmutes, update
       // producer panel indicators so both panels stay in sync.
@@ -554,7 +575,13 @@ function ProducerPanel() {
   // Producer votes with the same samVote event guests use; "lemz" counts
   // toward the threshold. Producer never area-mutes (he's the camera, not
   // a mic in the show audio), so the result event is display-only here.
+  // Audit #11: the mirror now enforces the same rules as the wrappers —
+  // votes are window-scoped, the threshold derives from the layout, and
+  // the cooldown (success OR timeout) gates Lemz's button.
+  const [samCooldownEndsAt, setSamCooldownEndsAt] = useState<number | null>(null);
+  const samThreshold = samVoteThreshold(layout);
   const lemzVote = useCallback(() => {
+    if (samCooldownEndsAt !== null) return; // cooldown active — no voting
     const windowId = samWindowId ?? Date.now();
     send({
       type: "samVote",
@@ -566,7 +593,7 @@ function ProducerPanel() {
     setSamVotes((prev) => (prev.includes("lemz") ? prev : [...prev, "lemz"]));
     setSamWindowId((prev) => prev ?? windowId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [samWindowId, send]);
+  }, [samWindowId, send, samCooldownEndsAt]);
 
   // Window countdown mirrors the guest side: windowId + SAM_VOTE_WINDOW_MS.
   useEffect(() => {
@@ -598,6 +625,19 @@ function ProducerPanel() {
       }
     };
   }, [samWindowId]);
+
+  // Cooldown expiry (audit #11): clear the gate when it passes. Host's
+  // clock is clamped to a sane bound on receipt; local clock clears it.
+  useEffect(() => {
+    if (samCooldownEndsAt === null) return;
+    const remaining = samCooldownEndsAt - Date.now();
+    if (remaining <= 0) {
+      setSamCooldownEndsAt(null);
+      return;
+    }
+    const t = window.setTimeout(() => setSamCooldownEndsAt(null), remaining);
+    return () => window.clearTimeout(t);
+  }, [samCooldownEndsAt]);
 
   const sendTracker = useCallback(() => {
     const title = (trackerTitle || "Tracker").toUpperCase();
@@ -826,9 +866,14 @@ function ProducerPanel() {
           </button>
           <span style={styles.hint}>
             {samWindowId !== null
-              ? `${samVotes.length}/3 votes · ${samSecondsLeft ?? "?"}s left`
+              ? `${samVotes.length}/${samThreshold} votes · ${samSecondsLeft ?? "?"}s left`
               : "No vote window open. Guests (or Lemz) start one by voting."}
           </span>
+          {samCooldownEndsAt !== null && (
+            <span style={{ ...styles.hint, color: NEON.amber }}>
+              COOLDOWN {Math.max(0, Math.ceil((samCooldownEndsAt - Date.now()) / 1000))}s
+            </span>
+          )}
         </div>
       </Section>
 

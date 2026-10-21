@@ -17,6 +17,7 @@ import {
   buildIframeUrl,
   useVdoNinja,
   SAM_VOTE_WINDOW_MS,
+  samVoteThreshold,
   type EventPayload,
   type EventSender,
   type SamStfuEvent,
@@ -171,12 +172,9 @@ const SAM_STFU_MS = 10_000;
 const SAM_STFU_COOLDOWN_MS = 10_000;
 /**
  * Votes needed to land the STFU — half the panel, so it tracks the show
- * format: 2 for a 4-guest show, 3 for 6. Only the host wrapper evaluates
- * this (it emits the canonical samStfu); producer + guests display it.
+ * format: 2 for a 4-guest show, 3 for 6. Now imported from vdoninja.ts
+ * so the producer mirror uses the exact same rule (audit #11).
  */
-function samVoteThreshold(layout: GuestLayout): number {
-  return layout === "4" ? 2 : 3;
-}
 /** Voter id for Lemz's producer-side vote. */
 const LEMZ_VOTER_ID = "lemz";
 
@@ -344,6 +342,13 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   // mic button. Prevents reconcileMic from force-unmuting a guest who
   // muted themselves (dog barking, cough) when STFU or host-mute clears.
   const selfMutedRef = useRef(false);
+  // True when a self-toggle happened during a force mute (audit #12):
+  // the suppressed micState broadcast needs republishing once the force
+  // reason clears, or panels display a stale SELF-MUTED/LIVE state.
+  const micStateDirtyRef = useRef(false);
+  // Window ids where THIS guest's STFU card is reserved (charged at vote
+  // time, audit #13). Cleared to "spent" on success, refunded on timeout.
+  const samReservedRef = useRef<Set<number>>(new Set());
   const stfuMuteTimeoutRef = useRef<number | null>(null);
 
   // ── STFU-on-Sam vote state ────────────────────────────────────────────
@@ -428,16 +433,22 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
   }
 
   /** Starts the vote-window countdown anchored at windowId. Ticks once per
-   *  second; at 0 the window expires (votes vanish, no result, cooldown). */
-  function samStartWindowClock(windowId: number): void {
+   *  second; at 0 the window expires (votes vanish, no result, cooldown).
+   *  Returns false if the window was ALREADY expired at start — the caller
+   *  must not append the vote in that case (audit #4: an expired first
+   *  vote cleared the window, then got appended anyway, producing a
+   *  second spurious timeout a second later). */
+  function samStartWindowClock(windowId: number): boolean {
     if (samWindowTimerRef.current !== null) {
       window.clearInterval(samWindowTimerRef.current);
     }
     const endsAt = windowId + SAM_VOTE_WINDOW_MS;
+    let expired = false;
     const tick = () => {
       const remaining = Math.ceil((endsAt - Date.now()) / 1000);
       if (remaining <= 0) {
         // Window expired — nothing happened. Timeout cooldown.
+        samRefundOwnCard(windowId);
         samClearWindow();
         samStartCooldown(SAM_STFU_COOLDOWN_MS);
         // Host window clock is canonical: broadcast the timeout so every
@@ -452,24 +463,38 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
             ts: Date.now(),
           });
         }
+        expired = true;
       } else {
         setSamSecondsLeft(remaining);
       }
     };
     tick();
+    if (expired) return false;
     samWindowTimerRef.current = window.setInterval(tick, 1000);
+    return true;
   }
 
   /** Arms the mechanic cooldown. One flat duration now (10s success OR
    *  timeout — see SAM_STFU_COOLDOWN_MS), synced across tabs via the
-   *  host's cooldownEndsAt broadcast. */
+   *  host's cooldownEndsAt broadcast.
+   *  Absolute (host-clock) values are clamped to the nominal duration
+   *  around NOW — clock skew between machines can't stretch a receiver's
+   *  cooldown to minutes or zero it out (audit #5). A result arriving
+   *  late on the wire still leaves a sane remaining cooldown. */
   function samStartCooldown(durationMsOrEndsAt: number, absolute = false): void {
     if (samCooldownIntervalRef.current !== null) {
       window.clearInterval(samCooldownIntervalRef.current);
     }
-    samCooldownEndsAtRef.current = absolute
-      ? durationMsOrEndsAt
-      : Date.now() + durationMsOrEndsAt;
+    if (absolute) {
+      const earliest = Date.now() - SAM_STFU_COOLDOWN_MS;
+      const latest = Date.now() + SAM_STFU_COOLDOWN_MS;
+      samCooldownEndsAtRef.current = Math.min(
+        Math.max(durationMsOrEndsAt, earliest),
+        latest,
+      );
+    } else {
+      samCooldownEndsAtRef.current = Date.now() + durationMsOrEndsAt;
+    }
     const remainingSec = Math.ceil((samCooldownEndsAtRef.current - Date.now()) / 1000);
     setSamCooldown(remainingSec);
     samCooldownIntervalRef.current = window.setInterval(() => {
@@ -516,10 +541,20 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
 
   /** Burns the local guest's STFU card if they voted in this window.
    *  Guarded by samActedRef so a vote-tally path and a result-event path
-   *  can't double-burn. */
+   *  can't double-burn.
+   *  Audit #13: the VOTE already reserved the card (samReserveOwnCard)
+   *  the moment it was cast, so the success burn is a no-op when the
+   *  reservation exists — but it still runs for defence-in-depth against
+   *  a wrapper that somehow missed its own reservation. */
   function samBurnOwnCard(windowId: number): void {
     if (identity.kind !== "guest") return;
     if (samActedRef.current.has(windowId)) return;
+    if (samReservedRef.current.has(windowId)) {
+      // Reservation already charged at vote time; success just converts
+      // it to a burn. Mark acted and done — no second increment.
+      samActedRef.current.add(windowId);
+      return;
+    }
     samActedRef.current.add(windowId);
     setCardUses((prev) => {
       const burned = { ...prev, stfu: prev.stfu + 1 };
@@ -528,19 +563,74 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     });
   }
 
-  /** Processes an inbound samVote event. Tallies locally; on threshold the
-   *  host wrapper emits samStfu (once per window). All wrappers act on their
-   *  own tally without waiting for the broadcast. */
+  /** Reserves the local guest's STFU card at VOTE time (audit #13):
+   *  previously a voter could spend their ordinary STFU mid-window while
+   *  the vote was pending, and a successful vote burned the (already
+   *  spent) card again — one per-topic card paying for two actions.
+   *  The reserve increments uses immediately; samBurnOwnCard sees the
+   *  reservation and doesn't double-charge on success; the timeout path
+   *  (samRefundOwnCard) releases it. */
+  function samReserveOwnCard(windowId: number): void {
+    if (identity.kind !== "guest") return;
+    if (samReservedRef.current.has(windowId)) return;
+    samReservedRef.current.add(windowId);
+    setCardUses((prev) => {
+      const reserved = { ...prev, stfu: prev.stfu + 1 };
+      saveCardUses(identity, reserved);
+      return reserved;
+    });
+  }
+
+  /** Releases the reservation when a window resolves WITHOUT a result
+   *  (timeout, or the window orphaning on host reload): card refunded,
+   *  matching the documented timeout=refund contract. */
+  function samRefundOwnCard(windowId: number): void {
+    if (identity.kind !== "guest") return;
+    if (!samReservedRef.current.has(windowId)) return;
+    if (samActedRef.current.has(windowId)) return; // success — keep the charge
+    samReservedRef.current.delete(windowId);
+    setCardUses((prev) => {
+      const refunded = { ...prev, stfu: Math.max(0, prev.stfu - 1) };
+      saveCardUses(identity, refunded);
+      return refunded;
+    });
+  }
+
+  /** Processes an inbound samVote event. Guests tally for DISPLAY ONLY —
+   *  the commit (hard-mutes, card burns, samStfu emission) happens in
+   *  samHandleStfu from the host's result event (audit #3: a host reload
+   *  mid-window used to leave guests executing a result the refreshed
+   *  host never emitted — cards burned, non-voters muted, Sam live,
+   *  no wash. Now a host reload simply orphans the window: it times out
+   *  everywhere with no card burn — timeout = refund, the documented
+   *  contract). The HOST wrapper is the sole threshold evaluator and
+   *  emits samStfu exactly once per window. */
   function samHandleVote(from: EventSender, windowId: number): void {
     const voterId =
       from.kind === "guest" ? from.seat : from.kind === "lemz" ? LEMZ_VOTER_ID : null;
     if (voterId === null) return; // host never votes
     if (samActedRef.current.has(windowId)) return; // window already resolved
+    // Expired vote: the window deadline has passed but this tab's interval
+    // callback hasn't run yet (timer granularity race — audit finding #4).
+    // Process the expiry first; the vote is dead, not counted.
+    if (windowId + SAM_VOTE_WINDOW_MS <= Date.now()) {
+      if (samWindowIdRef.current === windowId) {
+        samRefundOwnCard(windowId);
+        samClearWindow();
+        samStartCooldown(SAM_STFU_COOLDOWN_MS);
+      }
+      return;
+    }
 
     // Window bookkeeping: first vote opens the window.
     if (samWindowIdRef.current === null && samVotesRef.current.length === 0) {
       samWindowIdRef.current = windowId;
-      samStartWindowClock(windowId);
+      if (!samStartWindowClock(windowId)) {
+        // First vote arrived already-expired (clock skew): clear the
+        // bookkeeping the clock's expiry just ran and drop the vote.
+        samWindowIdRef.current = null;
+        return;
+      }
     } else if (windowId !== samWindowIdRef.current) {
       return; // stale vote from an old window — ignore
     }
@@ -557,25 +647,15 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     setSamVotes(next);
     if (isSelf) setSamMyVote(voterId);
 
+    // Threshold reached: ONLY the host acts on the tally (silent
+    // self-mute + single samStfu emission). Guest wrappers display
+    // the tally but commit nothing here — they wait for samHandleStfu.
     if (next.length >= samVoteThreshold(layoutRef.current)) {
-      samClearWindow();
-      // Host always gets silenced. Guests only if they didn't vote.
       if (identity.kind === "host") {
+        samClearWindow();
+        // Host always gets silenced — the mutiny is aimed at him.
         samHardMuteLocal();
-      } else if (identity.kind === "guest" && !next.includes(identity.seat)) {
-        samHardMuteLocal();
-      }
-      // Voters burn their STFU card — success consumes the reservation.
-      // MUST run before the window is marked acted: samBurnOwnCard is
-      // guarded by samActedRef (burn-once per window) so the tally path
-      // and the result-event path can't double-burn — but that guard
-      // means the mark has to come AFTER the burn, or the burn no-ops.
-      if (identity.kind === "guest" && next.includes(identity.seat)) {
-        samBurnOwnCard(windowId);
-      }
-      samActedRef.current.add(windowId);
-      // Host wrapper is the canonical emitter (one samStfu per window).
-      if (identity.kind === "host") {
+        samActedRef.current.add(windowId);
         send({
           type: "samStfu",
           windowId,
@@ -584,31 +664,30 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
           cooldownEndsAt: Date.now() + SAM_STFU_COOLDOWN_MS,
           ts: Date.now(),
         });
+        samStartCooldown(SAM_STFU_COOLDOWN_MS);
       }
-      // All wrappers: success cooldown so the button doesn't re-arm instantly.
-      samStartCooldown(SAM_STFU_COOLDOWN_MS);
+      // Guests: window stays open visually until the result event lands
+      // (ms later on the same data channel). samClearWindow runs there.
     }
   }
 
-  /** Result event from the host wrapper. Redundant for wrappers that already
-   *  acted on their own tally, authoritative for underlay/producer/late
-   *  arrivals. Also the SFX cue point for non-host wrappers. */
+  /** Result event from the host wrapper — the single commit point for
+   *  guests (audit #3): non-voters hard-mute here, voters burn here, and
+   *  the window closes here. Nothing commits on the local tally anymore,
+   *  so a host reload mid-window can only orphan a vote (timeout = refund)
+   *  — never a phantom result Sam never acknowledged. */
   function samHandleStfu(msg: SamStfuEvent): void {
     if (samHandledResultRef.current === msg.windowId) return;
     samHandledResultRef.current = msg.windowId;
     samClearWindow();
     // Host already hard-muted itself at its own tally; don't re-mute.
     if (identity.kind === "host") return;
-    // Non-voter guest: hard-mute the moment the result lands. Defence-in-
-    // depth for wrappers that missed the final vote broadcast. Runs BEFORE
-    // the acted-mark (samHardMuteLocal is idempotent-ish: re-asserting just
-    // restarts the 10s window from now, broadcast latency is ~ms).
+    // Non-voter guest: hard-mute the moment the result lands.
     if (identity.kind === "guest" && !msg.voters.includes(identity.seat)) {
       samHardMuteLocal();
     }
-    // Voter guest: burn card if not already burned via the tally path.
-    // samBurnOwnCard is guarded by samActedRef — marking acted happens
-    // after, same ordering fix as the tally path.
+    // Voter guest: burn card. samBurnOwnCard is guarded by samActedRef;
+    // the acted-mark comes after, per the burn-before-mark ordering rule.
     if (identity.kind === "guest" && msg.voters.includes(identity.seat)) {
       samBurnOwnCard(msg.windowId);
     }
@@ -627,10 +706,14 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
     }
   }
 
-  /** Timeout broadcast from the host's window clock: clear the window and
-   *  sync cooldown. Guest tabs' own clocks also fire — samClearWindow is
+  /** Timeout broadcast from the host's window clock: clear the window,
+   *  refund any local vote reservation (timeout = refund), and sync
+   *  cooldown. Guest tabs' own clocks also fire — samClearWindow is
    *  guarded (no windowId → no-op) so double-handling is harmless. */
   function samHandleCooldown(msg: SamCooldownEvent): void {
+    if (samWindowIdRef.current !== null) {
+      samRefundOwnCard(samWindowIdRef.current);
+    }
     samClearWindow();
     samStartCooldown(msg.cooldownEndsAt, true);
   }
@@ -648,8 +731,19 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       // All force mutes cleared, not host-muted, not self-muted: actively unmute.
       // Without this, the VDO.Ninja mic stays muted after STFU/mute-all expires
       // because nothing else sends { mic: true }.
-      // If the guest self-muted (dog, cough), we DON'T force-unmute them.
+      // If the guest self-muted, we DON'T force-unmute them.
       muteIframeRef.current?.contentWindow?.postMessage({ mic: true }, "*");
+    }
+    // Force mutes just cleared (audit #12): if the guest self-toggled
+    // during the force mute, the panels' micState is stale — the toggle's
+    // own broadcast was suppressed, and programmatic mic:true/false below
+    // doesn't fire VDO's manual-toggle event. Republish the settled state.
+    if (
+      !stfuMutedRef.current && !muteAllRef.current && micStateDirtyRef.current &&
+      identity.kind === "guest"
+    ) {
+      micStateDirtyRef.current = false;
+      send({ type: "micState", seat: identity.seat, selfMuted: selfMutedRef.current, ts: Date.now() });
     }
     setIsMuted(muted);
   };
@@ -805,6 +899,17 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
               // guest (unless they self-muted). Circuit breaker stops
               // on next tick when it sees both stfuMuted and muteAll are false.
               muteAllRef.current = false;
+            } else {
+              // Individual unmute after a mute-all releases the mute-all
+              // force for THIS seat (audit #2): the panel and underlay
+              // already clear their "muteall" state for this seat — if
+              // muteAllRef stayed true the 150ms circuit breaker would
+              // keep killing the mic while every surface says LIVE.
+              // The breaker self-stops on its next tick once both force
+              // refs are false. Other seats keep their mute-all (an
+              // explicit unmute-all or their own unmute releases them).
+              // Timed STFU is NOT released here — it has its own expiry.
+              muteAllRef.current = false;
             }
             reconcileMicRef.current();
           }
@@ -913,6 +1018,14 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
       // circuit breaker re-asserts), so we must not paint a false one.
       if (identity.kind === "guest" && !muteAllRef.current && !stfuMutedRef.current) {
         send({ type: "micState", seat: identity.seat, selfMuted: data.value === true, ts: Date.now() });
+      } else if (identity.kind === "guest") {
+        // Toggle DURING a force mute (audit #12): suppressed above, but
+        // the guest's self-intent changed and the panels don't know. Mark
+        // it dirty; the force-mute expiry path republishes the settled
+        // state so the panel never goes stale (SELF-MUTED while live or
+        // vice versa). Programmatic mic:true from reconcileMic does NOT
+        // fire this VDO event, so this is the only correction point.
+        micStateDirtyRef.current = true;
       }
       // value: false means the user clicked unmute
       if (data.value === false) {
@@ -1184,6 +1297,11 @@ function PlaySurface({ identity, push, seats }: PlaySurfaceProps) {
               const stfuCard = CARDS.find((c) => c.id === "stfu");
               if (cardUses.stfu >= (stfuCard?.usesPerTopic ?? 1)) return;
               const windowId = samWindowIdRef.current ?? Date.now();
+              // Reserve the STFU card NOW (audit #13): the vote holds the
+              // card until the window resolves — success converts to a burn,
+              // timeout refunds it. Blocks spending the ordinary STFU on a
+              // second action while the vote is live.
+              samReserveOwnCard(windowId);
               send({
                 type: "samVote",
                 from: { kind: "guest", seat: identity.seat, label: effectiveLabelRef.current },
@@ -2036,9 +2154,8 @@ function MissingParamsHelp() {
           <code>?role=host&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for the
           host, or <code>?role=editor&amp;push=&lt;id&gt;&amp;label=&lt;name&gt;</code> for
           the editor (chat-only, audio publish). A seat number outside the
-          active layout's range also lands here — use the guest-links
-          generator in the producer panel or check the URL against the
-          show's guest-link doc section.
+          active layout's range also lands here — check the URL against
+          the show's link sheet (URL recipes: docs/stfu-on-sam.md).
         </p>
       </div>
     </div>

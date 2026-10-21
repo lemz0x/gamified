@@ -45,6 +45,14 @@ const CANVAS_H = 1080;
  * letting a runaway sender queue 1k DOM nodes.
  */
 const EMOJI_PER_SEAT_CAP = 30;
+/** Live card-sprite concurrency cap (audit #14). Cards are the heaviest
+ *  sprite (full-screen multi-layer treatment + SFX); a spam burst must
+ *  never allocate hundreds of them in the recording browser. 4 is well
+ *  above anything a real show produces, well below what strains a tab. */
+const CARD_SPRITE_CAP = 4;
+/** Same for source auras — lightweight, but still DOM nodes with glow
+ *  filters; 8 concurrent auras is generous. */
+const AURA_SPRITE_CAP = 8;
 
 /** Emoji float animation length (matches `floatUpOverlay` keyframe). */
 const EMOJI_FLOAT_MS = 1500;
@@ -200,9 +208,50 @@ export function UnderlayRoute() {
   //  - STFU expiry visually unmuting a seat the host independently muted
   //  - Individual host mutes showing the SILENCED overlay (only mute-all + STFU do)
   const [muteReasons, setMuteReasons] = useState<Map<SeatId, Set<MuteReason>>>(new Map());
-  // Ref for the STFU area-mute visual timeout so we can clear it on
-  // stacking (rapid back-to-back STFU plays) and on component unmount.
-  const stfuVisualTimeoutRef = useRef<number | null>(null);
+  // ── Timed "stfu" reason expiry (audit #9) ────────────────────────────
+  // The shared "stfu" reason is contributed by two independent sources:
+  // ordinary card STFU (10s) and the STFU-on-Sam area mute (10s). A single
+  // timeout removing "stfu" from every seat wipes the OTHER source's still-
+  // active wash early — the audience sees live-looking tiles while the
+  // guests are actually still force-muted. Fix: each contribution records
+  // its own deadline; a single 1s sweeper clears "stfu" from a seat only
+  // when every contribution affecting that seat has expired.
+  // seats → expiry epoch ms of each active stfu contribution.
+  const stfuExpiryRef = useRef<Map<SeatId, number>>(new Map());
+  const stfuSweeperRef = useRef<number | null>(null);
+  // Ref indirection so the sweeper can call the (stable) remover without a
+  // circular dep. Assigned after removeMuteReasons is declared below.
+  const removeMuteReasonsRef = useRef<(seats: SeatId[], reason: MuteReason) => void>(() => {});
+
+  /** Arm a 10s "stfu" wash for the given seats with per-seat expiry. A
+   *  later contribution on the same seat extends its deadline (stacking
+   *  keeps the wash on for the longest active effect, matching the
+   *  wrapper's actual mute behaviour). */
+  const armStfuWash = useCallback((seats: SeatId[], durationMs: number) => {
+    const expiresAt = Date.now() + durationMs;
+    for (const s of seats) {
+      const prev = stfuExpiryRef.current.get(s) ?? 0;
+      stfuExpiryRef.current.set(s, Math.max(prev, expiresAt));
+    }
+    if (stfuSweeperRef.current === null) {
+      const sweep = () => {
+        const now = Date.now();
+        const expired: SeatId[] = [];
+        for (const [s, exp] of stfuExpiryRef.current) {
+          if (exp <= now) expired.push(s);
+        }
+        if (expired.length > 0) {
+          for (const s of expired) stfuExpiryRef.current.delete(s);
+          removeMuteReasonsRef.current(expired, "stfu");
+        }
+        if (stfuExpiryRef.current.size === 0 && stfuSweeperRef.current !== null) {
+          window.clearInterval(stfuSweeperRef.current);
+          stfuSweeperRef.current = null;
+        }
+      };
+      stfuSweeperRef.current = window.setInterval(sweep, 1000);
+    }
+  }, []);
 
   /** Add a mute reason for one or more seats. */
   const addMuteReasons = useCallback((seats: SeatId[], reason: MuteReason) => {
@@ -235,6 +284,7 @@ export function UnderlayRoute() {
       return next;
     });
   }, []);
+  removeMuteReasonsRef.current = removeMuteReasons;
 
   // Ref to latest muteReasons so the STFU timeout closure reads
   // the current state 10s later (not a stale closure capture).
@@ -250,11 +300,11 @@ export function UnderlayRoute() {
   // Preload card SFX so first play is instant (no network delay).
   useEffect(() => { preloadCardSfx(); }, []);
 
-  // Cleanup: clear any pending STFU visual mute timeout on unmount.
+  // Cleanup: clear pending visual timers on unmount.
   useEffect(() => {
     return () => {
-      if (stfuVisualTimeoutRef.current !== null) {
-        window.clearTimeout(stfuVisualTimeoutRef.current);
+      if (stfuSweeperRef.current !== null) {
+        window.clearInterval(stfuSweeperRef.current);
       }
       if (samSilenceTimeoutRef.current !== null) {
         window.clearTimeout(samSilenceTimeoutRef.current);
@@ -319,14 +369,29 @@ export function UnderlayRoute() {
   }, []);
 
   const enqueueCard = useCallback((sprite: CardSprite) => {
-    setCardSprites((prev) => [...prev, sprite]);
+    setCardSprites((prev) => {
+      // Burst cap (audit #14): a hostile/buggy peer can spam valid card
+      // events; without a cap 500 copies allocate 500 full-screen card
+      // layers + 500 audio requests and can exhaust the recording
+      // browser. Keep the newest CARD_SPRITE_CAP, drop the oldest.
+      if (prev.length >= CARD_SPRITE_CAP) {
+        return [...prev.slice(prev.length - CARD_SPRITE_CAP + 1), sprite];
+      }
+      return [...prev, sprite];
+    });
   }, []);
 
   /** Source aura duration: 300ms fade in + 2.4s hold + 300ms fade out. */
   const SOURCE_AURA_MS = 3000;
 
   const enqueueSourceAura = useCallback((sprite: SourceAuraSprite) => {
-    setSourceAuraSprites((prev) => [...prev, sprite]);
+    setSourceAuraSprites((prev) => {
+      // Burst cap (audit #14) — same rationale as CARD_SPRITE_CAP.
+      if (prev.length >= AURA_SPRITE_CAP) {
+        return [...prev.slice(prev.length - AURA_SPRITE_CAP + 1), sprite];
+      }
+      return [...prev, sprite];
+    });
   }, []);
 
   const onMessage = useCallback(
@@ -364,27 +429,11 @@ export function UnderlayRoute() {
               ? seats.filter((s) => s !== sourceSeat)
               : [...seats];
             addMuteReasons(mutedSeatsArr, "stfu");
-            // Clear any pending STFU visual timeout (handles stacking:
-            // a second STFU extends the window). The old timeout only
-            // removed "stfu" reasons, so orphaned "host" reasons are safe.
-            if (stfuVisualTimeoutRef.current !== null) {
-              window.clearTimeout(stfuVisualTimeoutRef.current);
-            }
-            // Auto-clear after 10s (matches the STFU mute window in PlayRoute).
-            // This removes the "stfu" reason from ALL seats that currently
-            // have it — if the host also muted a seat, the "host" reason
-            // remains and the seat stays SILENCED.
-            stfuVisualTimeoutRef.current = window.setTimeout(() => {
-              // Remove "stfu" from all seats that currently have the reason
-              // (muteReasonsRef is layout-gated at add time, so no phantom
-              // seats can be present).
-              const stfuSeats = [...muteReasonsRef.current.keys()].filter((s) => {
-                const reasons = muteReasonsRef.current.get(s);
-                return reasons?.has("stfu");
-              });
-              removeMuteReasons(stfuSeats, "stfu");
-              stfuVisualTimeoutRef.current = null;
-            }, 10_000);
+            // Per-seat expiry via the sweeper (audit #9): a second STFU
+            // extends each seat's deadline; one effect's expiry can no
+            // longer clear another's still-active wash. The legacy
+            // single-timeout path is gone.
+            armStfuWash(mutedSeatsArr, 10_000);
           }
           fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce, nextId);
           playCardSfx(msg.cardId);
@@ -453,6 +502,11 @@ export function UnderlayRoute() {
             (s) => !msg.voters.includes(s),
           );
           addMuteReasons(nonVoterSeats, "stfu");
+          // Per-seat expiry (audit #9): the sweeper clears "stfu" from each
+          // seat only when ITS deadline passes — an ordinary guest STFU
+          // landing mid-window can no longer have its wash wiped early by
+          // this timer, and vice versa.
+          armStfuWash(nonVoterSeats, 10_000);
           // Same announce treatment as a normal card play: "NAMES played
           // STFU on Sam". Voters listed left-to-right, LEMZ name-dropped
           // when he's part of the mutiny.
@@ -482,12 +536,9 @@ export function UnderlayRoute() {
           if (samSilenceTimeoutRef.current !== null) {
             window.clearTimeout(samSilenceTimeoutRef.current);
           }
+          // Host tile wash: own timer, only touches samSilenced (the
+          // guest seats are handled by the per-seat sweeper above).
           samSilenceTimeoutRef.current = window.setTimeout(() => {
-            const stfuSeats = (Object.keys(tiles) as SeatId[]).filter((s) => {
-              const reasons = muteReasonsRef.current.get(s as SeatId);
-              return reasons?.has("stfu");
-            }) as SeatId[];
-            removeMuteReasons(stfuSeats, "stfu");
             setSamSilenced(false);
             samSilenceTimeoutRef.current = null;
           }, 10_000);

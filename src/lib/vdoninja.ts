@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { CardId } from "../cards";
 import { EMOJIS, type Emoji } from "../emojis";
-import { SEAT_ORDER, type SeatId, type TileMap } from "../coords";
+import { SEAT_ORDER, type SeatId, type Tile, type TileMap } from "../coords";
 
 // ── URL builders ────────────────────────────────────────────────────────
 
@@ -407,10 +407,17 @@ export interface MicStateEvent {
 
 /**
  * A voter (guest seat or Lemz) cast a vote in the STFU-on-Sam window.
- *  The first vote's ts becomes the shared `windowId` — all wrappers
- *  derive the vote window and the threshold tally from it.
- *  Transient state, like buzz: late joiners are not backfilled. */
+ * The first vote's ts becomes the shared `windowId` — all wrappers
+ * derive the vote window and the threshold tally from it.
+ * Transient state, like buzz: late joiners are not backfilled. */
 export const SAM_VOTE_WINDOW_MS = 60_000;
+
+/** Layout-aware vote threshold: 2 in the 4-guest layout, 3 in 6 (half
+ *  the panel). Shared by the wrappers (host evaluates it) and the
+ *  producer mirror so the surfaces can never disagree. */
+export function samVoteThreshold(layout: "4" | "6"): number {
+  return layout === "4" ? 2 : 3;
+}
 export interface SamVoteEvent {
   type: "samVote";
   from: EventSender;
@@ -485,9 +492,55 @@ const VALID_CARD_IDS = new Set<CardId>(["stfu", "micdrop", "wrapitup"]);
 const VALID_EMOJIS = new Set<string>(EMOJIS);
 /** Max length for chat-to-screen author display name. */
 const MAX_AUTHOR_LEN = 64;
+/** Max length for chat-to-screen message text. */
+const MAX_MESSAGE_LEN = 500;
+/** Max length for roster names / host name (display strings). */
+const MAX_NAME_LEN = 48;
+/** Max length for tracker titles and answers. */
+const MAX_TRACKER_TEXT_LEN = 120;
+/** Tile geometry bounds on the 1920x1080 canvas (calibration values). */
+const TILE_MAX = 4000;
 
 function isValidSeatId(v: unknown): v is SeatId {
   return typeof v === "string" && VALID_SEAT_IDS.has(v as SeatId);
+}
+
+/** A display string: string, non-empty, bounded. Prevents both React
+ *  "Objects are not valid as a React child" crashes from malformed roster
+ *  payloads and absurd lengths breaking overlay layout. */
+function isValidDisplayString(v: unknown, maxLen: number): v is string {
+  return typeof v === "string" && v.length > 0 && v.length <= maxLen;
+}
+
+/** Every seat must map to a bounded string (empty = cleared name, falls
+ *  back to seat id at display time — legit). Rejects partial maps,
+ *  arrays, and object-valued "names" that would crash the announcer. */
+function isValidRosterMap(v: unknown): boolean {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const m = v as Record<string, unknown>;
+  return SEAT_ORDER.every((s) => typeof m[s] === "string" && m[s].length <= MAX_NAME_LEN);
+}
+
+/** Tile geometry: finite numbers, sane canvas-space bounds, positive
+ *  size. A malformed tile would crash every sprite/effect that reads
+ *  tile.w/tile.h. */
+function isValidTile(v: unknown): v is Tile {
+  if (!v || typeof v !== "object") return false;
+  const t = v as Record<string, unknown>;
+  return (
+    typeof t.x === "number" && Number.isFinite(t.x) && t.x >= -TILE_MAX && t.x <= TILE_MAX &&
+    typeof t.y === "number" && Number.isFinite(t.y) && t.y >= -TILE_MAX && t.y <= TILE_MAX &&
+    typeof t.w === "number" && Number.isFinite(t.w) && t.w > 0 && t.w <= TILE_MAX &&
+    typeof t.h === "number" && Number.isFinite(t.h) && t.h > 0 && t.h <= TILE_MAX
+  );
+}
+
+/** Complete known-seat tile map. Rejects {} and partial maps before
+ *  they can replace a full working layout with a crashing one. */
+function isValidTileMap(v: unknown): boolean {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const m = v as Record<string, unknown>;
+  return SEAT_ORDER.every((s) => isValidTile(m[s]));
 }
 
 /** Validate the `from` sender field on emoji and cardPlay events. */
@@ -545,29 +598,37 @@ export function validatePayload(raw: unknown): EventPayload | null {
     case "samStfu":
       if (typeof p.windowId !== "number") return null;
       if (!Array.isArray(p.voters)) return null;
-      if (p.voters.some((v) => typeof v !== "string")) return null;
+      // Bounded list of known voter ids (seats + "lemz") — the announce
+      // renders these as display strings, so garbage must not pass.
+      if (p.voters.length > SEAT_ORDER.length + 1) return null;
+      if (p.voters.some((v) => typeof v !== "string" || v.length > MAX_NAME_LEN)) return null;
       if (p.cooldownEndsAt !== undefined && typeof p.cooldownEndsAt !== "number") return null;
       break;
     case "samCooldown":
       if (typeof p.cooldownEndsAt !== "number") return null;
       break;
     case "calibration":
-      if (!p.tiles || typeof p.tiles !== "object") return null;
+      if (!isValidTileMap(p.tiles)) return null;
       break;
     case "trackerUpdate":
       if (typeof p.title !== "string") return null;
-      if (!p.answers || typeof p.answers !== "object") return null;
+      if (!p.answers || typeof p.answers !== "object" || Array.isArray(p.answers)) return null;
+      {
+        // Every answer must be a bounded string (empty = unanswered).
+        const answers = p.answers as Record<string, unknown>;
+        if (!SEAT_ORDER.every((s) => typeof answers[s] === "string" && answers[s].length <= MAX_TRACKER_TEXT_LEN)) return null;
+      }
       break;
     case "chatToScreen":
-      if (typeof p.author !== "string" || p.author.trim() === "") return null;
-      if (p.author.length > MAX_AUTHOR_LEN) return null;
-      if (typeof p.message !== "string" || p.message.trim() === "") return null;
+      if (!isValidDisplayString(p.author, MAX_AUTHOR_LEN)) return null;
+      if (!isValidDisplayString(p.message, MAX_MESSAGE_LEN)) return null;
       break;
     case "chatToScreenClear":
       // No fields beyond type + ts
       break;
     case "rosterUpdate":
-      if (!p.names || typeof p.names !== "object") return null;
+      if (!isValidRosterMap(p.names)) return null;
+      if (p.hostName !== undefined && !isValidDisplayString(p.hostName, MAX_NAME_LEN)) return null;
       break;
     case "cardReset":
       if (typeof p.resetEpoch !== "number") return null;
