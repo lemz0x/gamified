@@ -45,6 +45,14 @@ const CANVAS_H = 1080;
  * letting a runaway sender queue 1k DOM nodes.
  */
 const EMOJI_PER_SEAT_CAP = 30;
+/** Live card-sprite concurrency cap (audit #14). Cards are the heaviest
+ *  sprite (full-screen multi-layer treatment + SFX); a spam burst must
+ *  never allocate hundreds of them in the recording browser. 4 is well
+ *  above anything a real show produces, well below what strains a tab. */
+const CARD_SPRITE_CAP = 4;
+/** Same for source auras — lightweight, but still DOM nodes with glow
+ *  filters; 8 concurrent auras is generous. */
+const AURA_SPRITE_CAP = 8;
 
 /** Emoji float animation length (matches `floatUpOverlay` keyframe). */
 const EMOJI_FLOAT_MS = 1500;
@@ -361,14 +369,29 @@ export function UnderlayRoute() {
   }, []);
 
   const enqueueCard = useCallback((sprite: CardSprite) => {
-    setCardSprites((prev) => [...prev, sprite]);
+    setCardSprites((prev) => {
+      // Burst cap (audit #14): a hostile/buggy peer can spam valid card
+      // events; without a cap 500 copies allocate 500 full-screen card
+      // layers + 500 audio requests and can exhaust the recording
+      // browser. Keep the newest CARD_SPRITE_CAP, drop the oldest.
+      if (prev.length >= CARD_SPRITE_CAP) {
+        return [...prev.slice(prev.length - CARD_SPRITE_CAP + 1), sprite];
+      }
+      return [...prev, sprite];
+    });
   }, []);
 
   /** Source aura duration: 300ms fade in + 2.4s hold + 300ms fade out. */
   const SOURCE_AURA_MS = 3000;
 
   const enqueueSourceAura = useCallback((sprite: SourceAuraSprite) => {
-    setSourceAuraSprites((prev) => [...prev, sprite]);
+    setSourceAuraSprites((prev) => {
+      // Burst cap (audit #14) — same rationale as CARD_SPRITE_CAP.
+      if (prev.length >= AURA_SPRITE_CAP) {
+        return [...prev.slice(prev.length - AURA_SPRITE_CAP + 1), sprite];
+      }
+      return [...prev, sprite];
+    });
   }, []);
 
   const onMessage = useCallback(
