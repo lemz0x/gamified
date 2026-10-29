@@ -168,18 +168,36 @@ events into Gamified.
 
 ## Event Types (vdoninja.ts)
 
+All 19 event types below are the real ones; this table matches `VALID_TYPES`
+and the `EventPayload` union in `src/lib/vdoninja.ts` exactly. Chat is NOT
+here: chat rides VDO.Ninja's websocket, not the P2P data channel
+(`vdoninjaChat.ts`).
+
 | Event | Direction | Purpose |
 |-------|-----------|---------|
-| `muteGuest` | host → guest | Soft mute (advisory, guest can self-unmute) |
-| `unmuteGuest` | host → guest | Host unmutes a guest |
-| `guestSelfUnmuted` | guest → host/producer | Guest clicked VDO.Ninja mic, host should clear indicator |
-| `chat` | any → all | Chat message (validated, sanitized) |
-| `card` | host → all | Card played (STFU, mic drop, wrap it up) |
-| `buzz` | guest → host | Buzzer press |
-| `buzzClear` | host → all | Clear all buzzers |
-| `emoji` | any → all | Emoji reaction |
-| `roster` | host → all | Roster update (seat assignments) |
-| `muteCooldownDone` | (deprecated) | Kept for one release cycle to absorb stale events |
+| `emoji` | any → all | Emoji reaction; renders a float over the sender's tile |
+| `cardPlay` | guest/host → all | Card played (STFU, MIC DROP, WRAP IT UP) on a target seat |
+| `rosterUpdate` | producer → all | Full roster name map + host name broadcast |
+| `cardReset` | producer → all | Reset card counters; epoch-based, idempotent, survives wrapper refresh |
+| `getResetEpoch` | wrapper → producer | Late-joiner handshake: ask for the current reset epoch |
+| `getRoster` | wrapper → producer/peers | Late-joiner handshake: ask for the current roster + tracker |
+| `calibration` | producer → all | Updated tile coordinates from calibration mode |
+| `muteGuest` | host/producer → all | Mute a seat or "all"; individual mutes are advisory, mute-all is force |
+| `unmuteGuest` | host/producer → all | Unmute a seat or "all"; individual unmute after mute-all releases that seat's force |
+| `buzzIn` | guest → all | Buzzer press |
+| `buzzOff` | guest → all | Guest turned their own buzzer off |
+| `trackerUpdate` | producer → all | Tracker title + per-seat answers for the host display |
+| `chatToScreen` | producer/host → overlay | Feature a chat message as an on-screen text card |
+| `chatToScreenClear` | producer/host → overlay | Clear the featured message (fades out) |
+| `guestSelfUnmuted` | guest → host/producer | Advisory: guest self-unmuted; underlay clears this seat's "host"/"muteall" reasons |
+| `micState` | guest → host/producer | Display-only mic state (LIVE / SELF-MUTED) for panels; suppressed during force mutes |
+| `samVote` | guest/producer → all | STFU-on-Sam vote cast into the current window |
+| `samStfu` | host → all | STFU-on-Sam landed: area-mute non-voters + host, paint SILENCED washes, burn voter cards |
+| `samCooldown` | host → all | Vote window expired without threshold; receivers sync cooldown to `cooldownEndsAt` |
+
+Every inbound payload passes `validatePayload` (per-type field checks, seat ID
+whitelist, string length bounds, tile geometry bounds) before any surface acts
+on it. Unknown event types are dropped.
 
 ## Advisory vs Force Mute
 
@@ -189,12 +207,20 @@ Three separate mute refs with three different behaviors:
 |-----|------|------------------------|-------------------|
 | `hostMutedRef` | advisory | Yes — clicking VDO.Ninja mic clears it | No |
 | `stfuMutedRef` | hard lock | No — `onVdoMicEvent` bails | Yes (150ms) |
-| `muteAllRef` | hard lock | No — `onVdoMicEvent` bails | Yes (150ms) |
+| `muteAllRef` | hard lock | No, but an individual host `unmuteGuest` for that seat releases it (Oct 21 audit round, `b151942`) | Yes (150ms) |
 
 **Why individual mutes are advisory but mute-all is force:** Individual mutes
 are for hot-micing where the guest might need to rejoin once they fix their
 audio. Mute-all is for breaking up an argument or silencing the panel — guests
 should NOT be able to just click unmute.
+
+**Individual host unmute releases the mute-all force (since the Oct 21 audit
+round):** after a mute-all, the host (or producer) unmuting a single seat
+clears that seat's `muteAllRef` force; the circuit breaker stops re-asserting
+for that seat, and the underlay clears its "muteall" SILENCED reason for it.
+No longer necessary to unmute everyone to free one guest. Guests still cannot
+self-unmute out of a mute-all; only an explicit `unmuteGuest` (individual or
+"all") releases the force.
 
 ## The `reconcileMic` Bidirectional Bug
 

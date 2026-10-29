@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Working reference for any agent or contributor touching this repo. Current state only. For how we got here, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For version history, see [`CHANGELOG.md`](./CHANGELOG.md).
+Working reference for any agent or contributor touching this repo. Current state only. For how we got here, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For version history, see [`CHANGELOG.md`](./CHANGELOG.md). Feature specs live in `docs/` (STFU-on-Sam: [`docs/stfu-on-sam.md`](./docs/stfu-on-sam.md); URL parameters: [`docs/url-params.md`](./docs/url-params.md); forking: [`docs/forking.md`](./docs/forking.md); OBS scenes: [`docs/obs-scene-setup.md`](./docs/obs-scene-setup.md)).
 
 ## What this project is
 
@@ -39,6 +39,7 @@ src/
   coords.ts                  # Tile coordinates (1920x1080), SEAT_ORDER, guest layouts (4/6)
   components/
     BuzzPanel.tsx            # Buzz-in button component
+    MutedTileOverlay.tsx     # SILENCED tile wash (guest variant + elliptical host variant)
   lib/
     vdoninja.ts              # VDO.Ninja iframe wrapper, event types, payload validation
     vdoninjaChat.ts           # VDO.Ninja chat plumbing (websocket, DOMParser sanitization)
@@ -84,7 +85,7 @@ src/
 5. Never break the VDO.Ninja chat path.
 6. No emoji in code comments or UI text — use the configured set in `src/emojis.ts`.
 7. Preserve the user's existing OBS scene structure.
-8. No credentials in plain text in docs or source code.
+8. No credentials in plain text in docs or source code — **accepted exception:** this is a no-backend static site, so room credentials necessarily ship in the client bundle: `room`/`hash`/`password` in `src/lib/vdoninja.ts`, `PRODUCER_PASSWORD` in `src/lib/auth.ts`, and guest push IDs in show links. The rule applies to *new* secrets: don't add credentials anywhere else (docs, comments, example URLs). **Anyone forking or sharing this repo MUST rotate all of these** — checklist in `docs/forking.md`.
 
 ## Build workflow
 
@@ -108,6 +109,20 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 ## Key systems
 
 **STFU mute:** Dual-flag system (`hostMutedRef` + `stfuMutedRef`) with single circuit-breaker (150ms interval re-asserting `mic: false`). Per-seat mute reasons prevent stacking orphans. SILENCED overlay uses Aria's layered approach (base wash, vignette, pink border ring, label animation). No `mix-blend-mode`.
+
+**STFU-on-Sam (v1.7):** Guest vote mechanic landing a 10s hard-mute on the host. Host wrapper is the sole committer: it evaluates the threshold (2-of-4 / 3-of-6 via `samVoteThreshold(layout)` in `vdoninja.ts`, derived from its own URL layout) and emits the one `samStfu`; guest wrappers display tallies but only act on the result event, so a host reload can only orphan a window (timeout = refund, never a phantom result). 60s vote window, flat 10s cooldown synced via `cooldownEndsAt` (clamped against clock skew). Voting reserves the voter's STFU card (refund on timeout); success burns it. Non-voters get the area-mute. Full spec: `docs/stfu-on-sam.md`.
+
+**Self-mute visibility (`micState`):** Guest wrappers broadcast their true mic state on every self-toggle; suppressed while a force mute is active and republished when it clears. Producer seat buttons + host mute panel show three states: LIVE (neutral), SELF-MUTED (amber), MUTED (red); host-mute wins display when both apply. Display-only; no mute machinery reacts to it.
+
+**Individual unmute releases mute-all force (Oct 21):** An individual `unmuteGuest` for a seat now clears that seat's `muteAllRef` (the panel and underlay already cleared their state); the circuit breaker self-stops for the seat. Guests still cannot self-unmute out of a mute-all. Full reasoning: `docs/vdo-ninja-integration.md`.
+
+**Per-seat STFU wash expiry (underlay):** Timed "stfu" washes (ordinary card + Sam-vote area mute) record per-seat deadlines swept once per second; one effect's expiry can no longer clear another's still-active wash. Legacy single-timeout path removed.
+
+**Card reservation:** A Sam vote reserves the STFU card immediately (locked for the ordinary card path); success converts the reservation to a burn, timeout refunds it. One per-topic card cannot pay for two actions.
+
+**Route error boundary:** `RouteErrorBoundary` in `App.tsx` wraps all routes. Overlay surfaces paint transparent (safe air) on render errors; panel surfaces show a refresh note. Errors log to the browser console. Secondary containment behind payload validation.
+
+**Sprite concurrency caps:** Emoji per-seat 30, card sprites 4, source auras 8. Burst events drop-oldest rather than exhausting the recording browser.
 
 **STFU sender cooldown:** VDO.Ninja does not echo P2P events back to the sender. Without a local cooldown, the guest who plays STFU could immediately play WRAP IT UP while all other guests were locked. Fix: `startStfuCooldown()` helper is called from both the inbound `onMessage` handler and the local `playCard` function. Cooldown uses absolute expiry time (`cooldownEndsAtRef`) instead of decrementing state, so delayed interval callbacks in OBS CEF can't extend it past 10 real seconds.
 
@@ -135,7 +150,7 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 
 **Underlay sweep:** Prunes expired sprites every 250ms. Returns the same array reference when nothing changed to avoid unnecessary React re-renders.
 
-**Producer panel order:** Roster > Buzz board > Reset cards > Host tracker > Activity feed > Calibration.
+**Producer panel order:** Roster names > Mute controls (individual + mute-all, three-state LIVE/SELF-MUTED/MUTED display) > Buzz board > Reset cards > STFU on Sam (Lemz's vote + live tally) > Host tracker > Activity feed > Calibration.
 
 **Performance:** `React.memo` on all sprites, `React.lazy` per route, single sweep sprite removal (no re-render when idle), self-hosted fonts, static inline styles.
 
@@ -166,7 +181,9 @@ Color semantics: cyan = audience/chat, pink = decorative/producer buttons, gold 
 
 ## Tile coordinates (1920x1080)
 
-Defaults in `src/coords.ts`. Calibration mode (`?calibrate=1`) allows runtime adjustment, persists via `localStorage`.
+Defaults in `src/coords.ts` — the software's source of truth. Tile sizes and positions are **design-dependent** (they mirror the producer's OBS scene collection; ~290px 6-guest, 350px 4-guest as of Oct 2026). Do not hardcode doc numbers; recalibrate via `?calibrate=1` whenever the scene geometry changes. Overrides persist per-machine in `localStorage`, per layout.
+
+**6-guest layout (`TILES`):**
 
 ```ts
 L1: { x: 94,   y: 53,  w: 280, h: 280 }  // top-left
@@ -176,6 +193,18 @@ R1: { x: 1544, y: 53,  w: 280, h: 280 }  // top-right
 R2: { x: 1545, y: 385, w: 280, h: 280 }  // middle-right
 R3: { x: 1544, y: 719, w: 280, h: 280 }  // bottom-right
 ```
+
+**4-guest layout (`TILES_4`, measured from the "Gamified (4 guests)" scene collection Sep 16):**
+
+```ts
+L1: { x: 62,   y: 139, w: 350, h: 350 }  // top-left
+L2: { x: 62,   y: 586, w: 350, h: 350 }  // bottom-left
+R1: { x: 1509, y: 140, w: 350, h: 350 }  // top-right
+R2: { x: 1508, y: 587, w: 350, h: 350 }  // bottom-right
+// L3/R3 do not exist in this layout; LAYOUT_SEATS["4"] never includes them.
+```
+
+**Host tile (`HOST_TILE`, Sam Cam):** `{ x: 521, y: 498, w: 902, h: 507 }` — Sam Cam is a chroma-keyed VDO.Ninja browser source (`?view=Host1`) scaled 0.4688 into this box. Position confirmed constant across 4- and 6-guest layouts. OBS layering rules: `docs/obs-scene-setup.md`.
 
 Center area (~x:540 to x:1380, y:150 to y:640) reserved for producer's topic graphics. Do not render there.
 

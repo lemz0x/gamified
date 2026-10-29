@@ -4,19 +4,29 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 
 ---
 
-## [Unreleased] — staging
+## [v1.7] — 2026-10-21
 
 ### Added
-- **Guest layouts (4/6):** `?layout=4` URL param selects the 4-guest OBS scene geometry (2×2, 350×350 tiles measured from the "Gamified (4 guests)" scene collection). Applies to `/play`, `/underlay`, `/producer`, `/chat`, and `/editorchat`. Seat count, tile positions, STFU area-mute, mute-all, buzz board, tracker, roster, host mute panel, and card target picker all gate to the layout's seats; effects never paint on empty set space.
+- **Guest layouts (4/6):** `?layout=4` URL param selects the 4-guest OBS scene geometry (2×2, 350×350 tiles measured from the "Gamified (4 guests)" scene collection). Applies to `/play`, `/underlay`, `/producer`, `/chat`, and `/editorchat`. Seat count, tile positions, STFU area-mute, mute-all, buzz board, tracker, roster, host mute panel, and card target picker all gate to the layout's seats; effects never paint on empty set space. Layout-aware STFU-on-Sam threshold (2-of-4 / 3-of-6) via `samVoteThreshold` in `vdoninja.ts`.
 - **Per-layout calibration:** tile calibration overrides persist per layout (6-guest keeps the legacy localStorage key; 4-guest uses its own), so nudges never cross-contaminate.
-- **Producer link generator:** "Guest links" section — enter each slot's VDO.Ninja push ID once (persisted), generates DM-ready guest URLs with correct `layout`/`seat` params from the saved roster.
+- **STFU on Sam:** guests (plus the producer) vote to hard-mute the host for 10s. 60s vote window anchored at the first vote, no withdrawal, votes auto-expire; card reservation with timeout-refund (the vote reserves the STFU card, burned only on success); voter-name announce; flat 10s synced cooldown after success and timeout (host's `cooldownEndsAt` syncs every tab); host wrapper is the sole committer (audit #3). Host link MUST carry the same `?layout=` as the guests; it derives the vote threshold from its own URL. Sam's SILENCED treatment paints on `/overlay` above his cam (elliptical variant, `fa3d560`/`e3001e1`); the underlay keeps a below-camera copy. Full spec: `docs/stfu-on-sam.md`.
+- **Self-mute visibility:** `micState` broadcast on every guest self-toggle (suppressed during force mutes). Producer + host panels show LIVE green / SELF-MUTED amber / MUTED red; host-mute wins display. Republished after a force mute clears (audit #12). State is transient like buzz.
+- **Deep payload validation + route error boundary** (audit #1/#14): inbound data-channel payloads are validated per type (seat IDs, bounded strings, tile geometry, roster completeness) before any surface acts on them; `RouteErrorBoundary` in `App.tsx` contains render crashes; the overlay paints transparent (safe air), panels show a refresh note.
 
 ### Changed
+- **Producer link generator removed** (`bf7bb52`): the "Guest links" section was added to the producer panel and then removed before this release; links are hand-built from the show doc (formats in the README and `docs/stfu-on-sam.md`). Listed here so nobody hunts for a UI that no longer exists.
+- **Individual unmute releases mute-all force** (audit #2): the host (or producer) unmuting one seat after a mute-all releases that seat's hard lock; no longer necessary to unmute everyone. Guests still cannot self-unmute out of a mute-all.
+- **Per-seat STFU wash expiry** (audit #9): the underlay runs a 1s per-seat sweeper so one effect's wash expiry no longer wipes another effect's wash on the same tile.
+- **Card reservation semantics** (audit #13): a Sam vote reserves the voter's STFU card at vote time; success burns it, timeout refunds it; one card can never pay for two actions.
+- **Producer Sam-vote mirror rules** (audit #11): the producer's vote and tally follow the wrapper rules exactly.
+- **Sprite concurrency caps** (audit #14): `CARD_SPRITE_CAP` 4 live card sprites, `AURA_SPRITE_CAP` 8 auras, 30 emoji sprites per seat; oldest dropped when the cap is hit.
+- **Vote expiry + cooldown clamping** (audit #4/#5): late votes after the local window closes are ignored; cooldowns clamp to absolute expiry so delayed OBS CEF interval callbacks can't stretch them.
 - `parseSeat` rejects out-of-range seats for the active layout (seat 5/6 links fail with the missing-params help screen on a 4-guest show instead of mapping to phantom seats).
 - **VDO.Ninja integration deep dive** (`docs/vdo-ninja-integration.md`): iframe API transports, `mic-mute-state` event firing rules, `iframetarget` requirement, codirector topology, postMessage security, advisory vs force mute architecture, `reconcileMic` bidirectional bug history, full event type reference.
 - **OBS/CEF gotchas** (`docs/obs-cef-gotchas.md`): Source Record encoder defaults, audio crackling diagnosis, emoji codepoint compatibility, focus ring fix, chat auto-scroll rule, dual-OBS bandwidth math.
 - **VDO.Ninja quality parameters** (`docs/vdo-ninja-quality-params.md`): full URL parameter research with rationale, rejected alternatives, OBS encoder settings, verification steps.
 - **Mute sync architecture** section added to `ARCHITECTURE.md` with flow diagrams and the three-ref system.
+- **Docs sync round** (this release): STFU-on-Sam doc marked shipped; README host-link `layout=4` rule and corrected producer panel section list; event-types table rewritten from `VALID_TYPES` in `docs/vdo-ninja-integration.md` (19 real events, 5 phantom entries deleted); new docs: `docs/forking.md` (credential rotation checklist + threat model), `docs/obs-scene-setup.md` (scene stack best practices), `docs/url-params.md` (canonical URL parameter reference).
 
 ---
 

@@ -1,7 +1,8 @@
 # STFU on Sam — Guest Vote Mechanic
 
-**Status:** Prototype (branch `feat/stfu-on-sam`)
+**Status:** Shipped (in production; merged Oct 21 2026 via PR #69)
 **Origin:** Backlog idea from Aug 5 2026 session; scope confirmed by Lemz Sep 30 2026.
+**Reference:** [`AGENTS.md`](../AGENTS.md) covers the current architecture; this doc is the mechanic's own spec.
 
 ## Post-prototype backlog (Oct 14 2026, Lemz)
 
@@ -55,8 +56,10 @@ interface SamStfuEvent {
 - Host wrapper counts `samVote` against the layout's threshold. On reach, it
   force-mutes its own iframe and starts the circuit breaker — **no UI, no
   audio cue on host wrapper** (guests' wrappers play the STFU SFX).
-- `samStfu` is broadcast so the underlay can paint SILENCED on Sam's tile and
-  non-voter guest tiles, and guest wrappers can burn voters' cards.
+- `samStfu` is broadcast so the overlay can paint SILENCED on Sam's tile (above
+  his cam in OBS z-order; the underlay keeps a below-camera copy), the underlay
+  can paint SILENCED on non-voter guest tiles, and guest wrappers can burn
+  voters' cards.
 - Timeout is local: each wrapper runs the 60s window from the first vote
   (`windowId` provides the shared clock anchor). At 0, votes expire. No
   broadcast needed — everyone times out together. Clock skew handled by
@@ -71,7 +74,8 @@ interface SamStfuEvent {
 | Guest wrapper (`/play`) | "STFU SAM" button under cards. While a window is open: progress bar (n/threshold), seconds remaining, own-vote state. First vote from someone else → flash/glow cue. On success: non-voters area-muted 10s, voters burn STFU card. |
 | Host wrapper (`/play?role=host`) | Silently counts votes. **Sole threshold evaluator + committer** (audit #3): on threshold it hard-mutes its own iframe + circuit breaker 10s and emits the one `samStfu`. **Zero UI feedback** — no toast, no badge, no SFX on host side. |
 | Producer panel (`/producer`) | Lemz's vote button (identical rules: reserves nothing since producer has no cards, but counts toward threshold). Live tally display. |
-| Underlay (`/underlay`) | On `samStfu`: SILENCED wash on Sam's tile (geometry below) + non-voter guest tiles. Clears after 10s. |
+| Underlay (`/underlay`) | On `samStfu`: SILENCED wash on non-voter guest tiles (per-seat expiry). Also paints a below-camera copy of Sam's wash, but since `fa3d560` the *visible* SILENCED treatment on Sam paints on `/overlay`, which sits above Sam Cam in OBS z-order. Underlay copy alone is hidden behind his camera. |
+| Overlay (`/overlay`) | On `samStfu`: paints Sam's SILENCED wash (elliptical variant, `e3001e1`) over his cam for the 10s hard-lock window. Requires the `/overlay` browser source to sit ABOVE Sam Cam in the OBS source stack. |
 | Sam's screen | Nothing. Ever. |
 
 ## Show link format (producer keeps these in the Google doc — no generator UI)
@@ -100,5 +104,9 @@ localStorage calibration override support as guest tiles.
 
 - Aria design pass on the button, bar, flash, and Sam's SILENCED treatment.
 - Whether vote state needs late-joiner sync (currently transient, like buzz).
-- 4-person layout scenes (Sam tile measured from 6-guest scene; 4-guest scene
-  may position Sam differently — verify before first 4-guest show).
+- **Host card play on the 4-guest layout is UNTESTED.** Sam's tile position is
+  confirmed constant between layouts (same HOST_TILE), but Sam has not played
+  cards on the 4-guest layout in a live show to verify: the target picker
+  showing 4 seats, card animations landing on TILES_4 geometry, and the
+  STFU-on-Sam host link with `?layout=4`. Needs a live test round before the
+  next 4-guest show relies on host card play.
