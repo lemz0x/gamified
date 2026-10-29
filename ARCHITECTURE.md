@@ -43,7 +43,7 @@ The project forked from Chris Heatherly's Socket.IO + Fly.io prototype. The genu
 ### Animation primitives
 - All animations use CSS transforms, opacity, filter, box-shadow
 - NEVER animate layout properties (top, left, width, height) — performance disaster in OBS
-- Keyframes in `src/index.css`: `stfuDim`, `sourceAuraGlow`, `cooldownPulse`, `silencedLabelIn`, `wrapGlowRing`, `flow`, `flowPulse`, `cardIn`, `floatUpOverlay`, `stfuTileShake`, `wrapTileShake`, and card-specific keyframes
+- Keyframes live in `src/index.css`: that file is the source of truth for the full list (card keyframes like `stfuDim`, `stfuTileShake`, `micFlash`, `wrapFlash`, plus `sourceAuraGlow`, `cooldownPulse`, `silencedLabelIn`, `wrapGlowRing`, `flow`, `flowPulse`, `floatUpOverlay`, `cardAnnounceIn`, `pulseDot`, `fadeInOut`, `fadeOut`, and more). Names change between versions; grep `@keyframes` in `index.css` rather than trusting any doc list.
 
 ### Chat infrastructure
 - Chat uses VDO.Ninja's native chat (websocket, `sendChat` / `incoming-chat` via iframe postMessage)
@@ -140,11 +140,17 @@ event firing rules, `iframetarget` requirement, codirector topology).
 |-----|-----------|------------------------|-------------------|
 | `hostMutedRef` | advisory | Yes — clicking VDO.Ninja mic clears it | No |
 | `stfuMutedRef` | hard lock | No | Yes (150ms) |
-| `muteAllRef` | hard lock | No | Yes (150ms) |
+| `muteAllRef` | hard lock | No, but an individual host `unmuteGuest` for that seat releases it (Oct 21 audit round, `b151942`) | Yes (150ms) |
 
 Individual host mutes are advisory — guest can self-unmute via VDO.Ninja mic.
 Mute-all is a hard lock (circuit breaker re-asserts `mic: false` every 150ms).
 STFU is also a hard lock with a 10s timeout.
+
+Since the Oct 21 audit round, an **individual** host unmute after a mute-all
+releases that seat's mute-all force (PlayRoute clears `muteAllRef` for both
+`target === "all"` and individual targets; the underlay clears the seat's
+"muteall" SILENCED reason). The host can free one guest from a mute-all
+without unmuting everyone; guests still cannot self-unmute out of it.
 
 ### Host mute flow (host → guest)
 
@@ -177,5 +183,13 @@ sent `{ mic: true }` to unmute the iframe. Fix: added the unmute path with a
 - [`docs/vdo-ninja-quality-params.md`](./docs/vdo-ninja-quality-params.md) — URL parameter research, rationale, OBS encoder settings
 - [`docs/obs-cef-gotchas.md`](./docs/obs-cef-gotchas.md) — OBS/Chromium Embedded Framework quirks and fixes
 - [`docs/obs-source-record-setup.md`](./docs/obs-source-record-setup.md) — guest ISO recording via OBS Source Record plugin
+- [`docs/stfu-on-sam.md`](./docs/stfu-on-sam.md): STFU-on-Sam guest vote mechanic: wire protocol, thresholds, link rules
+- [`docs/obs-scene-setup.md`](./docs/obs-scene-setup.md): OBS scene stack best practices, layout collections, deploy repointing
+- [`docs/url-params.md`](./docs/url-params.md): canonical URL parameter reference
+- [`docs/forking.md`](./docs/forking.md): credential rotation checklist and threat model for forks
 
-Internal planning docs (Aria briefs, execution plans, chat-to-screen plans, mockups) live in `_planning/` on local disk only. They are gitignored and not part of the repo.
+Planning artifacts (Aria briefs, execution plans, chat-to-screen plans, HTML
+mockups) live in `_planning/` and `mockups/`. They ARE committed to the repo
+(18 files in `_planning/` alone) but are historical: they capture decisions
+and dead ends at the time they were made, not current design intent. Trust
+`AGENTS.md` and the `docs/` folder for current state.

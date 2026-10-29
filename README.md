@@ -16,12 +16,20 @@ for version history.
   layers. Renders emoji floats, card animations, STFU silenced overlays, mute
   indicators, and calibration grid
 - **OBS overlay** (`/overlay`) — transparent browser source above all OBS
-  sources. Renders chat-to-screen and future top-layer graphics
-- **Producer panel** (`/producer`) — dockable OBS panel for roster, buzz board,
-  card resets, host tracker, activity feed, and calibration
+  sources. Renders chat-to-screen and Sam's SILENCED wash for STFU-on-Sam
+  (it must sit above the Sam Cam source in OBS z-order for the wash to be
+  visible)
+- **Producer panel** (`/producer`): dockable OBS panel for roster, mute
+  controls, buzz board, card resets, STFU on Sam voting, host tracker,
+  activity feed, and calibration
 
 No backend server. Real-time events ride VDO.Ninja's existing P2P data channels.
 Hosted as a static site on Cloudflare Pages.
+
+Feature highlight: **STFU on Sam**: guests (plus the producer) can
+collectively vote to hard-mute the host for 10 seconds. The host wrapper is
+the sole vote evaluator and must never see it coming. Full mechanic, wire
+protocol, and link rules: [`docs/stfu-on-sam.md`](./docs/stfu-on-sam.md).
 
 ## Scripts
 
@@ -39,8 +47,8 @@ npm run typecheck  # tsc only, no bundle
 |-------|---------|
 | `/play` | Guest/host/editor wrapper: VDO.Ninja iframe + cards + emoji + chat + buzz + mute |
 | `/underlay` | OBS browser source (beneath camera layers): emoji floats, card animations, STFU overlays, mute indicators, calibration |
-| `/overlay` | OBS browser source (top layer): chat-to-screen card, future top-layer elements |
-| `/producer` | Dockable producer panel: roster, buzz board, reset cards, host tracker, activity feed, calibration |
+| `/overlay` | OBS browser source (top layer): chat-to-screen card, Sam's SILENCED wash (STFU-on-Sam), future top-layer elements |
+| `/producer` | Dockable producer panel: roster, mute controls, buzz board, reset cards, STFU on Sam, host tracker, activity feed, calibration |
 | `/chat` | Standalone chat UI |
 | `/editorchat` | Chat-only route for editor (default label "Phil") |
 
@@ -88,19 +96,31 @@ https://gamified-2e9.pages.dev/play?layout=4&seat=<1-4>&push=<pushID>&label=<Gue
   existing publish URL; it does not create a new peer connection.
 - `label` is what shows in the wrapper header and VDO.Ninja chat.
 - Guest cameras publish 1:1 square automatically (`aspectratio=square` + 30fps cap). This saves upload bandwidth since OBS uses square cutouts. No action needed — the wrapper handles it.
-- The producer panel has a **Guest links** section: enter each slot's push ID
-  once (persisted), and it generates DM-ready links from the saved roster for
-  whichever layout the panel URL carries.
+- Tile geometry is **design-dependent**: roughly 290px tiles on the 6-guest
+  scene and 350px on the 4-guest scene as of Oct 2026, and it varies with the
+  overlay design. `src/coords.ts` is the software's source of truth for where
+  effects paint; calibrate with `?calibrate=1` (see
+  [`docs/url-params.md`](./docs/url-params.md)) to match your OBS scene.
+  Hand-built links use the formats above; the producer keeps the day's links
+  in the show Google doc; there is no link generator UI anymore.
 
 ### Host URL
 
 ```
-https://gamified-2e9.pages.dev/play?role=host&push=<pushID>&label=Host
+https://gamified-2e9.pages.dev/play?role=host&push=<pushID>&label=Host                     (six-guest show)
+https://gamified-2e9.pages.dev/play?role=host&layout=4&push=<pushID>&label=Host            (four-guest show)
 ```
 
 Host and guest wrappers share the same URL shape — `&broadcast` auto-discovers
 the producer's composited Virtual Camera feed. Host is excluded from guest
 card target pickers.
+
+**CRITICAL: on a 4-guest show the host link MUST carry `?layout=4`.** The host
+wrapper is the sole STFU-on-Sam vote evaluator and derives the vote threshold
+from its own URL. A host link without `layout=4` silently runs the 6-guest
+universe (3-vote threshold, 6-seat card grid); exactly the Oct 14 show
+incident, where the STFU-on-Sam vote never fired. Same rule for all guest
+links on a 4-guest show.
 
 ### Editor URL
 
@@ -140,6 +160,11 @@ https://gamified-2e9.pages.dev/overlay
 - Place this source at the **top** of the OBS source stack
 - Same width/height and shutdown settings as the underlay
 - This renders chat-to-screen and any future top-layer graphics
+- Since `fa3d560` this source also paints Sam's SILENCED wash for STFU-on-Sam,
+  which sits above his camera in every show scene; it MUST stay above the
+  Sam Cam source or the wash will be invisible (the underlay's below-camera
+  copy is hidden behind his cam)
+- Full OBS scene stack guidance: [`docs/obs-scene-setup.md`](./docs/obs-scene-setup.md)
 
 ### Producer panel — Custom Browser Dock
 
@@ -149,14 +174,16 @@ In OBS: **View > Docks > Custom Browser Docks**, add a new dock with URL:
 https://gamified-2e9.pages.dev/producer
 ```
 
-The panel ships six sections:
+The panel ships eight sections:
 
-1. **Roster names** — set Guest 1-6 names; Save broadcasts to all wrappers
-2. **Buzz board** — buzzer controls for each seat. Click a buzzing seat to clear it (useful when a guest's tab crashes mid-buzz).
-3. **Reset cards** — clears per-card use counters across all wrappers
-4. **Host tracker** — per-seat text inputs, send to host display via P2P
-5. **Activity feed** — last 20 events on the data channel
-6. **Calibration** — enable coordinate editors, adjust X/Y/W/H per tile, broadcasts live to underlay
+1. **Roster names**: set guest names; Save broadcasts to all wrappers
+2. **Mute controls**: mute/unmute individual guests plus mute-all/unmute-all
+3. **Buzz board**: buzzer controls for each seat. Click a buzzing seat to clear it (useful when a guest's tab crashes mid-buzz).
+4. **Reset cards**: clears per-card use counters across all wrappers
+5. **STFU on Sam**: producer's vote button plus live tally (see [`docs/stfu-on-sam.md`](./docs/stfu-on-sam.md))
+6. **Host tracker**: per-seat text inputs, send to host display via P2P
+7. **Activity feed**: last 20 events on the data channel
+8. **Calibration**: enable coordinate editors, adjust X/Y/W/H per tile, broadcasts live to underlay
 
 The dock is also viewable as a regular browser tab.
 
@@ -175,3 +202,28 @@ docs will save you a lot of trial and error:
 - [`docs/vdo-ninja-integration.md`](./docs/vdo-ninja-integration.md) — iframe API, data channels, event types, mute sync architecture, postMessage security
 - [`docs/vdo-ninja-quality-params.md`](./docs/vdo-ninja-quality-params.md) — URL parameter research, rationale, OBS encoder settings
 - [`docs/obs-cef-gotchas.md`](./docs/obs-cef-gotchas.md) — OBS/CEF quirks: emoji rendering, focus rings, Source Record encoder defaults, audio crackling diagnosis
+- [`docs/stfu-on-sam.md`](./docs/stfu-on-sam.md): the STFU-on-Sam guest vote mechanic: wire protocol, thresholds, link rules, open items
+- [`docs/obs-scene-setup.md`](./docs/obs-scene-setup.md): OBS scene stack best practices: source order, layout collections, deploy repointing
+- [`docs/url-params.md`](./docs/url-params.md): canonical reference for every Gamified URL parameter and which routes read them
+- [`docs/forking.md`](./docs/forking.md): credential rotation checklist and threat model for anyone forking this repo
+
+### Forking this repo
+
+Before sharing or deploying a fork, you MUST rotate the room credentials
+and producer password baked into the client bundle; see
+[`docs/forking.md`](./docs/forking.md).
+
+## Running it locally (onboarding notes)
+
+- **Minimum test rig:** two browser tabs plus a throwaway vdo.ninja room.
+  Open `/play?seat=1&push=<testStreamID>&label=Test` in one tab and the
+  `/producer` panel in the other; events flow over the room's data channels.
+  Substitute your own push IDs; the bundled ones belong to the live show.
+- **The missing-params help screen is expected behavior.** `/play` without
+  `seat`/`push`/`label` (or with an out-of-range seat like 5/6 on a
+  `layout=4` show) renders a "Missing URL params" help screen, not a broken
+  build.
+- **No tests or CI exist.** Verification is `npm run build` (tsc + vite) plus
+  manual testing on the staging deploy.
+- **npm >= 9** (lockfileVersion 3). No `engines` pin in package.json; any
+  modern Node toolchain works.

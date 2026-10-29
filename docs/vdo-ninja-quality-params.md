@@ -36,7 +36,12 @@ NOT what OBS receives.
 (varies width) unless `&width` is also set. With `&quality=0` fixing height
 at 1080, `&aspectratio=square` yields **1080x1080 published directly**.
 
-**Why:** The OBS overlay crops every guest to a square tile (298x298) anyway.
+**Why:** The OBS overlay crops every guest to a square tile anyway. The exact
+tile size is design-dependent (roughly 290px on the 6-guest scene, 350px on
+the 4-guest scene as of Oct 2026) and varies with the overlay design.
+`src/coords.ts` is the source of truth; calibrate with `?calibrate=1` to
+match your scene.
+
 Without square capture, guests encode 2.07M pixels (1920x1080), ~890k of
 which are discarded on arrival. Square capture means 1.17M pixels encoded —
 all used. 44% pixel reduction. With dual-OBS (each guest uploads twice),
@@ -65,15 +70,18 @@ point in 4:3 when the final crop is square anyway.
 **OBS changes required (per guest source, both machines):**
 1. Browser source Width/Height: 1920x1080 → 1080x1080
 2. Remove crop filter (or set all crop values to 0)
-3. Reposition source to 298x298 in Edit Transform
+3. Reposition/scale the source to your scene's tile geometry in Edit
+   Transform; tile size is design-dependent, so calibrate with
+   `?calibrate=1` and match coords.ts rather than copying a number from docs
 4. Scale Filtering → Lanczos (corrected from Area — Lanczos is sharper for downscaling faces)
 
 ## `&contenthint=detail` — Shipped in v1.6
 
 **What it does:** Tells the browser to prioritise resolution over framerate
 when the connection degrades. Camera sources default to `motion` (prioritise
-framerate). For a talking-head show where tiles render at 298px and get
-upscaled for shorts, resolution matters more than framerate.
+framerate). For a talking-head show where tiles render at a few hundred
+pixels (design-dependent; see coords.ts) and get upscaled for shorts,
+resolution matters more than framerate.
 
 **Compatibility:** "Tested on Chrome, but other browsers may vary. Safari
 seems to just ignore things." Unsupported browsers ignore it silently. Zero

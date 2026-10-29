@@ -110,8 +110,8 @@ OBS browser sources have a Width/Height setting that defines the virtual
 viewport. CSS dimensions should match the OBS source dimensions exactly:
 
 - Overlay/Underlay: 1920x1080 (standard HD)
-- Guest tiles: Positioned within the 1920x1080 canvas via CSS
-- Square capture guests: 1080x1080 browser source, 298x298 positioned tile
+- Guest tiles: Positioned within the 1920x1080 canvas via CSS. Tile geometry is design-dependent; roughly 290px on the 6-guest scene and 350px on the 4-guest scene as of Oct 2026, and varies with the overlay design. `src/coords.ts` is the source of truth for where effects paint; calibrate with `?calibrate=1` to match your scene.
+- Square capture guests: 1080x1080 browser source, positioned and scaled per the scene's tile geometry (calibrate rather than copying numbers between docs)
 
 If CSS dimensions exceed the OBS source dimensions, content gets clipped. If
 they're smaller, you get dead space. Match them.
