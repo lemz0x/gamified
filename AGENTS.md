@@ -181,17 +181,17 @@ Color semantics: cyan = audience/chat, pink = decorative/producer buttons, gold 
 
 ## Tile coordinates (1920x1080)
 
-Defaults in `src/coords.ts` — the software's source of truth. Tile sizes and positions are **design-dependent** (they mirror the producer's OBS scene collection; ~290px 6-guest, 350px 4-guest as of Oct 2026). Do not hardcode doc numbers; recalibrate via `?calibrate=1` whenever the scene geometry changes. Overrides persist per-machine in `localStorage`, per layout.
+Defaults in `src/coords.ts` — the software's source of truth. Tile sizes and positions are **design-dependent** (they mirror the producer's OBS scene collection; 300px 6-guest (since the Nov 2026 set refresh), 350px 4-guest). Do not hardcode doc numbers; recalibrate via `?calibrate=1` whenever the scene geometry changes. Overrides persist per-machine in `localStorage`, per layout.
 
 **6-guest layout (`TILES`):**
 
 ```ts
-L1: { x: 94,   y: 53,  w: 280, h: 280 }  // top-left
-L2: { x: 94,   y: 382, w: 280, h: 280 }  // middle-left
-L3: { x: 94,   y: 717, w: 280, h: 280 }  // bottom-left
-R1: { x: 1544, y: 53,  w: 280, h: 280 }  // top-right
-R2: { x: 1545, y: 385, w: 280, h: 280 }  // middle-right
-R3: { x: 1544, y: 719, w: 280, h: 280 }  // bottom-right
+L1: { x: 84,   y: 26,  w: 300, h: 300 }  // top-left
+L2: { x: 84,   y: 366, w: 300, h: 300 }  // middle-left
+L3: { x: 84,   y: 706, w: 300, h: 300 }  // bottom-left
+R1: { x: 1536, y: 26,  w: 300, h: 300 }  // top-right
+R2: { x: 1536, y: 366, w: 300, h: 300 }  // middle-right
+R3: { x: 1536, y: 706, w: 300, h: 300 }  // bottom-right
 ```
 
 **4-guest layout (`TILES_4`, measured from the "Gamified (4 guests)" scene collection Sep 16):**

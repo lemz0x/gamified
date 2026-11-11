@@ -54,14 +54,18 @@ export type TileMap = Record<SeatId, Tile>;
  * Authoritative defaults — change here only if the producer's OBS scene
  * geometry actually changes. Per-machine tweaks belong in localStorage
  * via the producer panel's calibration mode.
+ *
+ * 2026-11-11: set refresh. Six-guest cameras grew from ~280 px to 300 px
+ * (1080x1080 cam sources at scale 0.2778) with ~12 px between rows for the
+ * new frames and name plates.
  */
 export const TILES: TileMap = {
-  L1: { x: 94, y: 53, w: 280, h: 280 }, // top-left      — Guest 1 (Tony)
-  L2: { x: 94, y: 382, w: 280, h: 280 }, // middle-left   — Guest 2 (Gnoc)
-  L3: { x: 94, y: 717, w: 280, h: 280 }, // bottom-left   — Guest 3 (Matthew)
-  R1: { x: 1544, y: 53, w: 280, h: 280 }, // top-right     — Guest 4 (Chris)
-  R2: { x: 1545, y: 385, w: 280, h: 280 }, // middle-right  — Guest 5 (Kohji)
-  R3: { x: 1544, y: 719, w: 280, h: 280 }, // bottom-right  — Guest 6 (Wills)
+  L1: { x: 84, y: 26, w: 300, h: 300 }, // top-left      — Guest 1
+  L2: { x: 84, y: 366, w: 300, h: 300 }, // middle-left   — Guest 2
+  L3: { x: 84, y: 706, w: 300, h: 300 }, // bottom-left   — Guest 3
+  R1: { x: 1536, y: 26, w: 300, h: 300 }, // top-right     — Guest 4
+  R2: { x: 1536, y: 366, w: 300, h: 300 }, // middle-right  — Guest 5
+  R3: { x: 1536, y: 706, w: 300, h: 300 }, // bottom-right  — Guest 6
 };
 
 /**
@@ -93,7 +97,7 @@ export const LAYOUT_TILES: Record<GuestLayout, TileMap> = {
 };
 
 /** localStorage key used by the overlay route + calibration mode. */
-export const TILES_STORAGE_KEY = "gamified.tiles.calibrated.v1";
+export const TILES_STORAGE_KEY = "gamified.tiles.calibrated.v2";
 
 /**
  * Sam's host-cam tile (1920×1080 canvas). His source is a 1920x1080
@@ -135,8 +139,9 @@ export function saveCalibratedHostTile(tile: Tile): void {
 /**
  * localStorage calibration key per layout. Separate key per layout so
  * nudges saved for the 6-guest scene never leak into the 4-guest scene
- * calibration (and vice versa). The 6-guest key is preserved byte-for-byte
- * so existing saved calibrations keep working.
+ * calibration (and vice versa). The 6-guest key moved to v2 on 2026-11-11
+ * because the six-guest geometry changed: saved v1 nudges were measured
+ * against the old 280 px tiles and would pull effects off the new cameras.
  */
 export function tilesStorageKey(layout: GuestLayout): string {
   return layout === "6"
