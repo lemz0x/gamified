@@ -629,7 +629,7 @@ export function UnderlayRoute() {
         {cardAnnounce && <CardAnnounceText key={cardAnnounce.id} announce={cardAnnounce} />}
 
         {calibrateMode && <CalibrationGrid tiles={tiles} seats={seats} />}
-        {debugMode && <DebugHud snapshot={debugSnapshot} sprites={{ emoji: emojiSprites.length, card: cardSprites.length, aura: sourceAuraSprites.length, muted: muteReasons.size }} />}
+        {debugMode && <DebugHud snapshot={debugSnapshot} sprites={{ emoji: emojiSprites.length, card: cardSprites.length, aura: sourceAuraSprites.length, muted: muteReasons.size }} tileSet={tileSet} layout={layout} />}
       </div>
 
       {/*
@@ -1201,9 +1201,13 @@ function CalibrationGrid({ tiles, seats }: { tiles: TileMap; seats: readonly Sea
 function DebugHud({
   snapshot,
   sprites,
+  tileSet,
+  layout,
 }: {
   snapshot: Record<string, { count: number; lastMs: number }>;
   sprites: { emoji: number; card: number; aura: number; muted: number };
+  tileSet: TileSet;
+  layout: GuestLayout;
 }) {
   const now = Date.now();
   const entries = Object.entries(snapshot).sort(([a], [b]) => a.localeCompare(b));
@@ -1226,6 +1230,9 @@ function DebugHud({
       }}
     >
       <div style={{ fontWeight: 700, marginBottom: 2 }}>CHANNEL HEALTH</div>
+      {/* The set must match the Overlay source's set (both carry set=r5 in the r5 collection),
+          or card plays go silent on stream. Shown here so a pre-show ?debug=1 check catches it. */}
+      <div>set: {tileSet} · layout: {layout}</div>
       {entries.length === 0 && <div style={{ opacity: 0.5 }}>no messages yet</div>}
       {entries.map(([type, { count, lastMs }]) => (
         <div key={type}>
