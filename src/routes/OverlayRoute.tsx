@@ -232,6 +232,13 @@ export function OverlayRoute() {
       ))}
       {chatScreenSprite && (
         <div
+          // Key the wrapper (not just the card) on the sprite id: React reuses
+          // an unkeyed wrapper across replaces, so the 15s fadeInOut keeps
+          // running on the first message's clock - a second featured chat
+          // fades on the first one's timer, and a third inside that window
+          // never appears (animation already finished at opacity 0).
+          // A fresh wrapper per sprite gives each message its own full fade.
+          key={chatScreenSprite.id}
           style={
             chatScreenSprite.cleared
               ? { ...fadeWrapStyle, animation: `fadeOut ${CLEAR_FADE_MS}ms ease-out forwards` }
@@ -239,7 +246,7 @@ export function OverlayRoute() {
           }
         >
           <div style={ambientFeatherStyle} />
-          <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
+          <ChatScreenCard sprite={chatScreenSprite} />
         </div>
       )}
     </>
