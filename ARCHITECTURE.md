@@ -51,6 +51,14 @@ The project forked from Chris Heatherly's Socket.IO + Fly.io prototype. The genu
 - VDO.Ninja's built-in chat UI inside the iframe is preserved as fallback
 - DOMParser-based sanitization strips VDO.Ninja's HTML markup (`<b><span class='chat_name'>NAME</span>:</b> MSG`)
 
+### Set system (`?set=`, v1.8)
+
+A set is one physical studio design: its camera holes, plates and card styles. `resolveTileSet` in `coords.ts` reads `?set=` (`r5` or anything else = `classic`). The set picks the tile defaults (`SET_TILES[set][layout]`) and the calibration slot (`tilesStorageKey`: only r5 six-guest gets its own key, `gamified.tiles.calibrated.r5.v1`; four-guest is shared). Each set lives in its own OBS scene collection, so the loaded collection is the choice; there is no runtime toggle.
+
+Wire interop: `calibration` events carry an optional `set`. Absent means classic, so old producer tabs keep working and can never move r5 tiles; receivers drop events for the other set. Card plays carry no set at all: each surface renders a `cardPlay` in its own set's style, so an old guest tab playing into an r5 underlay gets r5 visuals.
+
+Under r5 the card visual is split across both layers: target-camera effects and SILENCED on `/underlay`, the played card on `/overlay`. That makes `set=r5` a lockstep requirement on both browser sources in the r5 collection.
+
 ## Failed approaches (don't re-attempt)
 
 ### Card reset propagation

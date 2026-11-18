@@ -39,11 +39,14 @@ src/
   coords.ts                  # Tile coordinates (1920x1080), SEAT_ORDER, guest layouts (4/6)
   components/
     BuzzPanel.tsx            # Buzz-in button component
+    MutedTileOverlay.tsx     # Classic SILENCED treatment (guest tiles + Sam)
+    R5CardFx.tsx             # Round 5 card styles (?set=r5): camera effects, SILENCED, played card
     MutedTileOverlay.tsx     # SILENCED tile wash (guest variant + elliptical host variant)
   lib/
     vdoninja.ts              # VDO.Ninja iframe wrapper, event types, payload validation
     vdoninjaChat.ts           # VDO.Ninja chat plumbing (websocket, DOMParser sanitization)
     sfx.ts                   # SFX system (preloaded, cached, cloned per playback)
+    pixelFont.ts             # Bold 5x7 pixel font as SVG paths (r5 lettering)
     auth.ts                  # Producer panel password gate (localStorage)
     sanitize.ts              # Shared sanitizeForOverlay (extracted from PlayRoute + ChatRoute)
     emojiAliases.ts          # Colon-autocomplete emoji aliases
@@ -62,7 +65,7 @@ src/
 |-------|---------|
 | `/play` | Guest/host/editor wrapper: VDO.Ninja iframe + cards + emoji + chat + buzz + mute |
 | `/underlay` | OBS browser source beneath camera layers: emoji floats, card animations, STFU overlays, mute indicators, calibration |
-| `/overlay` | OBS browser source above all sources: chat-to-screen, future top-layer graphics |
+| `/overlay` | OBS browser source above all sources: chat-to-screen, Sam's SILENCED wash, and (with `?set=r5`) the played card beside the player |
 | `/producer` | Dockable producer panel: roster, buzz board, reset cards, host tracker, activity feed, calibration |
 | `/chat` | Standalone chat UI |
 | `/editorchat` | Chat-only route for editor |
@@ -156,7 +159,9 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 
 **Payload validation:** Runtime guard on data-channel events. Validates event types, seat IDs, strings, numbers.
 
-**Debug HUD:** `?calibrate=1` shows calibration grid, `?debug=1` shows connection status chip. Both on `/underlay` only.
+**Debug HUD:** `?calibrate=1` shows calibration grid, `?debug=1` shows connection status chip (with the active set and layout). Both on `/underlay` only.
+
+**Round 5 set (`?set=r5`, v1.8):** one URL param switches the round 5 OBS collection to `TILES_R5` and the round 5 card styles (`src/components/R5CardFx.tsx`, pixel font `src/lib/pixelFont.ts`). Underlay: pixel lettering with a stepped 3D edge, STFU glitch slam with bars, neon stopwatch, chrome mic PNG, glows clipped to the picture above the name plate (the plate covers the bottom 14 px of every camera), SILENCED pixel tag in STFU red. Overlay: the played card beside the player's camera (`placeCard`), Sam's beside his shoulder (`placeHostCard`); no centre announcement under r5. **Both the Underlay and the Overlay in the r5 collection must carry `set=r5`**, or card plays go silent on stream (underlay suppresses the announcement, a classic overlay ignores `cardPlay`). Absent `set` = classic, unchanged. Overlay reads `?layout=` (4-guest collections must carry `layout=4`).
 
 **Cache headers:** `/*` serves `no-cache` so SPA routes always pick up fresh deploys. `/assets/*` and `/fonts/*` are immutable (content-hashed). `/sfx/*` has 7-day TTL with `SFX_VERSION` query param as cache-buster.
 
@@ -178,6 +183,8 @@ Three cards, reset by producer between rounds. STFU (1 use), WRAP IT UP (3 uses)
 | Pink | #ff2e9f |
 
 Color semantics: cyan = audience/chat, pink = decorative/producer buttons, gold = highlight, red = disruption, green = success, orange = warning. Fonts: Orbitron 900 display, Inter body. Both self-hosted.
+
+**Deliberate picks (Lemz, 2026-11-18; do not "correct" these):** r5 player glow uses design-system gold `#FFD700` (`255,215,0`). r5 SILENCED uses the STFU red family: tag `#ff4466` to `#d0103a`, pixel drop `#7e0a24`, wash and ring `rgba(255,46,90,...)`. MIC DROP stays `#00d96b`. Host mute on the producer and host panels is a darker red (`#d81e3c` producer border; host rows `#b0182f` border, `#ff3a4f` name), separate from the `#ff2e6b` STFU accent, so it reads apart from SELF-MUTED amber `#ffb000`.
 
 ## Tile coordinates (1920x1080)
 
@@ -204,7 +211,7 @@ R2: { x: 1508, y: 587, w: 350, h: 350 }  // bottom-right
 // L3/R3 do not exist in this layout; LAYOUT_SEATS["4"] never includes them.
 ```
 
-**Round 5 set (`TILES_R5`, `?set=r5`, Nov 2026):** the set refresh lives in its own OBS scene collection. Its Underlay sources add `&set=r5` (and the producer panel URL too, when calibrating it), which picks these six-guest defaults and a separate calibration slot (`gamified.tiles.calibrated.r5.v1`). Without the param everything uses the classic maps above, so the old collection keeps working unchanged. Four-guest geometry is the same in both sets.
+**Round 5 set (`TILES_R5`, `?set=r5`, Nov 2026):** the set refresh lives in its own OBS scene collection. Its Underlay AND Overlay sources add `&set=r5` (and the producer panel URL too, when calibrating it), which picks these six-guest defaults and a separate calibration slot (`gamified.tiles.calibrated.r5.v1`). Without the param everything uses the classic maps above, so the old collection keeps working unchanged. Four-guest geometry is the same in both sets (verified against the r5 scene JSON 2026-11-18).
 
 ```ts
 L1: { x: 84,   y: 26,  w: 300, h: 300 }  // top-left

@@ -4,6 +4,29 @@ All notable changes to Gamified are documented here. Versions follow the show's 
 
 ---
 
+## [v1.8] — 2026-11-18
+
+Round 5 set refresh. Everything visual in this release is behind `?set=r5`, which only the round 5 OBS scene collection carries; without it every route behaves as v1.7 (one exception: the featured-chat fix below applies everywhere).
+
+### Added
+- **Round 5 tiles (`?set=r5`):** six-guest 300x300 map `TILES_R5` (x 84/1536, rows y 26/366/706) on `/underlay`, `/overlay` and `/producer`, with its own calibration slot `gamified.tiles.calibrated.r5.v1`. The classic `TILES` map and keys are unchanged.
+- **Round 5 card styles** (`src/components/R5CardFx.tsx`, `src/lib/pixelFont.ts`, Lemz's picks from the v6 mockups): bold 5x7 pixel lettering drawn as SVG (no font file) with a stepped 3D edge on the target camera; STFU slam with a short cyan/pink glitch and four bars running down once; neon stopwatch that drains, then rings (replaces the alarm clock emoji); chrome mic image falling through (`public/cards/mic_chrome.png`, replaces the mic emoji); edge glows clipped to the visible picture; SILENCED as a stepped pixel tag in STFU red with a red wash and ring.
+- **Played card on `/overlay`:** a pixel card slaps down beside the player's camera, outside the topic area and clear of every camera (STFU stays for the 10 s mute, the others 4.5 s). Sam's plays get one too, standing on the desk just right of his shoulder (anchored to `HOST_TILE`); Lemz's producer plays show none. Under r5 the underlay's centre "X played Y on Z" box is off: the card shows who played it.
+- **Calibration events carry their set** (`calibration.set`, optional; absent = classic): receivers ignore events for the other set, so a classic producer can never move r5 tiles and vice versa.
+- **`?debug=1` chip shows the active set and layout** on `/underlay`, to catch an r5 collection whose Underlay and Overlay disagree.
+
+### Changed
+- **Darker host-mute red** on the producer seat buttons (`#d81e3c`) and Sam's host panel rows (`#b0182f` border, `#ff3a4f` name), so host mute reads apart from the amber SELF-MUTED state (Sam's request). On-stream washes unchanged.
+- **Overlay layout:** `/overlay` now reads `?layout=` (default 6). On a 4-guest show the Overlay URL MUST carry `layout=4`, like the Underlay; an event naming seat L3 or R3 is always placed as six-guest.
+
+### Fixed
+- **Featured chat fade** (from staging `414127e`): the fade wrapper is keyed per message, so a second featured chat inside 15 s gets its own full fade instead of the first one's clock, and a third is no longer lost.
+
+### Verified
+- **4-guest geometry for r5:** the camera holes in the round 5 collection match `TILES_4` (350 px at 62,139 / 62,586 / 1509,139.5 / 1508,587, measured from the scene JSON on 2026-11-18; cameras scaled up behind a hole, like Guest1 and Guest4, are deliberate framing and cropped by the set). r5 keeps sharing `TILES_4`.
+
+---
+
 ## [v1.7] — 2026-10-21
 
 ### Added

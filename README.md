@@ -149,6 +149,8 @@ reconnects.
 
 For tile calibration during setup, append `?calibrate=1` to the URL.
 
+**Round 5 collection:** the Underlay URL carries `?set=r5` (plus `&layout=4` in a 4-guest collection), and so must the Overlay below. See [`docs/obs-scene-setup.md`](./docs/obs-scene-setup.md).
+
 ### OBS browser source — `/overlay` (top layer)
 
 Add a second **Browser Source** in OBS pointing at:
@@ -165,6 +167,8 @@ https://gamified-2e9.pages.dev/overlay
   Sam Cam source or the wash will be invisible (the underlay's below-camera
   copy is hidden behind his cam)
 - Full OBS scene stack guidance: [`docs/obs-scene-setup.md`](./docs/obs-scene-setup.md)
+- **On a 4-guest show the Overlay URL MUST carry `layout=4`**, same as the Underlay and every wrapper link
+- **Round 5 collection:** `https://gamified-2e9.pages.dev/overlay?set=r5` (`&layout=4` for 4 guests). It draws the played card beside the player's camera. **Pre-show check: both the Underlay and the Overlay in the r5 collection carry `set=r5`**; if one is missing, card plays show nothing on stream
 
 ### Producer panel — Custom Browser Dock
 
@@ -185,7 +189,7 @@ The panel ships eight sections:
 7. **Activity feed**: last 20 events on the data channel
 8. **Calibration**: enable coordinate editors, adjust X/Y/W/H per tile, broadcasts live to underlay
 
-The dock is also viewable as a regular browser tab.
+The dock is also viewable as a regular browser tab. To calibrate the round 5 tiles, open it as `/producer?set=r5` (`&layout=4` for 4 guests).
 
 ### Guest ISO recording (optional)
 
