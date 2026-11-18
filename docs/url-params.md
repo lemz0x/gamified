@@ -3,7 +3,7 @@
 Every Gamified URL parameter, which routes read it, and what happens when
 it is absent or invalid. The code paths behind this table:
 `src/routes/PlayRoute.tsx` (seat/role/layout/push/label),
-`src/routes/UnderlayRoute.tsx` (calibrate/debug/layout/set),
+`src/routes/UnderlayRoute.tsx` (calibrate/debug/layout/set), `src/routes/OverlayRoute.tsx` (set/layout),
 `src/routes/ProducerRoute.tsx` and `src/routes/ChatRoute.tsx` (layout,
 label), `src/coords.ts` (`resolveLayout`, `LAYOUT_SEATS`, `parseSeat`).
 
@@ -16,7 +16,7 @@ label), `src/coords.ts` (`resolveLayout`, `LAYOUT_SEATS`, `parseSeat`).
 | `label` | display name | `/play`, `/chat`, `/editorchat` | Display name in the wrapper header and VDO.Ninja chat. Producer roster updates override it live (`effectiveLabel`) | `/play` falls back to `Host` / `Editor` / `Guest` by role; `/chat` falls back to `Lemz`, `/editorchat` falls back to `Phil` |
 | `role` | `host`, `editor`, or absent (guest) | `/play` | `host`: full host panel, joins as codirector, excluded from card target pickers, is the sole STFU-on-Sam vote evaluator. `editor`: audio-only publish (`videodevice=0`), chat-only panel, excluded from target pickers. Absent: guest | Absent = guest; requires `seat` |
 | `layout` | `4`, `6`, or absent | `/play`, `/underlay`, `/producer`, `/chat`, `/editorchat` | Selects the OBS scene geometry: 4-guest 2x2 (`TILES_4`, 350x350 tiles) or the default 6-guest grid (`TILES`). Gates seat count, tile positions, target pickers, buzz board, tracker, and the STFU-on-Sam vote threshold (2-of-4 vs 3-of-6) | Absent or any other value → 6-guest layout. **On a 4-guest show every wrapper URL, host link included, must carry `layout=4`** (see [`stfu-on-sam.md`](./stfu-on-sam.md)) |
-| `set` | `r5` or absent | `/underlay`, `/producer` | Selects which set's six-guest tile defaults and calibration slot to use: `r5` is the Nov 2026 set refresh (`TILES_R5`, 300x300 tiles, its own OBS scene collection; key `gamified.tiles.calibrated.r5.v1`). Four-guest tiles are the same in both sets | Absent or any other value → the classic maps (`TILES` / `TILES_4`) and classic calibration keys, unchanged |
+| `set` | `r5` or absent | `/underlay`, `/overlay`, `/producer` | Selects which set's six-guest tile defaults and calibration slot to use: `r5` is the Nov 2026 set refresh (`TILES_R5`, 300x300 tiles, its own OBS scene collection; key `gamified.tiles.calibrated.r5.v1`). Four-guest tiles are the same in both sets. On `/underlay` and `/overlay`, `r5` also switches on the round 5 card styles (`src/components/R5CardFx.tsx`): pixel camera effects, pink SILENCED tag, no centre announcement, and on `/overlay` the played card beside the player's camera | Absent or any other value → the classic maps (`TILES` / `TILES_4`) and classic calibration keys, unchanged |
 | `calibrate` | `1` | `/underlay` only | Shows the calibration grid; tile nudges persist per layout in localStorage and broadcast live from the producer panel | Absent = normal rendering |
 | `debug` | `1` | `/underlay` only | Shows the connection status chip (data-channel health, event counts) | Absent = hidden |
 
@@ -26,7 +26,7 @@ label), `src/coords.ts` (`resolveLayout`, `LAYOUT_SEATS`, `parseSeat`).
 |-------|-------|
 | `/play` | Guest needs `seat` + `push` (`label` has a fallback); host needs `role=host` + `push` (+ `layout=4` on 4-guest shows); editor needs `role=editor` + `push` |
 | `/underlay` | No params required; `layout` should match the show; `set=r5` in the round 5 scene collection; `calibrate=1` and `debug=1` are underlay-only |
-| `/overlay` | No params; connects as a data-only codirector on its own |
+| `/overlay` | No params required; connects as a data-only codirector on its own. `set=r5` in the round 5 scene collection draws the played card; it uses the 6-guest tiles unless the URL has `layout=4` (one Overlay source serves both layouts; a card play naming seat L3 or R3 is always placed as six-guest) |
 | `/producer` | No required params; `layout=4` to match a 4-guest show; password-gated |
 | `/chat` | `label` defaults to `Lemz`; `layout` gates the tracker grid |
 | `/editorchat` | Same as `/chat` but `label` defaults to `Phil` |
