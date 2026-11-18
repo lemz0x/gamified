@@ -1316,9 +1316,11 @@ const styles: Record<string, CSSProperties> = {
     cursor: "pointer",
     fontFamily: "inherit",
   },
+  // Host/producer mute: a darker red than the STFU accent so it reads apart from
+  // the amber SELF-MUTED state at a glance (Sam's request; Lemz pick R1, 2026-11-18).
   muteSeatActive: {
-    borderColor: NEON.red,
-    background: `rgba(255, 46, 107, 0.08)`,
+    borderColor: "#d81e3c",
+    background: `rgba(216, 30, 60, 0.14)`,
   },
   // Self-muted (guest clicked their own VDO.Ninja mic): amber, distinct
   // from the red host-mute so the producer can tell who silenced whom.
