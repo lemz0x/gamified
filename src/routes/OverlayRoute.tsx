@@ -22,7 +22,7 @@ import {
   type TileMap,
 } from "../coords";
 import type { CardId } from "../cards";
-import { R5PlayedCard } from "../components/R5CardFx";
+import { R5PlayedCard, placeCard, placeHostCard, type CardPlacement } from "../components/R5CardFx";
 import { MutedTileOverlay } from "../components/MutedTileOverlay";
 
 // ── constants ───────────────────────────────────────────────────────────
@@ -67,7 +67,10 @@ interface ChatScreenSprite {
 interface PlayedCardSprite {
   id: string;
   cardId: CardId;
-  seat: SeatId;
+  /** The player: a guest seat, or "host" for Sam (his card stands beside him on the desk). */
+  seat: SeatId | "host";
+  /** Sam's card position, read from his calibration at play time (guest cards follow live tile state). */
+  hostAt?: CardPlacement;
   layout: GuestLayout;
   holdMs: number;
   expiresAt: number;
@@ -159,20 +162,22 @@ export function OverlayRoute() {
     switch (msg.type) {
       case "cardPlay": {
         // Classic set: the overlay ignores card plays, as before.
-        // The host and Lemz have no camera, so their cards show no played card.
-        if (!r5 || msg.from.kind !== "guest") break;
-        const seat = msg.from.seat;
+        // Lemz (producer) has no camera, so his plays show no played card.
+        if (!r5 || msg.from.kind === "lemz") break;
+        const seat: SeatId | "host" = msg.from.kind === "guest" ? msg.from.seat : "host";
+        // The URL's layout is the truth; an event naming L3 or R3 can only be six-guest (safety net, never 6 -> 4).
         const six = seat === "L3" || seat === "R3" || msg.targetSeat === "L3" || msg.targetSeat === "R3";
         const holdMs = R5_CARD_HOLD_MS[msg.cardId] ?? 4_500;
         const sprite: PlayedCardSprite = {
           id: nextId(),
           cardId: msg.cardId,
           seat,
+          hostAt: seat === "host" ? placeHostCard(loadCalibratedHostTile()) : undefined,
           layout: six ? "6" : urlLayout,
           holdMs,
           expiresAt: Date.now() + holdMs + R5_CARD_AWAY_MS + 80,
         };
-        // One card per player: a new play from the same seat replaces the old one.
+        // One card per player (Sam counts as one): a new play from the same player replaces the old one.
         setPlayedCards((prev) => [...prev.filter((c) => c.seat !== seat).slice(-(R5_CARD_CAP - 1)), sprite]);
         break;
       }
@@ -228,7 +233,12 @@ export function OverlayRoute() {
       />
       {samSilenced && <MutedTileOverlay tile={samTile} variant="host" />}
       {playedCards.map((c) => (
-        <R5PlayedCard key={c.id} card={c.cardId} tile={r5Tiles[c.layout][c.seat]} holdMs={c.holdMs} />
+        <R5PlayedCard
+          key={c.id}
+          card={c.cardId}
+          at={c.seat === "host" ? c.hostAt! : placeCard(r5Tiles[c.layout][c.seat])}
+          holdMs={c.holdMs}
+        />
       ))}
       {chatScreenSprite && (
         <div

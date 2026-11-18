@@ -11,7 +11,7 @@ import { layoutPixelText, type PixelTextOptions } from "../lib/pixelFont";
  *     T13 STFU slam (today's slam + a short glitch + bars running down once),
  *     A11 neon stopwatch, M1 chrome mic falling through, F7 pixel lettering
  *     with a stepped extrusion, sized to stay inside the picture.
- *   - SILENCED (underlay): pink wash + X16 pink pixel tag, said once.
+ *   - SILENCED (underlay): red wash + X16 pixel tag in STFU red, said once.
  *   - Played card (overlay): C14 pixel card beside the player's camera.
  *
  * Mockups: explorations/round5/cards/v6.html. Keyframes: src/index.css (r5*).
@@ -22,7 +22,7 @@ const RGB: Record<CardId | "gold", string> = {
   stfu: "255,46,107",
   wrapitup: "255,119,0",
   micdrop: "0,217,107",
-  gold: "212,175,55",
+  gold: "255,215,0", // design-system gold #FFD700 (Lemz pick G2, 2026-11-18)
 };
 const DARK: Record<CardId, string> = { stfu: "#b8123f", wrapitup: "#b94f00", micdrop: "#00894a" };
 const LIGHT: Record<CardId, string> = { stfu: "#ff6d96", wrapitup: "#ffa04a", micdrop: "#4dffa6" };
@@ -73,7 +73,14 @@ function camTextPx(card: CardId, tile: Tile, pad: number): number {
 const edgeGlow = (rgb: string, k: number) =>
   `inset 0 0 ${10 * k}px ${3 * k}px rgba(${rgb},1), inset 0 0 ${30 * k}px ${4 * k}px rgba(${rgb},.75), inset 0 0 ${70 * k}px rgba(${rgb},.32)`;
 
-/** A box over the exact camera picture, clipped to it. */
+/**
+ * The round 5 name plate covers the bottom 14 px of every camera picture (6- and
+ * 4-guest; obs-pack/names.html: plate top = camera bottom - 14). Effects stop at
+ * the plate so the glow's bottom edge shows instead of running under it.
+ */
+const PLATE_OVERLAP = 14;
+
+/** A box over the visible camera picture (above the name plate), clipped to it. */
 function CamBox({ tile, style, children }: { tile: Tile; style?: CSSProperties; children?: ReactNode }) {
   return (
     <div
@@ -82,7 +89,7 @@ function CamBox({ tile, style, children }: { tile: Tile; style?: CSSProperties; 
         left: tile.x,
         top: tile.y,
         width: tile.w,
-        height: tile.h,
+        height: tile.h - PLATE_OVERLAP,
         overflow: "hidden",
         borderRadius: 4,
         pointerEvents: "none",
@@ -295,15 +302,16 @@ export const R5SourceAura = React.memo(function R5SourceAura({ tile }: { tile: T
 const STEP_CLIP =
   "polygon(0 6px,3px 6px,3px 3px,6px 3px,6px 0,calc(100% - 6px) 0,calc(100% - 6px) 3px,calc(100% - 3px) 3px,calc(100% - 3px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 3px) calc(100% - 6px),calc(100% - 3px) calc(100% - 3px),calc(100% - 6px) calc(100% - 3px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 3px),3px calc(100% - 3px),3px calc(100% - 6px),0 calc(100% - 6px))";
 
-/** SILENCED on a guest camera: round 1 pink wash, X16 pink pixel tag, said once. */
+/** SILENCED on a guest camera: red wash and ring, X16 pixel tag in STFU red, said once. */
 export const R5Silenced = React.memo(function R5Silenced({ tile }: { tile: Tile }) {
   const k = tile.w / 300;
   return (
     <CamBox tile={tile}>
-      <div style={fillStyle({ background: "linear-gradient(180deg, rgba(255,46,107,.10), rgba(255,46,107,.20))" })} />
+      {/* STFU red family (Lemz pick P2, 2026-11-18): red = disruption, ties SILENCED to the STFU card */}
+      <div style={fillStyle({ background: "linear-gradient(180deg, rgba(255,46,90,.10), rgba(255,46,90,.20))" })} />
       <div style={fillStyle({ background: "rgba(8,4,12,.32)" })} />
-      <div style={fillStyle({ boxShadow: `inset 0 0 0 ${3 * k}px rgba(255,46,107,.9), inset 0 0 ${70 * k}px rgba(120,0,30,.6)` })} />
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 28 * k, display: "flex", justifyContent: "center" }}>
+      <div style={fillStyle({ boxShadow: `inset 0 0 0 ${3 * k}px rgba(255,46,90,.9), inset 0 0 ${70 * k}px rgba(120,0,24,.6)` })} />
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 28 * k - PLATE_OVERLAP, display: "flex", justifyContent: "center" }}>
         <div
           style={{
             position: "relative",
@@ -313,8 +321,8 @@ export const R5Silenced = React.memo(function R5Silenced({ tile }: { tile: Tile 
             animation: "r5TapeIn 260ms cubic-bezier(.2,1.6,.4,1) 0ms 1 both",
           }}
         >
-          <div style={{ padding: `${8 * k}px ${12 * k}px ${7 * k}px`, background: "linear-gradient(180deg, #ff4f86, #e0185a)", clipPath: STEP_CLIP }}>
-            <PixelText opts={{ text: "SILENCED", fill: "#fff", shadow: "#9e0f3a", track: 2 }} px={2.25 * k} />
+          <div style={{ padding: `${8 * k}px ${12 * k}px ${7 * k}px`, background: "linear-gradient(180deg, #ff4466, #d0103a)", clipPath: STEP_CLIP }}>
+            <PixelText opts={{ text: "SILENCED", fill: "#fff", shadow: "#7e0a24", track: 2 }} px={2.25 * k} />
           </div>
         </div>
       </div>
@@ -368,6 +376,17 @@ export function placeCard(tile: Tile): CardPlacement {
   return { cx, cy, scale: s, rot: side === "L" ? ROT : -ROT };
 }
 
+/**
+ * Sam's played card (host plays): standing on the desk just right of his
+ * shoulder, beside the plant (Lemz's pick "S5", 2026-11-18). Anchored to Sam's
+ * host tile (HOST_TILE 521,498 902x507 puts it at 1245,875), so it follows his
+ * calibration. Below the topic area (y > 655) and clear of the bottom-row guest
+ * cards in both layouts. The overlay is the top layer, so it sits in front of Sam.
+ */
+export function placeHostCard(host: Tile): CardPlacement {
+  return { cx: host.x + host.w * 0.8027, cy: host.y + host.h * 0.7436, scale: 1, rot: ROT };
+}
+
 /** Stepped (pixel-cornered) rectangle outline for the card's inner frame. */
 function StepFrame() {
   const W = CARD_W, H = CARD_H, inset = 5, st = 4;
@@ -386,8 +405,7 @@ function StepFrame() {
 }
 
 /** C14: plain gradient card, pixel frame, pixel lettering, one slow sheen. Slaps down, holds, then leaves. */
-export const R5PlayedCard = React.memo(function R5PlayedCard({ card, tile, holdMs }: { card: CardId; tile: Tile; holdMs: number }) {
-  const at = placeCard(tile);
+export const R5PlayedCard = React.memo(function R5PlayedCard({ card, at, holdMs }: { card: CardId; at: CardPlacement; holdMs: number }) {
   const face = layoutPixelText({ text: FACE_TEXT[card], shadow: "rgba(0,0,0,.38)" });
   const px = Math.min(3.4, 74 / face.w);
   return (
