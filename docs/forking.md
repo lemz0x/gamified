@@ -25,7 +25,7 @@ at a real show.
    and replace it if you keep the doc.
 5. **localStorage namespace** (optional): the app reads and writes keys
    under the `gamified.*` namespace (`gamified.auth.v1`, `gamified.roster.v1`,
-   `gamified.tiles.calibrated.v1`, `gamified.tiles.calibrated.4.v1`,
+   `gamified.tiles.calibrated.v1`, `gamified.tiles.calibrated.4.v1`, `gamified.tiles.calibrated.r5.v1`,
    `gamified.tiles.host.v1`, `gamified.tracker.v1`, `gamified.resetEpoch.v1`,
    `gamified.lastResetSeen.v1`, `gamified.hostName.v1`,
    `gamified.cards.uses.<identity>`). If your fork runs alongside the

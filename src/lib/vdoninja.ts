@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { CardId } from "../cards";
 import { EMOJIS, type Emoji } from "../emojis";
-import { SEAT_ORDER, type SeatId, type Tile, type TileMap } from "../coords";
+import { SEAT_ORDER, type SeatId, type Tile, type TileMap, type TileSet } from "../coords";
 
 // ── URL builders ────────────────────────────────────────────────────────
 
@@ -317,6 +317,8 @@ export interface CalibrationEvent {
   type: "calibration";
   tiles: TileMap;
   ts: number;
+  /** Which set's tiles these are (`?set=`). Absent = "classic" (older producers). Receivers on another set ignore the event. */
+  set?: TileSet;
 }
 
 /** Host muted a specific guest or all guests (soft mute — guests can unmute). */
@@ -609,6 +611,7 @@ export function validatePayload(raw: unknown): EventPayload | null {
       break;
     case "calibration":
       if (!isValidTileMap(p.tiles)) return null;
+      if (p.set !== undefined && p.set !== "classic" && p.set !== "r5") return null;
       break;
     case "trackerUpdate":
       if (typeof p.title !== "string") return null;

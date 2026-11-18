@@ -44,7 +44,8 @@ The producer maintains two OBS scene collections ("Gamified" for 6 guests,
 
 - **4-guest scenes carry `?layout=4` baked into ALL wrapper URLs**: guests,
   host, and the two browser sources for that collection (`/underlay?layout=4`
-  and `/overlay?layout=4`).
+  and `/overlay?layout=4`). Since v1.8 the overlay uses the layout to place
+  the played card (r5), so on a 4-guest collection it MUST carry `layout=4`.
 - **6-guest scenes run plain URLs** (no `layout` param).
 - **NEVER run 4 guests on the 6-guest geometry** (or vice versa). Effects
   paint at the active layout's tile coordinates: 4 guests on the 6-guest
@@ -55,6 +56,16 @@ The producer maintains two OBS scene collections ("Gamified" for 6 guests,
   4-guest shows. His wrapper is the sole STFU-on-Sam vote evaluator and
   derives the threshold from its own URL. See
   [`stfu-on-sam.md`](./stfu-on-sam.md) and [`url-params.md`](./url-params.md).
+
+## Round 5 set: a third collection beside the classic ones (v1.8)
+
+The Nov 2026 set refresh runs from its own scene collection, built from the classic master, so both can sit on one machine and you switch with **Scene Collection**. The classic collection is the fallback.
+
+- **Both browser sources in the r5 collection carry `set=r5`**: `/underlay?set=r5` and `/overlay?set=r5` (plus `layout=4` on both in a 4-guest r5 collection). If only one has it, card plays go silent on stream: the r5 underlay drops the centre announcement, and a classic overlay ignores card plays.
+- **Pre-show check:** open the Underlay with `&debug=1` once; the chip shows `set: r5 · layout: 6` (or 4). Remove `debug=1` before the show.
+- The producer panel needs `?set=r5` only to calibrate the r5 tiles; calibration events are tagged with their set, so a classic producer cannot move r5 tiles.
+- Calibration is per machine, per set and layout; the Overlay reads the same saved calibration as the Underlay (same OBS browser profile).
+- The r5 name plates cover the bottom 14 px of each camera; r5 effects stop at the plate.
 
 ## Sam Cam
 

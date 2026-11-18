@@ -2272,7 +2272,7 @@ function HostMutePanel({ roster, send, seats }: HostMutePanelProps) {
               }}
             >
               <span style={muted ? styles.muteIconMuted : selfMuted ? styles.muteIconSelfMuted : styles.muteIcon}>
-                {muted ? "🔇" : selfMuted ? "🔈" : "🎤"}
+                {muted || selfMuted ? "🔇" : "🎤"}
               </span>
               <span style={{
                 ...styles.muteName,
@@ -2751,10 +2751,12 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: "nowrap",
     outline: "none",
   },
+  // Host mute: darker red so it reads apart from the amber self-mute at a glance
+  // (Sam's request; Lemz pick R1, 2026-11-18).
   muteRowMuted: {
-    background: "#2a1018",
-    borderColor: "#cc2244",
-    boxShadow: "0 0 12px #cc224444, inset 0 0 12px #cc224422",
+    background: "#2a0c12",
+    borderColor: "#b0182f",
+    boxShadow: "0 0 12px #b0182f44, inset 0 0 12px #b0182f22",
   },
   // Self-muted (guest's own mic click): amber, distinct from host-mute red.
   muteRowSelfMuted: {
@@ -2771,7 +2773,7 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: "nowrap",
   },
   muteNameMuted: {
-    color: "#ff4466",
+    color: "#ff3a4f",
   },
   muteNameSelfMuted: {
     color: "#e8b429",

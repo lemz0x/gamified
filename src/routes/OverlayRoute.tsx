@@ -11,7 +11,18 @@ import {
   useVdoNinja,
   type EventPayload,
 } from "../lib/vdoninja";
-import { loadCalibratedHostTile } from "../coords";
+import { useSearchParams } from "react-router-dom";
+import {
+  loadCalibratedHostTile,
+  loadCalibratedTiles,
+  resolveLayout,
+  resolveTileSet,
+  type GuestLayout,
+  type SeatId,
+  type TileMap,
+} from "../coords";
+import type { CardId } from "../cards";
+import { R5PlayedCard, R5SamSilenced, placeCard, placeHostCard, type CardPlacement } from "../components/R5CardFx";
 import { MutedTileOverlay } from "../components/MutedTileOverlay";
 
 // ── constants ───────────────────────────────────────────────────────────
@@ -31,6 +42,16 @@ const SWEEP_INTERVAL_MS = 250;
  */
 const SAM_STFU_MS = 10_000;
 
+/**
+ * Round 5 played card (`?set=r5`): how long it stays beside the player's
+ * camera. STFU lasts the whole 10 s mute; the others 4.5 s. Then it leaves
+ * over 380 ms.
+ */
+const R5_CARD_HOLD_MS: Record<CardId, number> = { stfu: 10_000, wrapitup: 4_500, micdrop: 4_500 };
+const R5_CARD_AWAY_MS = 380;
+/** Same burst cap idea as the underlay's card sprites. */
+const R5_CARD_CAP = 4;
+
 // ── types ──────────────────────────────────────────────────────────────
 
 interface ChatScreenSprite {
@@ -41,6 +62,18 @@ interface ChatScreenSprite {
   expiresAt: number;
   /** When true, a fade-out animation plays before removal. */
   cleared?: boolean;
+}
+
+interface PlayedCardSprite {
+  id: string;
+  cardId: CardId;
+  /** The player: a guest seat, or "host" for Sam (his card stands beside him on the desk). */
+  seat: SeatId | "host";
+  /** Sam's card position, read from his calibration at play time (guest cards follow live tile state). */
+  hostAt?: CardPlacement;
+  layout: GuestLayout;
+  holdMs: number;
+  expiresAt: number;
 }
 
 // ── component ──────────────────────────────────────────────────────────
@@ -55,13 +88,28 @@ interface ChatScreenSprite {
  * here.
  */
 export function OverlayRoute() {
+  const [search] = useSearchParams();
   const [chatScreenSprite, setChatScreenSprite] = useState<ChatScreenSprite | null>(null);
+
+  // Round 5 set only (`?set=r5`): the played card beside the player's camera.
+  // There is one Overlay source for both the 4- and 6-guest scenes, so the
+  // layout comes from `?layout=` (default 6), and any event naming seat L3 or
+  // R3 is six-guest by definition. Tiles use the same per-machine calibration
+  // the underlay saves (same OBS browser profile).
+  const r5 = resolveTileSet(search.get("set")) === "r5";
+  const urlLayout: GuestLayout = resolveLayout(search.get("layout"));
+  const [r5Tiles, setR5Tiles] = useState<Record<GuestLayout, TileMap>>(() => ({
+    "6": loadCalibratedTiles("6", "r5"),
+    "4": loadCalibratedTiles("4", "r5"),
+  }));
+  const [playedCards, setPlayedCards] = useState<readonly PlayedCardSprite[]>([]);
 
   // STFU-on-Sam: SILENCED treatment over Sam's tile. The overlay sits ABOVE
   // Sam Cam in every show scene (unlike the underlay, which is below him —
   // the Sept 30 test showed the underlay wash painting "behind" his cam).
-  // Tile resolved once on mount; host calibration is per-machine like guests.
-  const samTile = useMemo(loadCalibratedHostTile, []);
+  // Tile read again on every samStfu, so a host calibration saved after this
+  // source loaded is used (host calibration is per-machine like guests).
+  const [samTile, setSamTile] = useState(loadCalibratedHostTile);
   const [samSilenced, setSamSilenced] = useState(false);
   const samSilenceTimeoutRef = useRef<number | null>(null);
 
@@ -93,6 +141,10 @@ export function OverlayRoute() {
       setChatScreenSprite((prev) =>
         prev && prev.expiresAt <= now ? null : prev,
       );
+      setPlayedCards((prev) => {
+        const next = prev.filter((c) => c.expiresAt > now);
+        return next.length === prev.length ? prev : next;
+      });
     }, SWEEP_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, []);
@@ -109,6 +161,34 @@ export function OverlayRoute() {
 
   const onMessage = useCallback((msg: EventPayload) => {
     switch (msg.type) {
+      case "cardPlay": {
+        // Classic set: the overlay ignores card plays, as before.
+        // Lemz (producer) has no camera, so his plays show no played card.
+        if (!r5 || msg.from.kind === "lemz") break;
+        const seat: SeatId | "host" = msg.from.kind === "guest" ? msg.from.seat : "host";
+        // The URL's layout is the truth; an event naming L3 or R3 can only be six-guest (safety net, never 6 -> 4).
+        const six = seat === "L3" || seat === "R3" || msg.targetSeat === "L3" || msg.targetSeat === "R3";
+        const holdMs = R5_CARD_HOLD_MS[msg.cardId] ?? 4_500;
+        const sprite: PlayedCardSprite = {
+          id: nextId(),
+          cardId: msg.cardId,
+          seat,
+          hostAt: seat === "host" ? placeHostCard(loadCalibratedHostTile()) : undefined,
+          layout: six ? "6" : urlLayout,
+          holdMs,
+          expiresAt: Date.now() + holdMs + R5_CARD_AWAY_MS + 80,
+        };
+        // One card per player (Sam counts as one): a new play from the same player replaces the old one.
+        setPlayedCards((prev) => [...prev.filter((c) => c.seat !== seat).slice(-(R5_CARD_CAP - 1)), sprite]);
+        break;
+      }
+      case "calibration":
+        // Producer nudged the r5 tiles. The event does not say which layout it is
+        // for, so re-read both maps from the calibration the producer and the
+        // underlays save on this machine, once they have written it.
+        if (!r5 || msg.set !== "r5") break;
+        window.setTimeout(() => setR5Tiles({ "6": loadCalibratedTiles("6", "r5"), "4": loadCalibratedTiles("4", "r5") }), 300);
+        break;
       case "chatToScreen":
         setChatScreenSprite({
           id: nextId(),
@@ -127,6 +207,7 @@ export function OverlayRoute() {
         // STFU-on-Sam landed: paint SILENCED over Sam for the hard-lock
         // window. Clear any pending timeout so stacked votes (impossible
         // today — cooldown blocks them — but future-proof) extend, not cut.
+        setSamTile(loadCalibratedHostTile());
         setSamSilenced(true);
         if (samSilenceTimeoutRef.current !== null) {
           window.clearTimeout(samSilenceTimeoutRef.current);
@@ -137,7 +218,7 @@ export function OverlayRoute() {
         }, SAM_STFU_MS);
         break;
     }
-  }, []);
+  }, [r5, urlLayout]);
 
   // Hidden VDO.Ninja data-only codirector iframe.
   const overlayUrl = useMemo(() => buildOverlayDataOnlyUrl(), []);
@@ -152,9 +233,24 @@ export function OverlayRoute() {
         allow="autoplay; camera; microphone"
         title="data-channel"
       />
-      {samSilenced && <MutedTileOverlay tile={samTile} variant="host" />}
+      {samSilenced && (r5 ? <R5SamSilenced tile={samTile} /> : <MutedTileOverlay tile={samTile} variant="host" />)}
+      {playedCards.map((c) => (
+        <R5PlayedCard
+          key={c.id}
+          card={c.cardId}
+          at={c.seat === "host" ? c.hostAt! : placeCard(r5Tiles[c.layout][c.seat])}
+          holdMs={c.holdMs}
+        />
+      ))}
       {chatScreenSprite && (
         <div
+          // Key the wrapper (not just the card) on the sprite id: React reuses
+          // an unkeyed wrapper across replaces, so the 15s fadeInOut keeps
+          // running on the first message's clock - a second featured chat
+          // fades on the first one's timer, and a third inside that window
+          // never appears (animation already finished at opacity 0).
+          // A fresh wrapper per sprite gives each message its own full fade.
+          key={chatScreenSprite.id}
           style={
             chatScreenSprite.cleared
               ? { ...fadeWrapStyle, animation: `fadeOut ${CLEAR_FADE_MS}ms ease-out forwards` }
@@ -162,7 +258,7 @@ export function OverlayRoute() {
           }
         >
           <div style={ambientFeatherStyle} />
-          <ChatScreenCard key={chatScreenSprite.id} sprite={chatScreenSprite} />
+          <ChatScreenCard sprite={chatScreenSprite} />
         </div>
       )}
     </>
