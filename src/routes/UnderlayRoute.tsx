@@ -444,6 +444,8 @@ export function UnderlayRoute() {
           playCardSfx(msg.cardId);
           break;
         case "calibration":
+          // A producer calibrating the other set (`?set=`) must not move this one.
+          if ((msg.set ?? "classic") !== tileSet) break;
           setTiles(msg.tiles);
           saveCalibratedTiles(msg.tiles, layout, tileSet);
           break;

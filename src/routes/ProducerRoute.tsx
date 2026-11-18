@@ -371,7 +371,8 @@ function ProducerPanel() {
           setDraftHostName(msg.hostName);
         }
       }
-      if (msg.type === "calibration") {
+      // Only adopt calibration for this panel's own set (absent = classic).
+      if (msg.type === "calibration" && (msg.set ?? "classic") === tileSet) {
         setTiles(msg.tiles);
       }
       if (msg.type === "buzzIn") {
@@ -503,7 +504,7 @@ function ProducerPanel() {
         });
       }
     },
-    [roster, hostName, seats, buzzOn, buzzOff],
+    [roster, hostName, seats, tileSet, buzzOn, buzzOff],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -687,7 +688,7 @@ function ProducerPanel() {
           [seat]: { ...prev[seat], [axis]: Math.max(0, prev[seat][axis] + delta) },
         };
         saveCalibratedTiles(next, layout, tileSet);
-        send({ type: "calibration", tiles: next, ts: Date.now() });
+        send({ type: "calibration", tiles: next, ts: Date.now(), set: tileSet });
         return next;
       });
     },
@@ -705,7 +706,7 @@ function ProducerPanel() {
           [seat]: { ...prev[seat], [axis]: value },
         };
         saveCalibratedTiles(next, layout, tileSet);
-        send({ type: "calibration", tiles: next, ts: Date.now() });
+        send({ type: "calibration", tiles: next, ts: Date.now(), set: tileSet });
         return next;
       });
     },
@@ -716,7 +717,7 @@ function ProducerPanel() {
     const fresh: TileMap = defaultTilesFor(layout, tileSet);
     setTiles(fresh);
     saveCalibratedTiles(fresh, layout, tileSet);
-    send({ type: "calibration", tiles: fresh, ts: Date.now() });
+    send({ type: "calibration", tiles: fresh, ts: Date.now(), set: tileSet });
   }, [send, layout, tileSet]);
 
   return (
