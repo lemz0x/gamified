@@ -382,3 +382,22 @@ body.overlay-route #root {
     animation: flowPulse 3s ease-in-out infinite alternate;
   }
 }
+
+/* ── Round 5 card styles (set=r5 only; see src/components/R5CardFx.tsx) ── */
+@keyframes r5Slam { 0%,4% { transform: scale(3) rotate(var(--r, -2deg)); opacity: 0; } 18% { transform: scale(.92) rotate(var(--r, -2deg)); opacity: 1; } 25% { transform: scale(1.04) rotate(var(--r, -2deg)); opacity: 1; } 32% { transform: scale(1) rotate(var(--r, -2deg)); opacity: 1; } 82% { transform: scale(1) rotate(var(--r, -2deg)); opacity: 1; } 100% { transform: scale(1.04) rotate(var(--r, -2deg)); opacity: 0; } }
+@keyframes r5JitS { 0% { transform: translate(0,0); } 20% { transform: translate(-4px,1px); } 40% { transform: translate(3px,-2px); } 60% { transform: translate(-2px,1px); } 80% { transform: translate(3px,1px); } 100% { transform: translate(0,0); } }
+@keyframes r5ShakeA { 0% { opacity: .75; transform: translate(-5px,1px); } 20% { transform: translate(3px,-2px); } 40% { opacity: .65; transform: translate(-4px,1px); } 60% { opacity: .5; transform: translate(3px,0); } 80% { opacity: .3; transform: translate(-2px,1px); } 100% { opacity: 0; transform: none; } }
+@keyframes r5ShakeB { 0% { opacity: .75; transform: translate(5px,-1px); } 20% { transform: translate(-3px,2px); } 40% { opacity: .65; transform: translate(4px,-1px); } 60% { opacity: .5; transform: translate(-3px,0); } 80% { opacity: .3; transform: translate(2px,-1px); } 100% { opacity: 0; transform: none; } }
+@keyframes r5GlA { 0% { opacity: .85; transform: translate(-5px,1px); } 25% { opacity: .8; transform: translate(3px,-1px); } 50% { opacity: .6; transform: translate(-2px,0); } 75% { opacity: .35; transform: translate(1px,0); } 100% { opacity: 0; transform: none; } }
+@keyframes r5GlB { 0% { opacity: .85; transform: translate(5px,-1px); } 25% { opacity: .8; transform: translate(-3px,1px); } 50% { opacity: .6; transform: translate(2px,0); } 75% { opacity: .35; transform: translate(-1px,0); } 100% { opacity: 0; transform: none; } }
+@keyframes r5GJit { 0% { transform: translate(-2px,0); } 50% { transform: translate(2px,0); } 100% { transform: none; } }
+@keyframes r5Flash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes r5CardSlap { 0% { opacity: 0; transform: translateY(-26px) scale(1.5) rotate(calc(var(--rot) - 12deg)); } 60% { opacity: 1; transform: translateY(0) scale(.96) rotate(var(--rot)); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(var(--rot)); } }
+@keyframes r5CardAway { from { opacity: 1; transform: rotate(var(--rot)); } to { opacity: 0; transform: translateY(24px) rotate(calc(var(--rot) + 10deg)) scale(.9); } }
+@keyframes r5Sheen { from { transform: translateX(-150px) rotate(18deg); } to { transform: translateX(170px) rotate(18deg); } }
+@keyframes r5TapeIn { 0% { opacity: 0; transform: rotate(var(--r)) scale(1.25); } 60% { opacity: 1; transform: rotate(var(--r)) scale(.98); } 100% { opacity: 1; transform: rotate(var(--r)) scale(1); } }
+@keyframes r5PressDown { from { transform: translateY(0); } to { transform: translateY(4px); } }
+@keyframes r5WatchShake { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+@keyframes r5RingDrain { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 198; } }
+@keyframes r5Sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes r5ZeroFlash { 0%, 100% { opacity: 0; } 30%, 70% { opacity: 1; } }

@@ -32,6 +32,7 @@ import {
 } from "../lib/vdoninja";
 import { CARDS, type CardId } from "../cards";
 import { MutedTileOverlay } from "../components/MutedTileOverlay";
+import { R5MicFx, R5Silenced, R5SourceAura, R5StfuFx, R5WrapFx } from "../components/R5CardFx";
 
 import { playCardSfx, preloadCardSfx } from "../lib/sfx";
 
@@ -153,6 +154,8 @@ export function UnderlayRoute() {
   // Set: `?set=r5` picks the round 5 set's tile defaults and calibration
   // slot (its own OBS scene collection). Absent → the classic set.
   const tileSet: TileSet = resolveTileSet(search.get("set"));
+  // The round 5 set also gets the round 5 card styles (R5CardFx.tsx); classic keeps today's.
+  const r5 = tileSet === "r5";
 
   // Per-machine tile overrides (from prior CalibrationEvents). Live in
   // localStorage on this overlay browser source's machine.
@@ -412,7 +415,8 @@ export function UnderlayRoute() {
           handleEmoji(msg, tiles, enqueueEmoji, nextId);
           break;
         case "cardPlay":
-          enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat, expiresAt: Date.now() + CARD_ANIM_MS + 80 });
+          // r5: the mic falls and its text slams in 300 ms late, so keep the sprite a little longer.
+          enqueueCard({ id: nextId(), cardId: msg.cardId, targetSeat: msg.targetSeat, expiresAt: Date.now() + CARD_ANIM_MS + (r5 ? 400 : 80) });
           // Source aura: show gold glow on the card-player's tile (guests only; host has no tile)
           if (msg.from.kind === "guest") {
             enqueueSourceAura({ id: nextId(), sourceSeat: msg.from.seat, expiresAt: Date.now() + SOURCE_AURA_MS + 80 });
@@ -440,7 +444,8 @@ export function UnderlayRoute() {
             // single-timeout path is gone.
             armStfuWash(mutedSeatsArr, 10_000);
           }
-          fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce, nextId);
+          // r5: no centre message box; the played card beside the player's camera (/overlay) says who played it.
+          if (!r5) fireCardAnnounce(msg, rosterRef.current, hostNameRef.current, setCardAnnounce, nextId);
           playCardSfx(msg.cardId);
           break;
         case "calibration":
@@ -558,7 +563,7 @@ export function UnderlayRoute() {
     // tiles is intentionally read fresh inside handleEmoji via closure;
     // re-binding the listener every tile change is fine and rare. `seats` is
     // derived from the layout URL param (stable for the page's lifetime).
-    [tiles, seats, layout, tileSet, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
+    [tiles, seats, layout, tileSet, r5, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });
@@ -574,6 +579,14 @@ export function UnderlayRoute() {
     return () => window.clearTimeout(id);
   }, [send]);
 
+  // Seats showing SILENCED: STFU and mute-all only (individual host mutes are audio-only).
+  const silencedSeats = muteReasons.size > 0
+    ? seats.filter((seat) => {
+        const reasons = muteReasons.get(seat);
+        return reasons?.has("stfu") || reasons?.has("muteall");
+      })
+    : [];
+
   return (
     <div style={styles.root}>
       <div style={styles.canvas}>
@@ -581,24 +594,26 @@ export function UnderlayRoute() {
           <EmojiFloat key={sprite.id} sprite={sprite} tile={tiles[sprite.seat]} />
         ))}
 
+        {/* r5: SILENCED first so the STFU slam on the target reads above the wash. */}
+        {r5 && silencedSeats.map((seat) => <R5Silenced key={seat} tile={tiles[seat]} />)}
+
         {cardSprites.map((sprite) => {
-          const Comp = CARD_SPRITES[sprite.cardId];
+          const Comp = (r5 ? R5_CARD_SPRITES : CARD_SPRITES)[sprite.cardId];
           if (!Comp) return null;
           return <Comp key={sprite.id} tile={tiles[sprite.targetSeat]} />;
         })}
 
-        {sourceAuraSprites.map((sprite) => (
-          <SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
-        ))}
+        {sourceAuraSprites.map((sprite) =>
+          r5 ? (
+            <R5SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
+          ) : (
+            <SourceAura key={sprite.id} tile={tiles[sprite.sourceSeat]} />
+          ),
+        )}
 
         {/* SILENCED overlay — shown for STFU and mute-all only.
             Individual host mutes are audio-only (no visual overlay). */}
-        {muteReasons.size > 0 && seats
-          .filter((seat) => {
-            const reasons = muteReasons.get(seat);
-            return reasons?.has("stfu") || reasons?.has("muteall");
-          })
-          .map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
+        {!r5 && silencedSeats.map((seat) => <MutedTileOverlay key={seat} tile={tiles[seat]} />)}
 
         {/* STFU-on-Sam: SILENCED wash on Sam's host tile while the
             vote's 10s hard-mute runs. Same visual language as guest
@@ -1229,6 +1244,13 @@ const CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
   stfu: StfuCard,
   micdrop: MicDropCard,
   wrapitup: WrapItUpCard,
+};
+
+/** Round 5 set (`?set=r5`): Lemz's v6 card styles. */
+const R5_CARD_SPRITES: Record<string, React.FC<{ tile: Tile }>> = {
+  stfu: R5StfuFx,
+  micdrop: R5MicFx,
+  wrapitup: R5WrapFx,
 };
 
 function tileBoxStyle(tile: Tile): CSSProperties {
