@@ -22,7 +22,7 @@ import {
   type TileMap,
 } from "../coords";
 import type { CardId } from "../cards";
-import { R5PlayedCard, placeCard, placeHostCard, type CardPlacement } from "../components/R5CardFx";
+import { R5PlayedCard, R5SamSilenced, placeCard, placeHostCard, type CardPlacement } from "../components/R5CardFx";
 import { MutedTileOverlay } from "../components/MutedTileOverlay";
 
 // ── constants ───────────────────────────────────────────────────────────
@@ -107,8 +107,9 @@ export function OverlayRoute() {
   // STFU-on-Sam: SILENCED treatment over Sam's tile. The overlay sits ABOVE
   // Sam Cam in every show scene (unlike the underlay, which is below him —
   // the Sept 30 test showed the underlay wash painting "behind" his cam).
-  // Tile resolved once on mount; host calibration is per-machine like guests.
-  const samTile = useMemo(loadCalibratedHostTile, []);
+  // Tile read again on every samStfu, so a host calibration saved after this
+  // source loaded is used (host calibration is per-machine like guests).
+  const [samTile, setSamTile] = useState(loadCalibratedHostTile);
   const [samSilenced, setSamSilenced] = useState(false);
   const samSilenceTimeoutRef = useRef<number | null>(null);
 
@@ -206,6 +207,7 @@ export function OverlayRoute() {
         // STFU-on-Sam landed: paint SILENCED over Sam for the hard-lock
         // window. Clear any pending timeout so stacked votes (impossible
         // today — cooldown blocks them — but future-proof) extend, not cut.
+        setSamTile(loadCalibratedHostTile());
         setSamSilenced(true);
         if (samSilenceTimeoutRef.current !== null) {
           window.clearTimeout(samSilenceTimeoutRef.current);
@@ -231,7 +233,7 @@ export function OverlayRoute() {
         allow="autoplay; camera; microphone"
         title="data-channel"
       />
-      {samSilenced && <MutedTileOverlay tile={samTile} variant="host" />}
+      {samSilenced && (r5 ? <R5SamSilenced tile={samTile} /> : <MutedTileOverlay tile={samTile} variant="host" />)}
       {playedCards.map((c) => (
         <R5PlayedCard
           key={c.id}

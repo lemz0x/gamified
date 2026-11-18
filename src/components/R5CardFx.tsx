@@ -69,9 +69,12 @@ function camTextPx(card: CardId, tile: Tile, pad: number): number {
   return Math.min(4 * k, (tile.w - 2 * pad * k) / l.w, (tile.h - pad * k) / l.h);
 }
 
-/** Inset glow clipped to the exact picture: heaviest at the edge, fading inward, no border line. */
+/**
+ * Halo clipped to the exact picture: strongest at the edge, fading toward the middle. Blur only, no spread:
+ * a spread draws a solid band along the edge, which reads as a border line (Lemz: no line, 2026-11-18).
+ */
 const edgeGlow = (rgb: string, k: number) =>
-  `inset 0 0 ${10 * k}px ${3 * k}px rgba(${rgb},1), inset 0 0 ${30 * k}px ${4 * k}px rgba(${rgb},.75), inset 0 0 ${70 * k}px rgba(${rgb},.32)`;
+  `inset 0 0 ${16 * k}px rgba(${rgb},1), inset 0 0 ${36 * k}px rgba(${rgb},.6), inset 0 0 ${72 * k}px rgba(${rgb},.2)`;
 
 /**
  * The round 5 name plate covers the bottom 14 px of every camera picture (6- and
@@ -302,6 +305,42 @@ export const R5SourceAura = React.memo(function R5SourceAura({ tile }: { tile: T
 const STEP_CLIP =
   "polygon(0 6px,3px 6px,3px 3px,6px 3px,6px 0,calc(100% - 6px) 0,calc(100% - 6px) 3px,calc(100% - 3px) 3px,calc(100% - 3px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 3px) calc(100% - 6px),calc(100% - 3px) calc(100% - 3px),calc(100% - 6px) calc(100% - 3px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 3px),3px calc(100% - 3px),3px calc(100% - 6px),0 calc(100% - 6px))";
 
+/** The X16 pixel SILENCED tag, sized by k (1 = a 300 px camera). */
+function SilencedTag({ k }: { k: number }) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        whiteSpace: "nowrap",
+        filter: "drop-shadow(3px 3px 0 rgba(0,0,0,.5))",
+        ["--r" as string]: "-2deg",
+        animation: "r5TapeIn 260ms cubic-bezier(.2,1.6,.4,1) 0ms 1 both",
+      }}
+    >
+      <div style={{ padding: `${8 * k}px ${12 * k}px ${7 * k}px`, background: "linear-gradient(180deg, #ff4466, #d0103a)", clipPath: STEP_CLIP }}>
+        <PixelText opts={{ text: "SILENCED", fill: "#fff", shadow: "#7e0a24", track: 2 }} px={2.25 * k} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SILENCED on Sam (STFU-on-Sam vote, drawn on /overlay above his camera). Sam is keyed onto the set, not a framed
+ * tile, so the wash is elliptical and fades to nothing inside his box (no edge, no ring), like the classic host
+ * variant but in the STFU red family. The tag is the same pixel tag as the guests', a little larger, low in his frame.
+ */
+export const R5SamSilenced = React.memo(function R5SamSilenced({ tile }: { tile: Tile }) {
+  return (
+    <div style={{ position: "absolute", left: tile.x, top: tile.y, width: tile.w, height: tile.h, pointerEvents: "none" }}>
+      <div style={fillStyle({ background: "radial-gradient(ellipse 55% 60% at 50% 45%, rgba(255,46,90,.20) 0%, rgba(255,46,90,.14) 60%, rgba(255,46,90,0) 100%)" })} />
+      <div style={fillStyle({ background: "radial-gradient(ellipse 55% 60% at 50% 45%, rgba(8,4,12,.30) 0%, rgba(8,4,12,.22) 55%, rgba(8,4,12,0) 100%)" })} />
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: "8%", display: "flex", justifyContent: "center" }}>
+        <SilencedTag k={1.25} />
+      </div>
+    </div>
+  );
+});
+
 /** SILENCED on a guest camera: red wash and ring, X16 pixel tag in STFU red, said once. */
 export const R5Silenced = React.memo(function R5Silenced({ tile }: { tile: Tile }) {
   const k = tile.w / 300;
@@ -310,21 +349,9 @@ export const R5Silenced = React.memo(function R5Silenced({ tile }: { tile: Tile 
       {/* STFU red family (Lemz pick P2, 2026-11-18): red = disruption, ties SILENCED to the STFU card */}
       <div style={fillStyle({ background: "linear-gradient(180deg, rgba(255,46,90,.10), rgba(255,46,90,.20))" })} />
       <div style={fillStyle({ background: "rgba(8,4,12,.32)" })} />
-      <div style={fillStyle({ boxShadow: `inset 0 0 0 ${3 * k}px rgba(255,46,90,.9), inset 0 0 ${70 * k}px rgba(120,0,24,.6)` })} />
+      <div style={fillStyle({ boxShadow: `inset 0 0 ${18 * k}px rgba(255,46,90,.8), inset 0 0 ${70 * k}px rgba(120,0,24,.6)` })} />
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 28 * k - PLATE_OVERLAP, display: "flex", justifyContent: "center" }}>
-        <div
-          style={{
-            position: "relative",
-            whiteSpace: "nowrap",
-            filter: "drop-shadow(3px 3px 0 rgba(0,0,0,.5))",
-            ["--r" as string]: "-2deg",
-            animation: "r5TapeIn 260ms cubic-bezier(.2,1.6,.4,1) 0ms 1 both",
-          }}
-        >
-          <div style={{ padding: `${8 * k}px ${12 * k}px ${7 * k}px`, background: "linear-gradient(180deg, #ff4466, #d0103a)", clipPath: STEP_CLIP }}>
-            <PixelText opts={{ text: "SILENCED", fill: "#fff", shadow: "#7e0a24", track: 2 }} px={2.25 * k} />
-          </div>
-        </div>
+        <SilencedTag k={k} />
       </div>
     </CamBox>
   );

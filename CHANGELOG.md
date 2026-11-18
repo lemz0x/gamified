@@ -16,6 +16,9 @@ Round 5 set refresh. Everything visual in this release is behind `?set=r5`, whic
 - **`?debug=1` chip shows the active set and layout** on `/underlay`, to catch an r5 collection whose Underlay and Overlay disagree.
 
 ### Changed
+- **r5 camera glows are a soft halo** (blur only, no spread): strongest at the edge, fading to the middle, with no solid line around the camera. Same for the SILENCED ring.
+- **r5 SILENCED on Sam:** the STFU-on-Sam result now draws the round 5 pixel tag on Sam with a soft red wash that fades out inside his frame (classic keeps the old label). Sam's tile is read at the moment of the result, so a host calibration saved after the Overlay loaded is used.
+- **Self-muted guests show the muted mic icon** on the host panel (still amber), instead of the speaker icon.
 - **Darker host-mute red** on the producer seat buttons (`#d81e3c`) and Sam's host panel rows (`#b0182f` border, `#ff3a4f` name), so host mute reads apart from the amber SELF-MUTED state (Sam's request). On-stream washes unchanged.
 - **Overlay layout:** `/overlay` now reads `?layout=` (default 6). On a 4-guest show the Overlay URL MUST carry `layout=4`, like the Underlay; an event naming seat L3 or R3 is always placed as six-guest.
 

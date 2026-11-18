@@ -2272,7 +2272,7 @@ function HostMutePanel({ roster, send, seats }: HostMutePanelProps) {
               }}
             >
               <span style={muted ? styles.muteIconMuted : selfMuted ? styles.muteIconSelfMuted : styles.muteIcon}>
-                {muted ? "🔇" : selfMuted ? "🔈" : "🎤"}
+                {muted || selfMuted ? "🔇" : "🎤"}
               </span>
               <span style={{
                 ...styles.muteName,
