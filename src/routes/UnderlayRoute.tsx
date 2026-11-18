@@ -14,9 +14,11 @@ import {
   loadCalibratedHostTile,
   saveCalibratedTiles,
   resolveLayout,
+  resolveTileSet,
   tilesStorageKey,
   SEAT_ORDER,
   type GuestLayout,
+  type TileSet,
   type SeatId,
   type Tile,
   type TileMap,
@@ -148,10 +150,13 @@ export function UnderlayRoute() {
   const layout: GuestLayout = resolveLayout(search.get("layout"));
   /** Seats that exist in this layout (authoritative seat universe here). */
   const seats: readonly SeatId[] = LAYOUT_SEATS[layout];
+  // Set: `?set=r5` picks the round 5 set's tile defaults and calibration
+  // slot (its own OBS scene collection). Absent → the classic set.
+  const tileSet: TileSet = resolveTileSet(search.get("set"));
 
   // Per-machine tile overrides (from prior CalibrationEvents). Live in
   // localStorage on this overlay browser source's machine.
-  const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout));
+  const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout, tileSet));
 
   // Sam's host tile — separate override key so per-machine calibration of
   // guest tiles can't clobber the host geometry (and vice versa).
@@ -317,7 +322,7 @@ export function UnderlayRoute() {
     // Cross-tab calibration: pick up direct localStorage writes for THIS
     // layout's calibration slot (e.g. calibration nudged in a sibling tab).
     const onStorage = (e: StorageEvent) => {
-      if (e.key === tilesStorageKey(layout)) setTiles(loadCalibratedTiles(layout));
+      if (e.key === tilesStorageKey(layout, tileSet)) setTiles(loadCalibratedTiles(layout, tileSet));
       if (e.key === HOST_TILE_STORAGE_KEY) setHostTile(loadCalibratedHostTile());
     };
     window.addEventListener("storage", onStorage);
@@ -325,7 +330,7 @@ export function UnderlayRoute() {
       document.body.classList.remove("overlay-route");
       window.removeEventListener("storage", onStorage);
     };
-  }, [layout]);
+  }, [layout, tileSet]);
 
   // Single sweep interval: instead of per-sprite setTimeout removals
   // (which create N individual state updates during a spam burst), we
@@ -440,7 +445,7 @@ export function UnderlayRoute() {
           break;
         case "calibration":
           setTiles(msg.tiles);
-          saveCalibratedTiles(msg.tiles, layout);
+          saveCalibratedTiles(msg.tiles, layout, tileSet);
           break;
         case "rosterUpdate":
           rosterRef.current = { ...msg.names };
@@ -551,7 +556,7 @@ export function UnderlayRoute() {
     // tiles is intentionally read fresh inside handleEmoji via closure;
     // re-binding the listener every tile change is fine and rare. `seats` is
     // derived from the layout URL param (stable for the page's lifetime).
-    [tiles, seats, layout, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
+    [tiles, seats, layout, tileSet, enqueueEmoji, enqueueCard, enqueueSourceAura, addMuteReasons, removeMuteReasons],
   );
 
   const { iframeRef, send } = useVdoNinja({ onMessage });

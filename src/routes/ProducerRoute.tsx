@@ -11,10 +11,11 @@ import { useSearchParams } from "react-router-dom";
 import {
   SEAT_ORDER,
   LAYOUT_SEATS,
-  LAYOUT_TILES,
+  defaultTilesFor,
   loadCalibratedTiles,
   saveCalibratedTiles,
   resolveLayout,
+  resolveTileSet,
   type GuestLayout,
   type SeatId,
   type Tile,
@@ -305,14 +306,16 @@ function ProducerPanel() {
   // collection, so the panel automatically matches the loaded show format.
   const layout: GuestLayout = resolveLayout(search.get("layout"));
   const seats: readonly SeatId[] = LAYOUT_SEATS[layout];
-  const defaultTiles = LAYOUT_TILES[layout];
+  // Set: `?set=r5` when this panel calibrates the round 5 scene collection.
+  const tileSet = resolveTileSet(search.get("set"));
+  const defaultTiles = defaultTilesFor(layout, tileSet);
   const [roster, setRoster] = useState<Record<SeatId, string>>(loadRoster);
   // Form state — separate from `roster` so the user can edit then Save.
   const [draftRoster, setDraftRoster] = useState<Record<SeatId, string>>(roster);
   const [hostName, setHostName] = useState<string>(loadHostName);
   const [draftHostName, setDraftHostName] = useState<string>(hostName);
   const [calibrate, setCalibrate] = useState(false);
-  const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout));
+  const [tiles, setTiles] = useState<TileMap>(() => loadCalibratedTiles(layout, tileSet));
   const [feed, setFeed] = useState<readonly FeedEntry[]>([]);
   const [trackerTitle, setTrackerTitle] = useState<string>(() => loadCommittedTracker().title);
   const [trackerDraft, setTrackerDraft] = useState<Record<SeatId, string>>(
@@ -683,12 +686,12 @@ function ProducerPanel() {
           ...prev,
           [seat]: { ...prev[seat], [axis]: Math.max(0, prev[seat][axis] + delta) },
         };
-        saveCalibratedTiles(next, layout);
+        saveCalibratedTiles(next, layout, tileSet);
         send({ type: "calibration", tiles: next, ts: Date.now() });
         return next;
       });
     },
-    [send, layout],
+    [send, layout, tileSet],
   );
 
   const setTileValue = useCallback(
@@ -701,20 +704,20 @@ function ProducerPanel() {
           ...prev,
           [seat]: { ...prev[seat], [axis]: value },
         };
-        saveCalibratedTiles(next, layout);
+        saveCalibratedTiles(next, layout, tileSet);
         send({ type: "calibration", tiles: next, ts: Date.now() });
         return next;
       });
     },
-    [send, layout],
+    [send, layout, tileSet],
   );
 
   const resetTiles = useCallback(() => {
-    const fresh: TileMap = { ...LAYOUT_TILES[layout] };
+    const fresh: TileMap = defaultTilesFor(layout, tileSet);
     setTiles(fresh);
-    saveCalibratedTiles(fresh, layout);
+    saveCalibratedTiles(fresh, layout, tileSet);
     send({ type: "calibration", tiles: fresh, ts: Date.now() });
-  }, [send, layout]);
+  }, [send, layout, tileSet]);
 
   return (
     <div style={styles.shell}>

@@ -54,18 +54,14 @@ export type TileMap = Record<SeatId, Tile>;
  * Authoritative defaults — change here only if the producer's OBS scene
  * geometry actually changes. Per-machine tweaks belong in localStorage
  * via the producer panel's calibration mode.
- *
- * 2026-11-11: set refresh. Six-guest cameras grew from ~280 px to 300 px
- * (1080x1080 cam sources at scale 0.2778) with ~12 px between rows for the
- * new frames and name plates.
  */
 export const TILES: TileMap = {
-  L1: { x: 84, y: 26, w: 300, h: 300 }, // top-left      — Guest 1
-  L2: { x: 84, y: 366, w: 300, h: 300 }, // middle-left   — Guest 2
-  L3: { x: 84, y: 706, w: 300, h: 300 }, // bottom-left   — Guest 3
-  R1: { x: 1536, y: 26, w: 300, h: 300 }, // top-right     — Guest 4
-  R2: { x: 1536, y: 366, w: 300, h: 300 }, // middle-right  — Guest 5
-  R3: { x: 1536, y: 706, w: 300, h: 300 }, // bottom-right  — Guest 6
+  L1: { x: 94, y: 53, w: 280, h: 280 }, // top-left      — Guest 1 (Tony)
+  L2: { x: 94, y: 382, w: 280, h: 280 }, // middle-left   — Guest 2 (Gnoc)
+  L3: { x: 94, y: 717, w: 280, h: 280 }, // bottom-left   — Guest 3 (Matthew)
+  R1: { x: 1544, y: 53, w: 280, h: 280 }, // top-right     — Guest 4 (Chris)
+  R2: { x: 1545, y: 385, w: 280, h: 280 }, // middle-right  — Guest 5 (Kohji)
+  R3: { x: 1544, y: 719, w: 280, h: 280 }, // bottom-right  — Guest 6 (Wills)
 };
 
 /**
@@ -96,8 +92,42 @@ export const LAYOUT_TILES: Record<GuestLayout, TileMap> = {
   "4": TILES_4,
 };
 
+/**
+ * Which set's OBS geometry the underlay paints against, from `?set=`.
+ * "classic" is the set above (default, so existing scene collections are
+ * untouched). "r5" is the Nov 2026 set refresh, which lives in its own OBS
+ * scene collection whose Underlay URLs carry `&set=r5`; both collections can
+ * be kept side by side and switched between on the same machine.
+ */
+export type TileSet = "classic" | "r5";
+
+/** Resolves the `?set=` URL param. Absent/unknown → "classic". */
+export function resolveTileSet(raw: string | null): TileSet {
+  return raw === "r5" ? "r5" : "classic";
+}
+
+/**
+ * Six-guest tiles for the round 5 set (Nov 2026): 1080×1080 cam sources at
+ * scale 0.2778 → 300×300, columns x 84 / 1536, rows y 26 / 366 / 706, read
+ * from the round 5 OBS plates. The four-guest geometry did not change.
+ */
+export const TILES_R5: TileMap = {
+  L1: { x: 84, y: 26, w: 300, h: 300 }, // top-left
+  L2: { x: 84, y: 366, w: 300, h: 300 }, // middle-left
+  L3: { x: 84, y: 706, w: 300, h: 300 }, // bottom-left
+  R1: { x: 1536, y: 26, w: 300, h: 300 }, // top-right
+  R2: { x: 1536, y: 366, w: 300, h: 300 }, // middle-right
+  R3: { x: 1536, y: 706, w: 300, h: 300 }, // bottom-right
+};
+
+/** Tile defaults per set and layout. */
+export const SET_TILES: Record<TileSet, Record<GuestLayout, TileMap>> = {
+  classic: LAYOUT_TILES,
+  r5: { "6": TILES_R5, "4": TILES_4 },
+};
+
 /** localStorage key used by the overlay route + calibration mode. */
-export const TILES_STORAGE_KEY = "gamified.tiles.calibrated.v2";
+export const TILES_STORAGE_KEY = "gamified.tiles.calibrated.v1";
 
 /**
  * Sam's host-cam tile (1920×1080 canvas). His source is a 1920x1080
@@ -139,19 +169,21 @@ export function saveCalibratedHostTile(tile: Tile): void {
 /**
  * localStorage calibration key per layout. Separate key per layout so
  * nudges saved for the 6-guest scene never leak into the 4-guest scene
- * calibration (and vice versa). The 6-guest key moved to v2 on 2026-11-11
- * because the six-guest geometry changed: saved v1 nudges were measured
- * against the old 280 px tiles and would pull effects off the new cameras.
+ * calibration (and vice versa). The 6-guest key is preserved byte-for-byte
+ * so existing saved calibrations keep working. The r5 set's six-guest
+ * geometry differs, so its nudges get their own slot; the four-guest
+ * geometry is shared by both sets, and so is its slot.
  */
-export function tilesStorageKey(layout: GuestLayout): string {
+export function tilesStorageKey(layout: GuestLayout, set: TileSet = "classic"): string {
+  if (set === "r5" && layout === "6") return "gamified.tiles.calibrated.r5.v1";
   return layout === "6"
     ? TILES_STORAGE_KEY
     : `gamified.tiles.calibrated.${layout}.v1`;
 }
 
-/** Layout-specific default tile map (before calibration overrides). */
-export function defaultTilesFor(layout: GuestLayout): TileMap {
-  return { ...LAYOUT_TILES[layout] };
+/** Set- and layout-specific default tile map (before calibration overrides). */
+export function defaultTilesFor(layout: GuestLayout, set: TileSet = "classic"): TileMap {
+  return { ...SET_TILES[set][layout] };
 }
 
 /**
@@ -161,11 +193,11 @@ export function defaultTilesFor(layout: GuestLayout): TileMap {
  * is unreadable. Safe to call during SSR — returns defaults if `window`
  * is not available.
  */
-export function loadCalibratedTiles(layout: GuestLayout = "6"): TileMap {
-  if (typeof window === "undefined") return defaultTilesFor(layout);
-  const merged: TileMap = defaultTilesFor(layout);
+export function loadCalibratedTiles(layout: GuestLayout = "6", set: TileSet = "classic"): TileMap {
+  if (typeof window === "undefined") return defaultTilesFor(layout, set);
+  const merged: TileMap = defaultTilesFor(layout, set);
   try {
-    const raw = window.localStorage.getItem(tilesStorageKey(layout));
+    const raw = window.localStorage.getItem(tilesStorageKey(layout, set));
     if (!raw) return merged;
     const parsed = JSON.parse(raw) as Partial<TileMap> | null;
     if (!parsed || typeof parsed !== "object") return merged;
@@ -184,20 +216,20 @@ export function loadCalibratedTiles(layout: GuestLayout = "6"): TileMap {
  * the given layout. Pass the full map; partial saves are not supported —
  * the overlay always reads the whole set.
  */
-export function saveCalibratedTiles(tiles: TileMap, layout: GuestLayout = "6"): void {
+export function saveCalibratedTiles(tiles: TileMap, layout: GuestLayout = "6", set: TileSet = "classic"): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(tilesStorageKey(layout), JSON.stringify(tiles));
+    window.localStorage.setItem(tilesStorageKey(layout, set), JSON.stringify(tiles));
   } catch {
     // Quota exceeded or storage disabled — silently ignore; defaults still work.
   }
 }
 
 /** Removes any stored calibration overrides on this machine for the given layout. */
-export function clearCalibratedTiles(layout: GuestLayout = "6"): void {
+export function clearCalibratedTiles(layout: GuestLayout = "6", set: TileSet = "classic"): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(tilesStorageKey(layout));
+    window.localStorage.removeItem(tilesStorageKey(layout, set));
   } catch {
     // ignore
   }
